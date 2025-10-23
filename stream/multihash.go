@@ -78,9 +78,11 @@ func IsValidMultihash(hash string) bool {
 	return err == nil
 }
 
+// Package-level hasher instance for reuse
+var hasher = NewHasher()
+
 // IdentifyHash determines the type of the given hash
 func IdentifyHash(hash string) HashType {
-	hasher := NewHasher()
 	if hasher.IsValid(hash) {
 		return HashTypeLBRY
 	}
