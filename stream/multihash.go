@@ -11,6 +11,8 @@ import (
 const (
 	// SHA384MultihashCode is the multihash code for SHA-384 (SHA-2 family)
 	SHA384MultihashCode = 0x20
+	// SHA384DigestLength is the length of a SHA-384 digest in bytes (48 bytes)
+	SHA384DigestLength = 0x30
 )
 
 // ToMultihash converts an LBRY hash to a CID v1 multihash
@@ -74,8 +76,36 @@ func FromMultihash(multihashStr string) (string, error) {
 
 // IsValidMultihash checks if the given string is a valid CID v1 multihash
 func IsValidMultihash(hash string) bool {
-	_, err := FromMultihash(hash)
-	return err == nil
+	// Parse the CID
+	c, err := cid.Decode(hash)
+	if err != nil {
+		return false
+	}
+
+	// Check CID version and codec
+	if c.Version() != 1 {
+		return false
+	}
+	if c.Type() != cid.Raw {
+		return false
+	}
+
+	// Extract multihash
+	mh := c.Hash()
+
+	// Check if it's SHA-384 by examining the multihash prefix
+	// SHA-384 multihash has code 0x20 and length 0x30 (48 bytes)
+	if len(mh) < 2 {
+		return false
+	}
+	if mh[0] != SHA384MultihashCode {
+		return false
+	}
+	if mh[1] != SHA384DigestLength {
+		return false
+	}
+
+	return true
 }
 
 // Package-level hasher instance for reuse
