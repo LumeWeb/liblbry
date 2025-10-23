@@ -1,0 +1,11 @@
+template: testify
+template-data:
+  unroll-variadic: true
+pkgname: "mocks"
+filename: "{{.InterfaceName}}.go"
+all: true
+dir: "{{.InterfaceDir}}/mocks"
+packages:
+  go.lumeweb.com/liblbry:
+  go.lumeweb.com/liblbry/stream:
+  go.lumeweb.com/liblbry/protocol:
