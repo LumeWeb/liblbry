@@ -17,7 +17,6 @@ const (
 
 // ToMultihash converts an LBRY hash to a CID v1 multihash
 func ToMultihash(lbryHash string) (string, error) {
-	hasher := NewHasher()
 	if !hasher.IsValid(lbryHash) {
 		return "", fmt.Errorf("invalid LBRY hash: %s", lbryHash)
 	}
