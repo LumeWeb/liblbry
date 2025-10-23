@@ -94,14 +94,5 @@ func IdentifyHash(hash string) HashType {
 
 // ValidateHash checks if the given hash is valid according to its type
 func ValidateHash(hash string) bool {
-	hashType := IdentifyHash(hash)
-	switch hashType {
-	case HashTypeLBRY:
-		hasher := NewHasher()
-		return hasher.IsValid(hash)
-	case HashTypeMultihash:
-		return IsValidMultihash(hash)
-	default:
-		return false
-	}
+	return IdentifyHash(hash) != HashTypeUnknown
 }
