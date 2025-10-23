@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// SHA384MultihashCode is the multihash code for SHA-384
-	SHA384MultihashCode = multihash.SHA3_384
+	// SHA384MultihashCode is the multihash code for SHA-384 (SHA-2 family)
+	SHA384MultihashCode = 0x20
 )
 
 // ToMultihash converts an LBRY hash to a CID v1 multihash
@@ -34,7 +34,7 @@ func ToMultihash(lbryHash string) (string, error) {
 
 	// Create CID v1 with raw codec
 	c := cid.NewCidV1(cid.Raw, mh)
-	
+
 	return c.String(), nil
 }
 
@@ -56,13 +56,13 @@ func FromMultihash(multihashStr string) (string, error) {
 
 	// Extract multihash
 	mh := c.Hash()
-	
+
 	// Decode the multihash to access its fields
 	decoded, err := multihash.Decode(mh)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode multihash: %w", err)
 	}
-	
+
 	// Check if it's SHA-384
 	if decoded.Code != SHA384MultihashCode {
 		return "", fmt.Errorf("unsupported multihash code: %d", decoded.Code)
@@ -84,11 +84,11 @@ func IdentifyHash(hash string) HashType {
 	if hasher.IsValid(hash) {
 		return HashTypeLBRY
 	}
-	
+
 	if IsValidMultihash(hash) {
 		return HashTypeMultihash
 	}
-	
+
 	return HashTypeUnknown
 }
 
