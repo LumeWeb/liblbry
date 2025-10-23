@@ -1,25 +1,11 @@
 template: testify
 template-data:
   unroll-variadic: true
-filename: "mock_{{.InterfaceName}}.go"
+pkgname: "mocks"
+filename: "{{.InterfaceName}}.go"
+all: true
+dir: "{{.InterfaceDir}}/mocks"
 packages:
   go.lumeweb.com/liblbry:
-    interfaces:
-      AccessControl: {}
-      BlobStore: {}
-      BlobTransfer: {}
-      ReflectorClient: {}
-      StoreFactory: {}
   go.lumeweb.com/liblbry/stream:
-    interfaces:
-      Hasher: {}
-      HashIdentifier: {}
-      ManifestCreator: {}
-      MultihashConverter: {}
-      StreamReader: {}
-      StreamReaderFactory: {}
-      StreamCreator: {}
   go.lumeweb.com/liblbry/protocol:
-    interfaces:
-      HTTPHandler: {}
-      PeerServer: {}

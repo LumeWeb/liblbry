@@ -2,10 +2,11 @@
 // github.com/vektra/mockery
 // template: testify
 
-package liblbry
+package mocks
 
 import (
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry"
 )
 
 // NewMockStoreFactory creates a new instance of MockStoreFactory. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -36,23 +37,23 @@ func (_m *MockStoreFactory) EXPECT() *MockStoreFactory_Expecter {
 }
 
 // CreateStore provides a mock function for the type MockStoreFactory
-func (_mock *MockStoreFactory) CreateStore(config map[string]any) (BlobStore, error) {
+func (_mock *MockStoreFactory) CreateStore(config map[string]any) (liblbry.BlobStore, error) {
 	ret := _mock.Called(config)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateStore")
 	}
 
-	var r0 BlobStore
+	var r0 liblbry.BlobStore
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(map[string]any) (BlobStore, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(map[string]any) (liblbry.BlobStore, error)); ok {
 		return returnFunc(config)
 	}
-	if returnFunc, ok := ret.Get(0).(func(map[string]any) BlobStore); ok {
+	if returnFunc, ok := ret.Get(0).(func(map[string]any) liblbry.BlobStore); ok {
 		r0 = returnFunc(config)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(BlobStore)
+			r0 = ret.Get(0).(liblbry.BlobStore)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(map[string]any) error); ok {
@@ -87,12 +88,12 @@ func (_c *MockStoreFactory_CreateStore_Call) Run(run func(config map[string]any)
 	return _c
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) Return(blobStore BlobStore, err error) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) Return(blobStore liblbry.BlobStore, err error) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Return(blobStore, err)
 	return _c
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config map[string]any) (BlobStore, error)) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config map[string]any) (liblbry.BlobStore, error)) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Return(run)
 	return _c
 }

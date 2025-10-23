@@ -2,13 +2,14 @@
 // github.com/vektra/mockery
 // template: testify
 
-package stream
+package mocks
 
 import (
 	"io"
 	"io/fs"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // NewMockStreamCreator creates a new instance of MockStreamCreator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -39,8 +40,8 @@ func (_m *MockStreamCreator) EXPECT() *MockStreamCreator_Expecter {
 }
 
 // CreateStream provides a mock function for the type MockStreamCreator
-func (_mock *MockStreamCreator) CreateStream(source io.Reader, size int64, opts ...StreamOption) (*StreamResult, error) {
-	// StreamOption
+func (_mock *MockStreamCreator) CreateStream(source io.Reader, size int64, opts ...stream.StreamOption) (*stream.StreamResult, error) {
+	// stream.StreamOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
 		_va[_i] = opts[_i]
@@ -54,19 +55,19 @@ func (_mock *MockStreamCreator) CreateStream(source io.Reader, size int64, opts 
 		panic("no return value specified for CreateStream")
 	}
 
-	var r0 *StreamResult
+	var r0 *stream.StreamResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64, ...StreamOption) (*StreamResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64, ...stream.StreamOption) (*stream.StreamResult, error)); ok {
 		return returnFunc(source, size, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64, ...StreamOption) *StreamResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64, ...stream.StreamOption) *stream.StreamResult); ok {
 		r0 = returnFunc(source, size, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*StreamResult)
+			r0 = ret.Get(0).(*stream.StreamResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(io.Reader, int64, ...StreamOption) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(io.Reader, int64, ...stream.StreamOption) error); ok {
 		r1 = returnFunc(source, size, opts...)
 	} else {
 		r1 = ret.Error(1)
@@ -82,13 +83,13 @@ type MockStreamCreator_CreateStream_Call struct {
 // CreateStream is a helper method to define mock.On call
 //   - source io.Reader
 //   - size int64
-//   - opts ...StreamOption
+//   - opts ...stream.StreamOption
 func (_e *MockStreamCreator_Expecter) CreateStream(source interface{}, size interface{}, opts ...interface{}) *MockStreamCreator_CreateStream_Call {
 	return &MockStreamCreator_CreateStream_Call{Call: _e.mock.On("CreateStream",
 		append([]interface{}{source, size}, opts...)...)}
 }
 
-func (_c *MockStreamCreator_CreateStream_Call) Run(run func(source io.Reader, size int64, opts ...StreamOption)) *MockStreamCreator_CreateStream_Call {
+func (_c *MockStreamCreator_CreateStream_Call) Run(run func(source io.Reader, size int64, opts ...stream.StreamOption)) *MockStreamCreator_CreateStream_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 io.Reader
 		if args[0] != nil {
@@ -98,11 +99,11 @@ func (_c *MockStreamCreator_CreateStream_Call) Run(run func(source io.Reader, si
 		if args[1] != nil {
 			arg1 = args[1].(int64)
 		}
-		var arg2 []StreamOption
-		variadicArgs := make([]StreamOption, len(args)-2)
+		var arg2 []stream.StreamOption
+		variadicArgs := make([]stream.StreamOption, len(args)-2)
 		for i, a := range args[2:] {
 			if a != nil {
-				variadicArgs[i] = a.(StreamOption)
+				variadicArgs[i] = a.(stream.StreamOption)
 			}
 		}
 		arg2 = variadicArgs
@@ -115,19 +116,19 @@ func (_c *MockStreamCreator_CreateStream_Call) Run(run func(source io.Reader, si
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStream_Call) Return(streamResult *StreamResult, err error) *MockStreamCreator_CreateStream_Call {
+func (_c *MockStreamCreator_CreateStream_Call) Return(streamResult *stream.StreamResult, err error) *MockStreamCreator_CreateStream_Call {
 	_c.Call.Return(streamResult, err)
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStream_Call) RunAndReturn(run func(source io.Reader, size int64, opts ...StreamOption) (*StreamResult, error)) *MockStreamCreator_CreateStream_Call {
+func (_c *MockStreamCreator_CreateStream_Call) RunAndReturn(run func(source io.Reader, size int64, opts ...stream.StreamOption) (*stream.StreamResult, error)) *MockStreamCreator_CreateStream_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // CreateStreamFromFile provides a mock function for the type MockStreamCreator
-func (_mock *MockStreamCreator) CreateStreamFromFile(fsys fs.FS, path string, opts ...StreamOption) (*StreamResult, error) {
-	// StreamOption
+func (_mock *MockStreamCreator) CreateStreamFromFile(fsys fs.FS, path string, opts ...stream.StreamOption) (*stream.StreamResult, error) {
+	// stream.StreamOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
 		_va[_i] = opts[_i]
@@ -141,19 +142,19 @@ func (_mock *MockStreamCreator) CreateStreamFromFile(fsys fs.FS, path string, op
 		panic("no return value specified for CreateStreamFromFile")
 	}
 
-	var r0 *StreamResult
+	var r0 *stream.StreamResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(fs.FS, string, ...StreamOption) (*StreamResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(fs.FS, string, ...stream.StreamOption) (*stream.StreamResult, error)); ok {
 		return returnFunc(fsys, path, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(fs.FS, string, ...StreamOption) *StreamResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(fs.FS, string, ...stream.StreamOption) *stream.StreamResult); ok {
 		r0 = returnFunc(fsys, path, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*StreamResult)
+			r0 = ret.Get(0).(*stream.StreamResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(fs.FS, string, ...StreamOption) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(fs.FS, string, ...stream.StreamOption) error); ok {
 		r1 = returnFunc(fsys, path, opts...)
 	} else {
 		r1 = ret.Error(1)
@@ -169,13 +170,13 @@ type MockStreamCreator_CreateStreamFromFile_Call struct {
 // CreateStreamFromFile is a helper method to define mock.On call
 //   - fsys fs.FS
 //   - path string
-//   - opts ...StreamOption
+//   - opts ...stream.StreamOption
 func (_e *MockStreamCreator_Expecter) CreateStreamFromFile(fsys interface{}, path interface{}, opts ...interface{}) *MockStreamCreator_CreateStreamFromFile_Call {
 	return &MockStreamCreator_CreateStreamFromFile_Call{Call: _e.mock.On("CreateStreamFromFile",
 		append([]interface{}{fsys, path}, opts...)...)}
 }
 
-func (_c *MockStreamCreator_CreateStreamFromFile_Call) Run(run func(fsys fs.FS, path string, opts ...StreamOption)) *MockStreamCreator_CreateStreamFromFile_Call {
+func (_c *MockStreamCreator_CreateStreamFromFile_Call) Run(run func(fsys fs.FS, path string, opts ...stream.StreamOption)) *MockStreamCreator_CreateStreamFromFile_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 fs.FS
 		if args[0] != nil {
@@ -185,11 +186,11 @@ func (_c *MockStreamCreator_CreateStreamFromFile_Call) Run(run func(fsys fs.FS, 
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 []StreamOption
-		variadicArgs := make([]StreamOption, len(args)-2)
+		var arg2 []stream.StreamOption
+		variadicArgs := make([]stream.StreamOption, len(args)-2)
 		for i, a := range args[2:] {
 			if a != nil {
-				variadicArgs[i] = a.(StreamOption)
+				variadicArgs[i] = a.(stream.StreamOption)
 			}
 		}
 		arg2 = variadicArgs
@@ -202,19 +203,19 @@ func (_c *MockStreamCreator_CreateStreamFromFile_Call) Run(run func(fsys fs.FS, 
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStreamFromFile_Call) Return(streamResult *StreamResult, err error) *MockStreamCreator_CreateStreamFromFile_Call {
+func (_c *MockStreamCreator_CreateStreamFromFile_Call) Return(streamResult *stream.StreamResult, err error) *MockStreamCreator_CreateStreamFromFile_Call {
 	_c.Call.Return(streamResult, err)
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStreamFromFile_Call) RunAndReturn(run func(fsys fs.FS, path string, opts ...StreamOption) (*StreamResult, error)) *MockStreamCreator_CreateStreamFromFile_Call {
+func (_c *MockStreamCreator_CreateStreamFromFile_Call) RunAndReturn(run func(fsys fs.FS, path string, opts ...stream.StreamOption) (*stream.StreamResult, error)) *MockStreamCreator_CreateStreamFromFile_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // CreateStreamFromPath provides a mock function for the type MockStreamCreator
-func (_mock *MockStreamCreator) CreateStreamFromPath(path string, opts ...StreamOption) (*StreamResult, error) {
-	// StreamOption
+func (_mock *MockStreamCreator) CreateStreamFromPath(path string, opts ...stream.StreamOption) (*stream.StreamResult, error) {
+	// stream.StreamOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
 		_va[_i] = opts[_i]
@@ -228,19 +229,19 @@ func (_mock *MockStreamCreator) CreateStreamFromPath(path string, opts ...Stream
 		panic("no return value specified for CreateStreamFromPath")
 	}
 
-	var r0 *StreamResult
+	var r0 *stream.StreamResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string, ...StreamOption) (*StreamResult, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string, ...stream.StreamOption) (*stream.StreamResult, error)); ok {
 		return returnFunc(path, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string, ...StreamOption) *StreamResult); ok {
+	if returnFunc, ok := ret.Get(0).(func(string, ...stream.StreamOption) *stream.StreamResult); ok {
 		r0 = returnFunc(path, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*StreamResult)
+			r0 = ret.Get(0).(*stream.StreamResult)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(string, ...StreamOption) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(string, ...stream.StreamOption) error); ok {
 		r1 = returnFunc(path, opts...)
 	} else {
 		r1 = ret.Error(1)
@@ -255,23 +256,23 @@ type MockStreamCreator_CreateStreamFromPath_Call struct {
 
 // CreateStreamFromPath is a helper method to define mock.On call
 //   - path string
-//   - opts ...StreamOption
+//   - opts ...stream.StreamOption
 func (_e *MockStreamCreator_Expecter) CreateStreamFromPath(path interface{}, opts ...interface{}) *MockStreamCreator_CreateStreamFromPath_Call {
 	return &MockStreamCreator_CreateStreamFromPath_Call{Call: _e.mock.On("CreateStreamFromPath",
 		append([]interface{}{path}, opts...)...)}
 }
 
-func (_c *MockStreamCreator_CreateStreamFromPath_Call) Run(run func(path string, opts ...StreamOption)) *MockStreamCreator_CreateStreamFromPath_Call {
+func (_c *MockStreamCreator_CreateStreamFromPath_Call) Run(run func(path string, opts ...stream.StreamOption)) *MockStreamCreator_CreateStreamFromPath_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 string
 		if args[0] != nil {
 			arg0 = args[0].(string)
 		}
-		var arg1 []StreamOption
-		variadicArgs := make([]StreamOption, len(args)-1)
+		var arg1 []stream.StreamOption
+		variadicArgs := make([]stream.StreamOption, len(args)-1)
 		for i, a := range args[1:] {
 			if a != nil {
-				variadicArgs[i] = a.(StreamOption)
+				variadicArgs[i] = a.(stream.StreamOption)
 			}
 		}
 		arg1 = variadicArgs
@@ -283,12 +284,12 @@ func (_c *MockStreamCreator_CreateStreamFromPath_Call) Run(run func(path string,
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStreamFromPath_Call) Return(streamResult *StreamResult, err error) *MockStreamCreator_CreateStreamFromPath_Call {
+func (_c *MockStreamCreator_CreateStreamFromPath_Call) Return(streamResult *stream.StreamResult, err error) *MockStreamCreator_CreateStreamFromPath_Call {
 	_c.Call.Return(streamResult, err)
 	return _c
 }
 
-func (_c *MockStreamCreator_CreateStreamFromPath_Call) RunAndReturn(run func(path string, opts ...StreamOption) (*StreamResult, error)) *MockStreamCreator_CreateStreamFromPath_Call {
+func (_c *MockStreamCreator_CreateStreamFromPath_Call) RunAndReturn(run func(path string, opts ...stream.StreamOption) (*stream.StreamResult, error)) *MockStreamCreator_CreateStreamFromPath_Call {
 	_c.Call.Return(run)
 	return _c
 }

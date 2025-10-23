@@ -2,10 +2,11 @@
 // github.com/vektra/mockery
 // template: testify
 
-package stream
+package mocks
 
 import (
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // NewMockHashIdentifier creates a new instance of MockHashIdentifier. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -36,18 +37,18 @@ func (_m *MockHashIdentifier) EXPECT() *MockHashIdentifier_Expecter {
 }
 
 // Identify provides a mock function for the type MockHashIdentifier
-func (_mock *MockHashIdentifier) Identify(hash string) HashType {
+func (_mock *MockHashIdentifier) Identify(hash string) stream.HashType {
 	ret := _mock.Called(hash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Identify")
 	}
 
-	var r0 HashType
-	if returnFunc, ok := ret.Get(0).(func(string) HashType); ok {
+	var r0 stream.HashType
+	if returnFunc, ok := ret.Get(0).(func(string) stream.HashType); ok {
 		r0 = returnFunc(hash)
 	} else {
-		r0 = ret.Get(0).(HashType)
+		r0 = ret.Get(0).(stream.HashType)
 	}
 	return r0
 }
@@ -76,12 +77,12 @@ func (_c *MockHashIdentifier_Identify_Call) Run(run func(hash string)) *MockHash
 	return _c
 }
 
-func (_c *MockHashIdentifier_Identify_Call) Return(hashType HashType) *MockHashIdentifier_Identify_Call {
+func (_c *MockHashIdentifier_Identify_Call) Return(hashType stream.HashType) *MockHashIdentifier_Identify_Call {
 	_c.Call.Return(hashType)
 	return _c
 }
 
-func (_c *MockHashIdentifier_Identify_Call) RunAndReturn(run func(hash string) HashType) *MockHashIdentifier_Identify_Call {
+func (_c *MockHashIdentifier_Identify_Call) RunAndReturn(run func(hash string) stream.HashType) *MockHashIdentifier_Identify_Call {
 	_c.Call.Return(run)
 	return _c
 }

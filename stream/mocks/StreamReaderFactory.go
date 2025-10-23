@@ -2,10 +2,11 @@
 // github.com/vektra/mockery
 // template: testify
 
-package stream
+package mocks
 
 import (
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // NewMockStreamReaderFactory creates a new instance of MockStreamReaderFactory. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -36,23 +37,23 @@ func (_m *MockStreamReaderFactory) EXPECT() *MockStreamReaderFactory_Expecter {
 }
 
 // NewStreamReader provides a mock function for the type MockStreamReaderFactory
-func (_mock *MockStreamReaderFactory) NewStreamReader(path string) (StreamReader, error) {
+func (_mock *MockStreamReaderFactory) NewStreamReader(path string) (stream.StreamReader, error) {
 	ret := _mock.Called(path)
 
 	if len(ret) == 0 {
 		panic("no return value specified for NewStreamReader")
 	}
 
-	var r0 StreamReader
+	var r0 stream.StreamReader
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) (StreamReader, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) (stream.StreamReader, error)); ok {
 		return returnFunc(path)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) StreamReader); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) stream.StreamReader); ok {
 		r0 = returnFunc(path)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(StreamReader)
+			r0 = ret.Get(0).(stream.StreamReader)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
@@ -87,34 +88,34 @@ func (_c *MockStreamReaderFactory_NewStreamReader_Call) Run(run func(path string
 	return _c
 }
 
-func (_c *MockStreamReaderFactory_NewStreamReader_Call) Return(streamReader StreamReader, err error) *MockStreamReaderFactory_NewStreamReader_Call {
+func (_c *MockStreamReaderFactory_NewStreamReader_Call) Return(streamReader stream.StreamReader, err error) *MockStreamReaderFactory_NewStreamReader_Call {
 	_c.Call.Return(streamReader, err)
 	return _c
 }
 
-func (_c *MockStreamReaderFactory_NewStreamReader_Call) RunAndReturn(run func(path string) (StreamReader, error)) *MockStreamReaderFactory_NewStreamReader_Call {
+func (_c *MockStreamReaderFactory_NewStreamReader_Call) RunAndReturn(run func(path string) (stream.StreamReader, error)) *MockStreamReaderFactory_NewStreamReader_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // NewStreamReaderFromReader provides a mock function for the type MockStreamReaderFactory
-func (_mock *MockStreamReaderFactory) NewStreamReaderFromReader(r any) (StreamReader, error) {
+func (_mock *MockStreamReaderFactory) NewStreamReaderFromReader(r any) (stream.StreamReader, error) {
 	ret := _mock.Called(r)
 
 	if len(ret) == 0 {
 		panic("no return value specified for NewStreamReaderFromReader")
 	}
 
-	var r0 StreamReader
+	var r0 stream.StreamReader
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(any) (StreamReader, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(any) (stream.StreamReader, error)); ok {
 		return returnFunc(r)
 	}
-	if returnFunc, ok := ret.Get(0).(func(any) StreamReader); ok {
+	if returnFunc, ok := ret.Get(0).(func(any) stream.StreamReader); ok {
 		r0 = returnFunc(r)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(StreamReader)
+			r0 = ret.Get(0).(stream.StreamReader)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(any) error); ok {
@@ -149,12 +150,12 @@ func (_c *MockStreamReaderFactory_NewStreamReaderFromReader_Call) Run(run func(r
 	return _c
 }
 
-func (_c *MockStreamReaderFactory_NewStreamReaderFromReader_Call) Return(streamReader StreamReader, err error) *MockStreamReaderFactory_NewStreamReaderFromReader_Call {
+func (_c *MockStreamReaderFactory_NewStreamReaderFromReader_Call) Return(streamReader stream.StreamReader, err error) *MockStreamReaderFactory_NewStreamReaderFromReader_Call {
 	_c.Call.Return(streamReader, err)
 	return _c
 }
 
-func (_c *MockStreamReaderFactory_NewStreamReaderFromReader_Call) RunAndReturn(run func(r any) (StreamReader, error)) *MockStreamReaderFactory_NewStreamReaderFromReader_Call {
+func (_c *MockStreamReaderFactory_NewStreamReaderFromReader_Call) RunAndReturn(run func(r any) (stream.StreamReader, error)) *MockStreamReaderFactory_NewStreamReaderFromReader_Call {
 	_c.Call.Return(run)
 	return _c
 }

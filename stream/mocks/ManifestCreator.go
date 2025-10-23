@@ -2,12 +2,13 @@
 // github.com/vektra/mockery
 // template: testify
 
-package stream
+package mocks
 
 import (
 	"io"
 
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // NewMockManifestCreator creates a new instance of MockManifestCreator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -38,24 +39,24 @@ func (_m *MockManifestCreator) EXPECT() *MockManifestCreator_Expecter {
 }
 
 // CreateManifest provides a mock function for the type MockManifestCreator
-func (_mock *MockManifestCreator) CreateManifest(source io.Reader, size int64) (*SDBlob, []byte, error) {
+func (_mock *MockManifestCreator) CreateManifest(source io.Reader, size int64) (*stream.SDBlob, []byte, error) {
 	ret := _mock.Called(source, size)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateManifest")
 	}
 
-	var r0 *SDBlob
+	var r0 *stream.SDBlob
 	var r1 []byte
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64) (*SDBlob, []byte, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64) (*stream.SDBlob, []byte, error)); ok {
 		return returnFunc(source, size)
 	}
-	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64) *SDBlob); ok {
+	if returnFunc, ok := ret.Get(0).(func(io.Reader, int64) *stream.SDBlob); ok {
 		r0 = returnFunc(source, size)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*SDBlob)
+			r0 = ret.Get(0).(*stream.SDBlob)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(io.Reader, int64) []byte); ok {
@@ -103,35 +104,35 @@ func (_c *MockManifestCreator_CreateManifest_Call) Run(run func(source io.Reader
 	return _c
 }
 
-func (_c *MockManifestCreator_CreateManifest_Call) Return(sDBlob *SDBlob, bytes []byte, err error) *MockManifestCreator_CreateManifest_Call {
+func (_c *MockManifestCreator_CreateManifest_Call) Return(sDBlob *stream.SDBlob, bytes []byte, err error) *MockManifestCreator_CreateManifest_Call {
 	_c.Call.Return(sDBlob, bytes, err)
 	return _c
 }
 
-func (_c *MockManifestCreator_CreateManifest_Call) RunAndReturn(run func(source io.Reader, size int64) (*SDBlob, []byte, error)) *MockManifestCreator_CreateManifest_Call {
+func (_c *MockManifestCreator_CreateManifest_Call) RunAndReturn(run func(source io.Reader, size int64) (*stream.SDBlob, []byte, error)) *MockManifestCreator_CreateManifest_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // CreateManifestFromPath provides a mock function for the type MockManifestCreator
-func (_mock *MockManifestCreator) CreateManifestFromPath(path string) (*SDBlob, []byte, error) {
+func (_mock *MockManifestCreator) CreateManifestFromPath(path string) (*stream.SDBlob, []byte, error) {
 	ret := _mock.Called(path)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateManifestFromPath")
 	}
 
-	var r0 *SDBlob
+	var r0 *stream.SDBlob
 	var r1 []byte
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(string) (*SDBlob, []byte, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) (*stream.SDBlob, []byte, error)); ok {
 		return returnFunc(path)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) *SDBlob); ok {
+	if returnFunc, ok := ret.Get(0).(func(string) *stream.SDBlob); ok {
 		r0 = returnFunc(path)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*SDBlob)
+			r0 = ret.Get(0).(*stream.SDBlob)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(string) []byte); ok {
@@ -173,34 +174,34 @@ func (_c *MockManifestCreator_CreateManifestFromPath_Call) Run(run func(path str
 	return _c
 }
 
-func (_c *MockManifestCreator_CreateManifestFromPath_Call) Return(sDBlob *SDBlob, bytes []byte, err error) *MockManifestCreator_CreateManifestFromPath_Call {
+func (_c *MockManifestCreator_CreateManifestFromPath_Call) Return(sDBlob *stream.SDBlob, bytes []byte, err error) *MockManifestCreator_CreateManifestFromPath_Call {
 	_c.Call.Return(sDBlob, bytes, err)
 	return _c
 }
 
-func (_c *MockManifestCreator_CreateManifestFromPath_Call) RunAndReturn(run func(path string) (*SDBlob, []byte, error)) *MockManifestCreator_CreateManifestFromPath_Call {
+func (_c *MockManifestCreator_CreateManifestFromPath_Call) RunAndReturn(run func(path string) (*stream.SDBlob, []byte, error)) *MockManifestCreator_CreateManifestFromPath_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ParseManifest provides a mock function for the type MockManifestCreator
-func (_mock *MockManifestCreator) ParseManifest(data []byte) (*SDBlob, error) {
+func (_mock *MockManifestCreator) ParseManifest(data []byte) (*stream.SDBlob, error) {
 	ret := _mock.Called(data)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ParseManifest")
 	}
 
-	var r0 *SDBlob
+	var r0 *stream.SDBlob
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func([]byte) (*SDBlob, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func([]byte) (*stream.SDBlob, error)); ok {
 		return returnFunc(data)
 	}
-	if returnFunc, ok := ret.Get(0).(func([]byte) *SDBlob); ok {
+	if returnFunc, ok := ret.Get(0).(func([]byte) *stream.SDBlob); ok {
 		r0 = returnFunc(data)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*SDBlob)
+			r0 = ret.Get(0).(*stream.SDBlob)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func([]byte) error); ok {
@@ -235,12 +236,12 @@ func (_c *MockManifestCreator_ParseManifest_Call) Run(run func(data []byte)) *Mo
 	return _c
 }
 
-func (_c *MockManifestCreator_ParseManifest_Call) Return(sDBlob *SDBlob, err error) *MockManifestCreator_ParseManifest_Call {
+func (_c *MockManifestCreator_ParseManifest_Call) Return(sDBlob *stream.SDBlob, err error) *MockManifestCreator_ParseManifest_Call {
 	_c.Call.Return(sDBlob, err)
 	return _c
 }
 
-func (_c *MockManifestCreator_ParseManifest_Call) RunAndReturn(run func(data []byte) (*SDBlob, error)) *MockManifestCreator_ParseManifest_Call {
+func (_c *MockManifestCreator_ParseManifest_Call) RunAndReturn(run func(data []byte) (*stream.SDBlob, error)) *MockManifestCreator_ParseManifest_Call {
 	_c.Call.Return(run)
 	return _c
 }
