@@ -3,7 +3,9 @@ module go.lumeweb.com/liblbry
 go 1.24.3
 
 require (
+	github.com/go-errors/errors v1.5.1
 	github.com/ipfs/go-cid v0.5.0
+	github.com/lbryio/lbry.go/v2 v2.7.1
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/sergi/go-diff v1.4.0
