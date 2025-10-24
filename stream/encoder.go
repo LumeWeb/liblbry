@@ -149,7 +149,8 @@ func NewEncoderFromSD(src io.Reader, sdBlob *SDBlob) *Encoder {
 // ends with an empty terminating blob) and returns io.EOF
 func (e *Encoder) Next() (Blob, error) {
 	n, err := e.src.Read(e.buf)
-	if err != nil {
+	// If we read some bytes, process them regardless of err.
+	if n == 0 {
 		if liblbryerrors.Is(err, io.EOF) {
 			e.ensureTerminated()
 		}
@@ -170,7 +171,12 @@ func (e *Encoder) Next() (Blob, error) {
 		return nil, err
 	}
 
-	return blob, nil
+	// If underlying read reported EOF along with data, surface EOF next call.
+	if liblbryerrors.Is(err, io.EOF) {
+		// Do not terminate yet; allow caller to drain the last blob first.
+		err = nil
+	}
+	return blob, err
 }
 
 // Stream creates the whole stream in one call
@@ -206,6 +212,11 @@ func (e *Encoder) Stream() (Stream, error) {
 
 // Encode processes the entire stream according to the provided configuration
 func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
+	// Guard against nil config
+	if config == nil {
+		config = &StreamConfig{}
+	}
+
 	// If using existing SD blob, parse it and use its data
 	if len(config.ExistingSDBlob) > 0 {
 		sdBlob := &SDBlob{}
@@ -244,24 +255,21 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 				return nil, err
 			}
 
-			// Skip SD blob (first blob)
-			if chunkNumber > 0 {
-				chunk := Chunk{
-					Number: chunkNumber - 1, // Content blobs start at 0
-					Hash:   blob.HashHex(),
-					Data:   []byte(blob),
-					Size:   len(blob),
-				}
-
-				// Call chunk handler
-				err = config.ChunkHandler(chunk)
-				if err != nil {
-					return nil, liblbryerrors.Err("chunk handler failed for chunk %d: %w", chunkNumber-1, err)
-				}
-
-				// Store chunk info for result
-				chunkSizes = append(chunkSizes, chunk.Size)
+			chunk := Chunk{
+				Number: chunkNumber,
+				Hash:   blob.HashHex(),
+				Data:   []byte(blob),
+				Size:   len(blob),
 			}
+
+			// Call chunk handler
+			err = config.ChunkHandler(chunk)
+			if err != nil {
+				return nil, liblbryerrors.Err("chunk handler failed for chunk %d: %w", chunkNumber, err)
+			}
+
+			// Store chunk info for result
+			chunkSizes = append(chunkSizes, chunk.Size)
 
 			chunkNumber++
 		}
@@ -276,12 +284,9 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 				return nil, err
 			}
 
-			// Skip SD blob (first blob)
-			if len(contentBlobs) > 0 || (len(e.sd.BlobInfos) > 1 && e.sd.BlobInfos[0].Length > 0) {
-				contentBlobs = append(contentBlobs, []byte(blob))
-				contentHashes = append(contentHashes, blob.HashHex())
-				chunkSizes = append(chunkSizes, len(blob))
-			}
+			contentBlobs = append(contentBlobs, []byte(blob))
+			contentHashes = append(contentHashes, blob.HashHex())
+			chunkSizes = append(chunkSizes, len(blob))
 		}
 	}
 
@@ -308,7 +313,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 		SDBlob:      e.SDBlob(),
 		SDBlobData:  sdBlobData,
 		SDBlobHash:  hex.EncodeToString(blobHash),
-		StreamHash:  hex.EncodeToString(e.SourceHash()),
+		StreamHash:  hex.EncodeToString(e.SDBlob().StreamHash),
 		SourceSize:  int64(e.SourceLen()),
 		TotalChunks: len(e.sd.BlobInfos) - 1, // Exclude terminating blob
 		ChunkSizes:  chunkSizes,

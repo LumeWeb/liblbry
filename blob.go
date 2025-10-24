@@ -7,6 +7,13 @@ import (
 	"fmt"
 )
 
+const (
+	// AES key lengths in bytes
+	AES128KeySize = 16 // AES-128
+	AES192KeySize = 24 // AES-192
+	AES256KeySize = 32 // AES-256
+)
+
 // Blob represents a data blob with encryption capabilities
 type Blob []byte
 
@@ -15,14 +22,18 @@ func NewBlob(data []byte) Blob {
 	return Blob(data)
 }
 
-// Encrypt encrypts the blob data using AES-256-CBC with PKCS7 padding
+// Encrypt encrypts the blob data using AES-CBC with PKCS7 padding
 func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, fmt.Errorf("key must be 32 bytes for AES-256")
+	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
+		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", AES128KeySize, AES192KeySize, AES256KeySize)
 	}
 	
 	if len(iv) != aes.BlockSize {
 		return nil, fmt.Errorf("IV must be %d bytes", aes.BlockSize)
+	}
+	
+	if len(b) == 0 {
+		return nil, fmt.Errorf("plaintext data must not be empty")
 	}
 	
 	block, err := aes.NewCipher(key)
@@ -41,14 +52,26 @@ func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
 	return encryptedData, nil
 }
 
-// Decrypt decrypts the blob data using AES-256-CBC
+// Decrypt decrypts the blob data using AES-CBC
 func (b Blob) Decrypt(key, iv []byte) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, fmt.Errorf("key must be 32 bytes for AES-256")
+	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
+		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", AES128KeySize, AES192KeySize, AES256KeySize)
 	}
 	
 	if len(iv) != aes.BlockSize {
 		return nil, fmt.Errorf("IV must be %d bytes", aes.BlockSize)
+	}
+	
+	if len(b) == 0 {
+		return nil, fmt.Errorf("ciphertext data must not be empty")
+	}
+	
+	if len(b) < aes.BlockSize {
+		return nil, fmt.Errorf("ciphertext data must be at least %d bytes", aes.BlockSize)
+	}
+	
+	if len(b)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("ciphertext data length must be a multiple of %d bytes", aes.BlockSize)
 	}
 	
 	block, err := aes.NewCipher(key)

@@ -113,9 +113,35 @@ func TestBlob_Encrypt(t *testing.T) {
 				t.Errorf("%s: length mismatch. got %d, expected %d", testName, len(blob), len(expected))
 			}
 			if !bytes.Equal(blob, expected) {
+				// Compute hex strings first
+				blobHex := hex.EncodeToString(blob)
+				expectedHex := tt.ciphertext
+
+				// Compute safe start index - show last 100 chars if possible, or full string if shorter
+				desiredStart := 4194270
+				suffixLength := 100
+
+				blobStart := desiredStart
+				if blobStart >= len(blobHex) {
+					if len(blobHex) > suffixLength {
+						blobStart = len(blobHex) - suffixLength
+					} else {
+						blobStart = 0
+					}
+				}
+
+				expectedStart := desiredStart
+				if expectedStart >= len(expectedHex) {
+					if len(expectedHex) > suffixLength {
+						expectedStart = len(expectedHex) - suffixLength
+					} else {
+						expectedStart = 0
+					}
+				}
+
 				t.Errorf("%s: got %s, expected %s (len is %d)", testName,
-					hex.EncodeToString(blob)[4194270:],
-					tt.ciphertext[4194270:],
+					blobHex[blobStart:],
+					expectedHex[expectedStart:],
 					len(tt.ciphertext),
 				)
 			}

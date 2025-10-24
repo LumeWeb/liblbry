@@ -15,19 +15,22 @@ import (
 	"encoding/hex"
 
 	"go.lumeweb.com/liblbry/errors"
+	liblbry "go.lumeweb.com/liblbry"
 )
 
 const (
 	MaxBlobSize       = 2097152 // 2mb, or 2 * 2^20
 	BlobHashSize      = sha512.Size384
 	BlobHashHexLength = BlobHashSize * 2 // in hex, each byte is 2 chars
+
+	// AES key lengths in bytes
+	AES128KeySize = 16 // AES-128
+	AES192KeySize = 24 // AES-192
+	AES256KeySize = 32 // AES-256
 )
 
 // Blob represents a data blob with encryption capabilities
 type Blob []byte
-
-var ErrBlobTooBig = errors.Base("blob must be at most 2097152 bytes")
-var ErrBlobEmpty = errors.Base("blob is empty")
 
 func (b Blob) Size() int {
 	return len(b)
@@ -50,10 +53,10 @@ func (b Blob) HashHex() string {
 // ValidForSend returns true if the blob size is within the limits
 func (b Blob) ValidForSend() error {
 	if b.Size() > MaxBlobSize {
-		return ErrBlobTooBig
+		return liblbry.ErrBlobTooBig
 	}
 	if b.Size() == 0 {
-		return ErrBlobEmpty
+		return liblbry.ErrBlobEmpty
 	}
 	return nil
 }
@@ -63,12 +66,20 @@ func NewBlob(data, key, iv []byte) (Blob, error) {
 		// this is here to match python behavior. in theory we could encrypt an empty blob
 		return nil, errors.Err("cannot encrypt empty slice")
 	}
+	
+	// Validate key length - AES supports 16, 24, or 32 bytes
+	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
+		return nil, errors.Err("invalid key length %d, must be %d, %d, or %d bytes", len(key), AES128KeySize, AES192KeySize, AES256KeySize)
+	}
+	
 	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, errors.Err(err)
 	}
-	if len(iv) != blockCipher.BlockSize() {
-		return nil, errors.Err("IV length must equal to block size")
+	
+	// Validate IV length
+	if len(iv) != aes.BlockSize {
+		return nil, errors.Err("IV length must equal %d bytes, got %d", aes.BlockSize, len(iv))
 	}
 
 	cbc := cipher.NewCBCEncrypter(blockCipher, iv)
@@ -77,23 +88,45 @@ func NewBlob(data, key, iv []byte) (Blob, error) {
 		return nil, errors.Err(err)
 	}
 
+	// Validate plaintext length before encryption
+	if len(plaintext) == 0 || len(plaintext)%aes.BlockSize != 0 {
+		return nil, errors.Err("invalid plaintext length %d, must be non-zero multiple of %d", len(plaintext), aes.BlockSize)
+	}
+
 	ciphertext := make([]byte, len(plaintext))
 	cbc.CryptBlocks(ciphertext, plaintext)
 	return ciphertext, nil
 }
 
-// DecryptBlob decrypts a blob
+// DecryptBlob decrypts a blob using the provided key and IV.
+// It validates the key length (16, 24, or 32 bytes), IV length (must equal aes.BlockSize),
+// and ciphertext length before decryption. All validation errors are returned, no panics.
 func DecryptBlob(b Blob, key, iv []byte) ([]byte, error) {
 	return b.Plaintext(key, iv)
 }
 
 func (b Blob) Plaintext(key, iv []byte) ([]byte, error) {
+	// Validate key length - AES supports 16, 24, or 32 bytes
+	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
+		return nil, errors.Err("invalid key length %d, must be %d, %d, or %d bytes", len(key), AES128KeySize, AES192KeySize, AES256KeySize)
+	}
+	
 	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, errors.Err(err)
 	}
-	if len(iv) != blockCipher.BlockSize() {
-		return nil, errors.Err("IV length must equal to block size")
+	
+	// Validate IV length
+	if len(iv) != aes.BlockSize {
+		return nil, errors.Err("IV length must equal %d bytes, got %d", aes.BlockSize, len(iv))
+	}
+	
+	// Validate ciphertext length before decryption
+	if len(b) <= 0 {
+		return nil, errors.Err("ciphertext length must be greater than 0, got %d", len(b))
+	}
+	if len(b)%blockCipher.BlockSize() != 0 {
+		return nil, errors.Err("ciphertext length %d is not a multiple of block size %d", len(b), blockCipher.BlockSize())
 	}
 
 	cbc := cipher.NewCBCDecrypter(blockCipher, iv)
@@ -133,6 +166,17 @@ func pkcs7Unpad(data []byte, blockLen int) ([]byte, error) {
 
 	// the last byte is the length of padding
 	padLen := int(data[len(data)-1])
+
+	// Validate padLen to prevent out-of-range slicing
+	if padLen < 1 {
+		return nil, errors.Err("invalid padding length %d, must be at least 1", padLen)
+	}
+	if padLen > blockLen {
+		return nil, errors.Err("invalid padding length %d, must be <= block size %d", padLen, blockLen)
+	}
+	if padLen > len(data) {
+		return nil, errors.Err("invalid padding length %d, must be <= data length %d", padLen, len(data))
+	}
 
 	// check padding integrity, all bytes should be the same
 	pad := data[len(data)-padLen:]
