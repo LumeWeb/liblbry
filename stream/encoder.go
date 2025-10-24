@@ -202,7 +202,7 @@ func (e *Encoder) Stream() (Stream, error) {
 	s := make(Stream, 1, 1+int(math.Ceil(float64(e.srcSizeHint)/maxBlobDataSize))) // len starts at 1 and cap is +1 to leave room for sd blob
 
 	for {
-		blob, err := e.Next()
+		b, err := e.Next()
 		if err != nil {
 			if liblbryerrors.Is(err, io.EOF) {
 				break
@@ -210,14 +210,14 @@ func (e *Encoder) Stream() (Stream, error) {
 			return nil, err
 		}
 
-		s = append(s, blob)
+		s = append(s, b)
 	}
 
 	sdBlobData, err := e.SDBlob().ToBlob()
 	if err != nil {
 		return nil, err
 	}
-	s[0] = blob.Blob(sdBlobData)
+	s[0] = sdBlobData
 
 	if cap(s) > len(s) {
 		// size hint was too big. copy stream to smaller underlying array to free memory
@@ -243,11 +243,11 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 			return nil, liblbryerrors.Err("failed to parse existing SD blob: %w", err)
 		}
 		e.sd = sdBlob
-	// Seed IVs from existing SD blob
-	e.ivs = make([][]byte, len(sdBlob.BlobInfos))
-	for i := range e.ivs {
-		e.ivs[i] = sdBlob.BlobInfos[i].IV
-	}
+		// Seed IVs from existing SD blob
+		e.ivs = make([][]byte, len(sdBlob.BlobInfos))
+		for i := range e.ivs {
+			e.ivs[i] = sdBlob.BlobInfos[i].IV
+		}
 	}
 
 	// Set custom chunk size if provided
@@ -270,7 +270,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	if config.ChunkHandler != nil {
 		chunkNumber := 0
 		for {
-			blob, err := e.Next()
+			b, err := e.Next()
 			if err != nil {
 				if liblbryerrors.Is(err, io.EOF) {
 					break
@@ -280,9 +280,9 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 
 			chunk := Chunk{
 				Number: chunkNumber,
-				Hash:   blob.HashHex(),
-				Data:   []byte(blob),
-				Size:   len(blob),
+				Hash:   b.HashHex(),
+				Data:   []byte(b),
+				Size:   len(b),
 			}
 
 			// Call chunk handler
@@ -299,7 +299,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	} else {
 		// Process all chunks in memory
 		for {
-			blob, err := e.Next()
+			b, err := e.Next()
 			if err != nil {
 				if liblbryerrors.Is(err, io.EOF) {
 					break
@@ -307,9 +307,9 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 				return nil, err
 			}
 
-			contentBlobs = append(contentBlobs, []byte(blob))
-			contentHashes = append(contentHashes, blob.HashHex())
-			chunkSizes = append(chunkSizes, len(blob))
+			contentBlobs = append(contentBlobs, b)
+			contentHashes = append(contentHashes, b.HashHex())
+			chunkSizes = append(chunkSizes, len(b))
 		}
 	}
 
