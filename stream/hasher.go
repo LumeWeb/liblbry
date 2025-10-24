@@ -3,6 +3,8 @@ package stream
 import (
 	"crypto/sha512"
 	"encoding/hex"
+
+	"go.lumeweb.com/liblbry/blob"
 )
 
 // SHA384Hasher implements the Hasher interface using SHA-384
@@ -21,7 +23,7 @@ func (h *SHA384Hasher) Hash(data []byte) string {
 
 // IsValid checks if the given hash is a valid SHA-384 hash
 func (h *SHA384Hasher) IsValid(hash string) bool {
-	if len(hash) != BlobHashHexLength {
+	if len(hash) != blob.BlobHashHexLength {
 		return false
 	}
 

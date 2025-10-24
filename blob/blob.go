@@ -5,7 +5,7 @@
 //   - Maintained identical blob encryption/decryption behavior
 //   - Kept core LBRY blob handling and validation logic
 
-package stream
+package blob
 
 import (
 	"bytes"
@@ -14,7 +14,6 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 
-	liblbry "go.lumeweb.com/liblbry"
 	liblbcrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
@@ -49,10 +48,10 @@ func (b Blob) HashHex() string {
 // ValidForSend returns true if the blob size is within the limits
 func (b Blob) ValidForSend() error {
 	if b.Size() > MaxBlobSize {
-		return liblbry.ErrBlobTooBig
+		return liblbryerrors.ErrBlobTooBig
 	}
 	if b.Size() == 0 {
-		return liblbry.ErrBlobEmpty
+		return liblbryerrors.ErrBlobEmpty
 	}
 	return nil
 }
@@ -136,6 +135,79 @@ func (b Blob) Plaintext(key, iv []byte) ([]byte, error) {
 	}
 
 	return plaintext, nil
+}
+
+// Encrypt encrypts the blob data using AES-CBC with PKCS7 padding
+func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
+	if len(key) != liblbcrypto.AES128KeySize && len(key) != liblbcrypto.AES192KeySize && len(key) != liblbcrypto.AES256KeySize {
+		return nil, liblbryerrors.Err("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", liblbcrypto.AES128KeySize, liblbcrypto.AES192KeySize, liblbcrypto.AES256KeySize)
+	}
+
+	if len(b) == 0 {
+		return nil, liblbryerrors.Err("plaintext data must not be empty")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to create cipher: %w", err)
+	}
+
+	// Validate IV length against block size
+	if len(iv) != block.BlockSize() {
+		return nil, liblbryerrors.Err("IV must be %d bytes", block.BlockSize())
+	}
+
+	// Apply PKCS7 padding
+	paddedData, err := pkcs7Pad([]byte(b), block.BlockSize())
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to pad data: %w", err)
+	}
+
+	// Encrypt the data
+	mode := cipher.NewCBCEncrypter(block, iv)
+	encryptedData := make([]byte, len(paddedData))
+	mode.CryptBlocks(encryptedData, paddedData)
+
+	return encryptedData, nil
+}
+
+// Decrypt decrypts the blob data using AES-CBC
+func (b Blob) Decrypt(key, iv []byte) ([]byte, error) {
+	if len(key) != liblbcrypto.AES128KeySize && len(key) != liblbcrypto.AES192KeySize && len(key) != liblbcrypto.AES256KeySize {
+		return nil, liblbryerrors.Err("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", liblbcrypto.AES128KeySize, liblbcrypto.AES192KeySize, liblbcrypto.AES256KeySize)
+	}
+
+	if len(b) == 0 {
+		return nil, liblbryerrors.Err("ciphertext data must not be empty")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to create cipher: %w", err)
+	}
+
+	if len(iv) != block.BlockSize() {
+		return nil, liblbryerrors.Err("IV must be %d bytes", block.BlockSize())
+	}
+	if len(b) < block.BlockSize() {
+		return nil, liblbryerrors.Err("ciphertext data must be at least %d bytes", block.BlockSize())
+	}
+	if len(b)%block.BlockSize() != 0 {
+		return nil, liblbryerrors.Err("ciphertext data length must be a multiple of %d bytes", block.BlockSize())
+	}
+
+	// Decrypt the data
+	mode := cipher.NewCBCDecrypter(block, iv)
+	decryptedData := make([]byte, len(b))
+	mode.CryptBlocks(decryptedData, b)
+
+	// Remove PKCS7 padding
+	unpaddedData, err := pkcs7Unpad(decryptedData, block.BlockSize())
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to unpad data: %w", err)
+	}
+
+	return unpaddedData, nil
 }
 
 // https://github.com/fullsailor/pkcs7/blob/master/pkcs7.go#L468

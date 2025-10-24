@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"go.lumeweb.com/liblbry/blob"
 )
 
 // Adapted from https://github.com/lbryio/lbry.go
@@ -118,12 +120,12 @@ func (bi BlobInfo) Hash() []byte {
 type SDBlobAlias SDBlob
 
 type JSONSDBlob struct {
-	StreamName        string `json:"stream_name"`
+	StreamName        string     `json:"stream_name"`
 	Blobs             []BlobInfo `json:"blobs"`
-	StreamType        string `json:"stream_type"`
-	Key               string `json:"key"`
-	SuggestedFileName string `json:"suggested_file_name"`
-	StreamHash        string `json:"stream_hash"`
+	StreamType        string     `json:"stream_type"`
+	Key               string     `json:"key"`
+	SuggestedFileName string     `json:"suggested_file_name"`
+	StreamHash        string     `json:"stream_hash"`
 }
 
 // MarshalJSON implements custom JSON marshaling for SDBlob
@@ -251,7 +253,7 @@ func streamHash(hexStreamName, hexKey, hexSuggestedFileName string, blobInfos []
 }
 
 // computeBlobHash computes the hash of a blob
-func computeBlobHash(b Blob) ([]byte, error) {
+func computeBlobHash(b blob.Blob) ([]byte, error) {
 	_hasher := NewHasher()
 	hashStr := _hasher.Hash(b)
 	hash, err := hex.DecodeString(hashStr)
@@ -267,7 +269,7 @@ func NullIV() []byte {
 }
 
 // addBlob adds a blob to the SDBlob
-func (s *SDBlob) addBlob(b Blob, iv []byte) error {
+func (s *SDBlob) addBlob(b blob.Blob, iv []byte) error {
 	if len(iv) == 0 {
 		return fmt.Errorf("empty IV")
 	}

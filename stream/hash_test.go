@@ -11,6 +11,7 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry/blob"
 )
 
 func TestHashIdentificationCompatibility(t *testing.T) {
@@ -41,9 +42,9 @@ func TestHashIdentificationCompatibility(t *testing.T) {
 		{"invalid too short", "abc123", HashTypeUnknown},
 		{"invalid random", "thisisnotahashatall", HashTypeUnknown},
 		{"invalid empty", "", HashTypeUnknown},
-		{"invalid wrong length", strings.Repeat("a", BlobHashHexLength-1), HashTypeUnknown},
+		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), HashTypeUnknown},
 		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), HashTypeUnknown},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:BlobHashHexLength-1] + "g", HashTypeUnknown},
+		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", HashTypeUnknown},
 	}
 
 	for _, tt := range tests {
@@ -82,9 +83,9 @@ func TestHashValidationCompatibility(t *testing.T) {
 		{"invalid too short", "abc123", false},
 		{"invalid random", "thisisnotahashatall", false},
 		{"invalid empty", "", false},
-		{"invalid wrong length", strings.Repeat("a", BlobHashHexLength-1), false},
+		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), false},
 		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), false},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:BlobHashHexLength-1] + "g", false},
+		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
 	}
 
 	for _, tt := range tests {
@@ -134,7 +135,7 @@ func TestMultihashConversionCompatibility(t *testing.T) {
 	}{
 		{"invalid too short", "abc123"},
 		{"invalid non-hex", "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6g"},
-		{"invalid wrong length", strings.Repeat("a", BlobHashHexLength-1)},
+		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1)},
 	}
 
 	for _, tt := range errorTests {
@@ -278,9 +279,9 @@ func TestHasherCompatibility(t *testing.T) {
 		{"valid hash 5", LBRYTestHashes[LBRYHashKey5], true},
 		{"valid hash 6", LBRYTestHashes[LBRYHashKey6], true},
 		// Invalid hashes
-		{"invalid wrong length", strings.Repeat("a", BlobHashHexLength-1), false},
+		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), false},
 		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), false},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:BlobHashHexLength-1] + "g", false},
+		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
 		{"invalid empty", "", false},
 	}
 
@@ -382,25 +383,25 @@ func TestHashBoundaryConditionsCompatibility(t *testing.T) {
 	}{
 		{
 			name:          "all zeros",
-			hash:          strings.Repeat("0", BlobHashHexLength),
+			hash:          strings.Repeat("0", blob.BlobHashHexLength),
 			expectedType:  HashTypeLBRY,
 			expectedValid: true,
 		},
 		{
 			name:          "all f's",
-			hash:          strings.Repeat("f", BlobHashHexLength),
+			hash:          strings.Repeat("f", blob.BlobHashHexLength),
 			expectedType:  HashTypeLBRY,
 			expectedValid: true,
 		},
 		{
 			name:          "one char short",
-			hash:          strings.Repeat("a", BlobHashHexLength-1),
+			hash:          strings.Repeat("a", blob.BlobHashHexLength-1),
 			expectedType:  HashTypeUnknown,
 			expectedValid: false,
 		},
 		{
 			name:          "one char long",
-			hash:          strings.Repeat("a", BlobHashHexLength+1),
+			hash:          strings.Repeat("a", blob.BlobHashHexLength+1),
 			expectedType:  HashTypeUnknown,
 			expectedValid: false,
 		},

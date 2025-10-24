@@ -1,13 +1,13 @@
-package stream
+package blob
 
 import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
 func Test_pkcs7Pad(t *testing.T) {
@@ -93,13 +93,13 @@ func TestBlob_Encrypt(t *testing.T) {
 			key:        "efad181bb91c18e93a57178559a42f21",
 			iv:         "032cb97fa5292b3109a67239f7c626aa",
 			data:       strings.Repeat("x", 2*1024*1024-1),
-			ciphertext: strings.TrimSpace(string(testdata(t, "encoded-2mb-Xes-minus-one"))),
+			ciphertext: strings.TrimSpace(string(liblbrytesting.TestData(t, "encoded-2mb-Xes-minus-one"))),
 		},
 	}
 
 	for testName, tt := range tests {
-		key := unhex(t, tt.key)
-		iv := unhex(t, tt.iv)
+		key := liblbrytesting.Unhex(t, tt.key)
+		iv := liblbrytesting.Unhex(t, tt.iv)
 		blob, err := NewBlob([]byte(tt.data), key, iv)
 		if err != nil {
 			if !tt.err {
@@ -108,7 +108,7 @@ func TestBlob_Encrypt(t *testing.T) {
 		} else if tt.err {
 			t.Errorf("%s: expected an error but didn't get one", testName)
 		} else {
-			expected := unhex(t, tt.ciphertext)
+			expected := liblbrytesting.Unhex(t, tt.ciphertext)
 			if len(blob) != len(expected) {
 				t.Errorf("%s: length mismatch. got %d, expected %d", testName, len(blob), len(expected))
 			}
@@ -150,10 +150,10 @@ func TestBlob_Encrypt(t *testing.T) {
 }
 
 func TestBlob_Plaintext(t *testing.T) {
-	expected := unhex(t, "2d218ab43c66741d74211076c069f464811de7fe5767009faaa9982171cc57ef")
-	key := unhex(t, "b450f70bd285726e470428df6c6ff8d2")
-	iv := unhex(t, "0553e3eb17916333d3468286a30738f1")
-	blob := Blob(testdata(t, "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"))
+	expected := liblbrytesting.Unhex(t, "2d218ab43c66741d74211076c069f464811de7fe5767009faaa9982171cc57ef")
+	key := liblbrytesting.Unhex(t, "b450f70bd285726e470428df6c6ff8d2")
+	iv := liblbrytesting.Unhex(t, "0553e3eb17916333d3468286a30738f1")
+	blob := Blob(liblbrytesting.TestData(t, "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"))
 	plaintext, err := blob.Plaintext(key, iv)
 	if err != nil {
 		t.Fatal(err)
@@ -162,20 +162,4 @@ func TestBlob_Plaintext(t *testing.T) {
 	if !bytes.Equal(actual[:], expected) {
 		t.Errorf("hash mismatch. got %s, expected %s", hex.EncodeToString(actual[:]), hex.EncodeToString(expected))
 	}
-}
-
-func testdata(t *testing.T, filename string) []byte {
-	data, err := os.ReadFile(filepath.Join("testdata", filename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-
-func unhex(t *testing.T, s string) []byte {
-	r, err := hex.DecodeString(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
 }

@@ -18,6 +18,7 @@ import (
 	"io"
 	"math"
 
+	"go.lumeweb.com/liblbry/blob"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
 
@@ -114,7 +115,7 @@ func NewEncoder(src io.Reader) *Encoder {
 		buf: make([]byte, maxBlobDataSize),
 		sd: &SDBlob{
 			StreamType: streamTypeLBRYFile,
-			Key:        func() []byte {
+			Key: func() []byte {
 				iv, err := randIV()
 				if err != nil {
 					panic(err) // This maintains existing behavior for the constructor
@@ -153,9 +154,9 @@ func NewEncoderFromSD(src io.Reader, sdBlob *SDBlob) *Encoder {
 // Next reads the next chunk of data, encodes it into a blob, and adds it to the stream
 // When the source is fully consumed, Next() makes sure the stream is terminated (i.e. the sd blob
 // ends with an empty terminating blob) and returns io.EOF
-func (e *Encoder) Next() (Blob, error) {
+func (e *Encoder) Next() (blob.Blob, error) {
 	for {
-		n, err := e.src.Read(e.buf)
+		n, readErr := e.src.Read(e.buf)
 		// If we read some bytes, process them regardless of err.
 		if n > 0 {
 			e.srcLen += n
@@ -165,7 +166,7 @@ func (e *Encoder) Next() (Blob, error) {
 				return nil, err
 			}
 
-			blob, err := NewBlob(e.buf[:n], e.sd.Key, iv)
+			blob, err := blob.NewBlob(e.buf[:n], e.sd.Key, iv)
 			if err != nil {
 				return nil, err
 			}
@@ -175,25 +176,22 @@ func (e *Encoder) Next() (Blob, error) {
 				return nil, err
 			}
 
-			// If underlying read reported EOF along with data, surface EOF next call.
-			if liblbryerrors.Is(err, io.EOF) {
-				// Do not terminate yet; allow caller to drain the last blob first.
-				err = nil
-			}
-			return blob, err
+			// Return the produced blob now; if the underlying read hit EOF, it will
+			// be observed on the next call and termination will be handled then.
+			return blob, nil
 		}
 
 		// Handle zero-byte reads
-		if err != nil {
-			if liblbryerrors.Is(err, io.EOF) {
-				err = e.ensureTerminated()
+		if readErr != nil {
+			if liblbryerrors.Is(readErr, io.EOF) {
+				err := e.ensureTerminated()
 				if err != nil {
 					return nil, err
 				}
 				// After successful termination, return io.EOF to signal completion
 				return nil, io.EOF
 			}
-			return nil, err
+			return nil, readErr
 		}
 		// If n == 0 and err == nil, continue looping to retry the read
 	}
@@ -219,7 +217,7 @@ func (e *Encoder) Stream() (Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	s[0] = Blob(sdBlobData)
+	s[0] = blob.Blob(sdBlobData)
 
 	if cap(s) > len(s) {
 		// size hint was too big. copy stream to smaller underlying array to free memory
@@ -252,7 +250,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	if config.ChunkSize > 0 {
 		chunkSize = config.ChunkSize
 		// Ensure we leave room for padding
-		if chunkSize >= MaxBlobSize {
+		if chunkSize >= blob.MaxBlobSize {
 			chunkSize = maxBlobDataSize
 		}
 	}
@@ -383,7 +381,7 @@ func (e *Encoder) ensureTerminated() error {
 		if err != nil {
 			return err
 		}
-		return e.sd.addBlob(Blob{}, iv)
+		return e.sd.addBlob(blob.Blob{}, iv)
 	}
 	return nil
 }
