@@ -16,6 +16,7 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -252,11 +253,14 @@ func streamHash(hexStreamName, hexKey, hexSuggestedFileName string, blobInfos []
 }
 
 // computeBlobHash computes the hash of a blob
-func computeBlobHash(b Blob) []byte {
+func computeBlobHash(b Blob) ([]byte, error) {
 	hasher := NewHasher()
 	hashStr := hasher.Hash([]byte(b))
-	hash, _ := hex.DecodeString(hashStr)
-	return hash
+	hash, err := hex.DecodeString(hashStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex hash from hasher: %w", err)
+	}
+	return hash, nil
 }
 
 // NullIV returns a null initialization vector
@@ -265,16 +269,21 @@ func NullIV() []byte {
 }
 
 // addBlob adds a blob to the SDBlob
-func (s *SDBlob) addBlob(b Blob, iv []byte) {
+func (s *SDBlob) addBlob(b Blob, iv []byte) error {
 	if len(iv) == 0 {
-		panic("empty IV")
+		return fmt.Errorf("empty IV")
+	}
+	blobHash, err := computeBlobHash(b)
+	if err != nil {
+		return fmt.Errorf("failed to compute blob hash: %w", err)
 	}
 	s.BlobInfos = append(s.BlobInfos, BlobInfo{
 		BlobNum:  len(s.BlobInfos),
 		Length:   len(b),
-		BlobHash: computeBlobHash(b),
+		BlobHash: blobHash,
 		IV:       iv,
 	})
+	return nil
 }
 
 // updateStreamHash updates the stream hash of the SDBlob

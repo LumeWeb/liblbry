@@ -419,3 +419,15 @@ func TestSdBlob_NullBlobHash(t *testing.T) {
 		t.Errorf("null blob has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.Hash()))
 	}
 }
+
+func TestSdBlob_NullStreamHash(t *testing.T) {
+	// {"stream_name": "", "blobs": [{"length": 0, "blob_num": 0, "iv": "00000000000000000000000000000000"}], "stream_type": "lbryfile", "key": "00000000000000000000000000000000", "suggested_file_name": "", "stream_hash": "4d9a9ce3d72af9f171c4233738e08440937cf906eb506a5d573c0e5500c58500b0a6cbaedc9be2c863750859c01d9954"
+	expected, _ := hex.DecodeString("4d9a9ce3d72af9f171c4233738e08440937cf906eb506a5d573c0e5500c58500b0a6cbaedc9be2c863750859c01d9954")
+	b := SDBlob{Key: NullIV()}
+	err := b.addBlob(Blob{}, NullIV())
+	require.NoError(t, err)
+	b.updateStreamHash()
+	if !bytes.Equal(b.StreamHash, expected) {
+		t.Errorf("null stream has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.StreamHash))
+	}
+}
