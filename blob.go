@@ -5,27 +5,26 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
+
+	liblbcrypto "go.lumeweb.com/liblbry/crypto"
+	"go.lumeweb.com/liblbry/errors"
 )
 
 const (
-	// AES key lengths in bytes
-	AES128KeySize = 16 // AES-128
-	AES192KeySize = 24 // AES-192
-	AES256KeySize = 32 // AES-256
 )
 
 // Blob represents a data blob with encryption capabilities
 type Blob []byte
 
-// NewBlob creates a new Blob from data
-func NewBlob(data []byte) Blob {
+// NewRawBlob creates a new Blob from data
+func NewRawBlob(data []byte) Blob {
 	return Blob(data)
 }
 
 // Encrypt encrypts the blob data using AES-CBC with PKCS7 padding
 func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
-	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
-		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", AES128KeySize, AES192KeySize, AES256KeySize)
+	if len(key) != liblbcrypto.AES128KeySize && len(key) != liblbcrypto.AES192KeySize && len(key) != liblbcrypto.AES256KeySize {
+		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", liblbcrypto.AES128KeySize, liblbcrypto.AES192KeySize, liblbcrypto.AES256KeySize)
 	}
 	
 	if len(iv) != aes.BlockSize {
@@ -42,7 +41,10 @@ func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
 	}
 	
 	// Apply PKCS7 padding
-	paddedData := pkcs7Pad([]byte(b), aes.BlockSize)
+	paddedData, err := pkcs7Pad([]byte(b), aes.BlockSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pad data: %w", err)
+	}
 	
 	// Encrypt the data
 	mode := cipher.NewCBCEncrypter(block, iv)
@@ -54,8 +56,8 @@ func (b Blob) Encrypt(key, iv []byte) ([]byte, error) {
 
 // Decrypt decrypts the blob data using AES-CBC
 func (b Blob) Decrypt(key, iv []byte) ([]byte, error) {
-	if len(key) != AES128KeySize && len(key) != AES192KeySize && len(key) != AES256KeySize {
-		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", AES128KeySize, AES192KeySize, AES256KeySize)
+	if len(key) != liblbcrypto.AES128KeySize && len(key) != liblbcrypto.AES192KeySize && len(key) != liblbcrypto.AES256KeySize {
+		return nil, fmt.Errorf("key must be %d, %d, or %d bytes for AES-128, AES-192, or AES-256", liblbcrypto.AES128KeySize, liblbcrypto.AES192KeySize, liblbcrypto.AES256KeySize)
 	}
 	
 	if len(iv) != aes.BlockSize {
@@ -94,35 +96,52 @@ func (b Blob) Decrypt(key, iv []byte) ([]byte, error) {
 }
 
 // pkcs7Pad applies PKCS7 padding to the data
-func pkcs7Pad(data []byte, blockSize int) []byte {
-	padding := blockSize - len(data)%blockSize
-	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(data, padtext...)
+func pkcs7Pad(data []byte, blockLen int) ([]byte, error) {
+	if blockLen < 1 {
+		return nil, errors.Err("invalid block length %d", blockLen)
+	}
+	padLen := blockLen - (len(data) % blockLen)
+	if padLen == 0 {
+		padLen = blockLen
+	}
+	padded := make([]byte, len(data)+padLen)
+	copy(padded, data)
+	copy(padded[len(padded)-padLen:], bytes.Repeat([]byte{byte(padLen)}, padLen))
+	return padded, nil
 }
 
 // pkcs7Unpad removes PKCS7 padding from the data
-func pkcs7Unpad(data []byte, blockSize int) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("data is empty")
+func pkcs7Unpad(data []byte, blockLen int) ([]byte, error) {
+	if blockLen < 1 {
+		return nil, errors.Err("invalid block length %d", blockLen)
 	}
-	
-	if len(data)%blockSize != 0 {
-		return nil, fmt.Errorf("data is not padded correctly")
+	if len(data)%blockLen != 0 || len(data) == 0 {
+		return nil, errors.Err("invalid data length %d", len(data))
 	}
-	
-	padding := int(data[len(data)-1])
-	if padding > blockSize || padding == 0 {
-		return nil, fmt.Errorf("invalid padding")
+
+	// the last byte is the length of padding
+	padLen := int(data[len(data)-1])
+
+	// Validate padLen to prevent out-of-range slicing
+	if padLen < 1 {
+		return nil, errors.Err("invalid padding length %d, must be at least 1", padLen)
 	}
-	
-	// Check if all padding bytes are correct
-	for i := len(data) - padding; i < len(data); i++ {
-		if data[i] != byte(padding) {
-			return nil, fmt.Errorf("invalid padding")
+	if padLen > blockLen {
+		return nil, errors.Err("invalid padding length %d, must be <= block size %d", padLen, blockLen)
+	}
+	if padLen > len(data) {
+		return nil, errors.Err("invalid padding length %d, must be <= data length %d", padLen, len(data))
+	}
+
+	// check padding integrity, all bytes should be the same
+	pad := data[len(data)-padLen:]
+	for _, padbyte := range pad {
+		if padbyte != byte(padLen) {
+			return nil, errors.Err("invalid padding")
 		}
 	}
-	
-	return data[:len(data)-padding], nil
+
+	return data[:len(data)-padLen], nil
 }
 
 // BlobStore defines the interface for blob storage operations

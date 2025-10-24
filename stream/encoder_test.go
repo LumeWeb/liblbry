@@ -62,7 +62,7 @@ func TestStreamToFile(t *testing.T) {
 
 	enc := NewEncoderFromSD(bytes.NewBuffer(data), sdBlob)
 	newStream, err := enc.Stream()
-	require.NoError(t, err, "enc.Stream() failed: %v")
+	require.NoError(t, err, "enc.Stream() failed")
 
 	if len(newStream) != len(testdataBlobHashes) {
 		t.Fatalf("stream length mismatch. got %d blobs, expected %d", len(newStream), len(testdataBlobHashes))
@@ -232,7 +232,7 @@ func TestEncoderChunkHandler_FirstChunkProcessed(t *testing.T) {
 	require.Equal(t, 0, firstChunk.Number)
 	require.Greater(t, len(firstChunk.Data), 0)
 	require.NotEmpty(t, firstChunk.Hash)
-	
+
 	// Verify hash consistency by recomputing
 	expectedHash := computeHash(firstChunk.Data)
 	require.Equal(t, expectedHash, firstChunk.Hash)
@@ -321,8 +321,8 @@ func TestEncoderChunkHandler_ErrorHandling(t *testing.T) {
 
 func TestEncoderChunkHandler_DifferentDataSizes(t *testing.T) {
 	testCases := []struct {
-		name     string
-		dataSize int
+		name           string
+		dataSize       int
 		expectedChunks int
 	}{
 		{

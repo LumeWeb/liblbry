@@ -114,7 +114,13 @@ func NewEncoder(src io.Reader) *Encoder {
 		buf: make([]byte, maxBlobDataSize),
 		sd: &SDBlob{
 			StreamType: streamTypeLBRYFile,
-			Key:        randIV(),
+			Key:        func() []byte {
+				iv, err := randIV()
+				if err != nil {
+					panic(err) // This maintains existing behavior for the constructor
+				}
+				return iv
+			}(),
 		},
 		srcHash: sha512.New384(),
 	}
@@ -154,7 +160,10 @@ func (e *Encoder) Next() (Blob, error) {
 		if n > 0 {
 			e.srcLen += n
 			e.srcHash.Write(e.buf[:n])
-			iv := e.nextIV()
+			iv, err := e.nextIV()
+			if err != nil {
+				return nil, err
+			}
 
 			blob, err := NewBlob(e.buf[:n], e.sd.Key, iv)
 			if err != nil {
@@ -177,7 +186,12 @@ func (e *Encoder) Next() (Blob, error) {
 		// Handle zero-byte reads
 		if err != nil {
 			if liblbryerrors.Is(err, io.EOF) {
-				e.ensureTerminated()
+				err = e.ensureTerminated()
+				if err != nil {
+					return nil, err
+				}
+				// After successful termination, return io.EOF to signal completion
+				return nil, io.EOF
 			}
 			return nil, err
 		}
@@ -362,30 +376,35 @@ func (e *Encoder) isTerminated() bool {
 	return len(e.sd.BlobInfos) >= 1 && e.sd.BlobInfos[len(e.sd.BlobInfos)-1].Length == 0
 }
 
-func (e *Encoder) ensureTerminated() {
+func (e *Encoder) ensureTerminated() error {
 	if !e.isTerminated() {
 		// Add a terminating null blob
-		_ = e.sd.addBlob(Blob{}, e.nextIV())
+		iv, err := e.nextIV()
+		if err != nil {
+			return err
+		}
+		return e.sd.addBlob(Blob{}, iv)
 	}
+	return nil
 }
 
 // nextIV returns the next preset IV if there is one
-func (e *Encoder) nextIV() []byte {
+func (e *Encoder) nextIV() ([]byte, error) {
 	if len(e.ivs) == 0 {
 		return randIV()
 	}
 
 	iv := e.ivs[0]
 	e.ivs = e.ivs[1:]
-	return iv
+	return iv, nil
 }
 
 // randIV generates a random initialization vector
-func randIV() []byte {
+func randIV() ([]byte, error) {
 	iv := make([]byte, 16) // AES block size
 	_, err := io.ReadFull(rand.Reader, iv)
 	if err != nil {
-		panic(liblbryerrors.Err("failed to generate random IV: %w", err))
+		return nil, liblbryerrors.Err("failed to generate random IV: %w", err)
 	}
-	return iv
+	return iv, nil
 }
