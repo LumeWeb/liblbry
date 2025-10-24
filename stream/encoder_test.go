@@ -31,7 +31,7 @@ var testdataBlobHashes = []string{
 func TestStreamToFile(t *testing.T) {
 	stream := make(Stream, len(testdataBlobHashes))
 	for i, hash := range testdataBlobHashes {
-		stream[i] = liblbrytesting.TestData(t, hash)
+		stream[i] = Blob(liblbrytesting.TestData(t, hash))
 	}
 
 	data, err := stream.Decode()
@@ -56,7 +56,7 @@ func TestStreamToFile(t *testing.T) {
 	}
 
 	sdBlob := &SDBlob{}
-	err = sdBlob.FromBlob(stream[0])
+	err = sdBlob.FromBlob([]byte(stream[0]))
 	if err != nil {
 		t.Fatal(err)
 	}
