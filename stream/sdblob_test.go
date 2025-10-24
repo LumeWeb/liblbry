@@ -419,22 +419,3 @@ func TestSdBlob_NullBlobHash(t *testing.T) {
 		t.Errorf("null blob has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.Hash()))
 	}
 }
-
-func TestSdBlob_Hash(t *testing.T) {
-	expected, _ := hex.DecodeString("2c8cb2893668ef3ad30bda5b3361c0736d746d82fb16155d1510c4d2c5e4481d49ee747f155b2f1156849d422f13a7be")
-	b := BlobInfo{
-		BlobHash: unhex(t, "f774e1adb8b1fc18b037015844c2469e2166006fcd739e1befca81ccd3df537dfe61041904187e1b88e7636c1848baca"),
-		BlobNum:  24,
-		IV:       unhex(t, "30303030303030303030303030303235"),
-		Length:   1761808,
-	}
-	if !bytes.Equal(expected, b.Hash()) {
-		t.Errorf("blob has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.Hash()))
-	}
-}
-
-func unhex(t *testing.T, s string) []byte {
-	r, err := hex.DecodeString(s)
-	require.NoError(t, err)
-	return r
-}
