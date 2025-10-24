@@ -13,6 +13,12 @@ import (
 	"go.lumeweb.com/liblbry/errors"
 )
 
+// computeHash computes the hash of data using SHA384
+func computeHash(data []byte) string {
+	hash := sha512.Sum384(data)
+	return hex.EncodeToString(hash[:])
+}
+
 var testdataBlobHashes = []string{
 	"1bf7d39c45d1a38ffa74bff179bf7f67d400ff57fa0b5a0308963f08d01712b3079530a8c188e8c89d9b390c6ee06f05", // sd hash
 	"a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c",
@@ -194,7 +200,7 @@ func TestSizeHint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cap(newStream) != 2 { // 1 for sd blob, 1 for the 12 bytes of the actual stream
+	if cap(newStream) != 2 { // 1 for sd blob (terminator is in SD metadata), 1 for the 12 bytes of the actual stream
 		t.Fatalf("expected 2 blobs allocated, got %d", cap(newStream))
 	}
 }
@@ -225,7 +231,11 @@ func TestEncoderChunkHandler_FirstChunkProcessed(t *testing.T) {
 	firstChunk := receivedChunks[0]
 	require.Equal(t, 0, firstChunk.Number)
 	require.Greater(t, len(firstChunk.Data), 0)
-	require.Equal(t, firstChunk.Hash, firstChunk.Hash)
+	require.NotEmpty(t, firstChunk.Hash)
+	
+	// Verify hash consistency by recomputing
+	expectedHash := computeHash(firstChunk.Data)
+	require.Equal(t, expectedHash, firstChunk.Hash)
 }
 
 func TestEncoderChunkHandler_ChunkNumbering(t *testing.T) {

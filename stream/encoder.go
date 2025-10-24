@@ -148,35 +148,41 @@ func NewEncoderFromSD(src io.Reader, sdBlob *SDBlob) *Encoder {
 // When the source is fully consumed, Next() makes sure the stream is terminated (i.e. the sd blob
 // ends with an empty terminating blob) and returns io.EOF
 func (e *Encoder) Next() (Blob, error) {
-	n, err := e.src.Read(e.buf)
-	// If we read some bytes, process them regardless of err.
-	if n == 0 {
-		if liblbryerrors.Is(err, io.EOF) {
-			e.ensureTerminated()
+	for {
+		n, err := e.src.Read(e.buf)
+		// If we read some bytes, process them regardless of err.
+		if n > 0 {
+			e.srcLen += n
+			e.srcHash.Write(e.buf[:n])
+			iv := e.nextIV()
+
+			blob, err := NewBlob(e.buf[:n], e.sd.Key, iv)
+			if err != nil {
+				return nil, err
+			}
+
+			err = e.sd.addBlob(blob, iv)
+			if err != nil {
+				return nil, err
+			}
+
+			// If underlying read reported EOF along with data, surface EOF next call.
+			if liblbryerrors.Is(err, io.EOF) {
+				// Do not terminate yet; allow caller to drain the last blob first.
+				err = nil
+			}
+			return blob, err
 		}
-		return nil, err
-	}
 
-	e.srcLen += n
-	e.srcHash.Write(e.buf[:n])
-	iv := e.nextIV()
-
-	blob, err := NewBlob(e.buf[:n], e.sd.Key, iv)
-	if err != nil {
-		return nil, err
+		// Handle zero-byte reads
+		if err != nil {
+			if liblbryerrors.Is(err, io.EOF) {
+				e.ensureTerminated()
+			}
+			return nil, err
+		}
+		// If n == 0 and err == nil, continue looping to retry the read
 	}
-
-	err = e.sd.addBlob(blob, iv)
-	if err != nil {
-		return nil, err
-	}
-
-	// If underlying read reported EOF along with data, surface EOF next call.
-	if liblbryerrors.Is(err, io.EOF) {
-		// Do not terminate yet; allow caller to drain the last blob first.
-		err = nil
-	}
-	return blob, err
 }
 
 // Stream creates the whole stream in one call
