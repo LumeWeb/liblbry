@@ -243,6 +243,11 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 			return nil, liblbryerrors.Err("failed to parse existing SD blob: %w", err)
 		}
 		e.sd = sdBlob
+	// Seed IVs from existing SD blob
+	e.ivs = make([][]byte, len(sdBlob.BlobInfos))
+	for i := range e.ivs {
+		e.ivs[i] = sdBlob.BlobInfos[i].IV
+	}
 	}
 
 	// Set custom chunk size if provided
@@ -357,7 +362,7 @@ func (e *Encoder) SourceLen() int {
 	return e.srcLen
 }
 
-// SourceLen returns a hash of the bytes read from source
+// SourceHash returns a hash of the bytes read from source
 func (e *Encoder) SourceHash() []byte {
 	return e.srcHash.Sum(nil)
 }

@@ -115,9 +115,6 @@ func (bi BlobInfo) Hash() []byte {
 
 // --- JSON serialization for SDBlob ---
 
-// SDBlobAlias prevents infinite recursion in MarshalJSON/UnmarshalJSON by
-// creating a type with the same structure but without the custom JSON methods
-type SDBlobAlias SDBlob
 
 type JSONSDBlob struct {
 	StreamName        string     `json:"stream_name"`

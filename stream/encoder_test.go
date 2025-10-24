@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/errors"
 	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
 )
@@ -31,7 +32,7 @@ var testdataBlobHashes = []string{
 func TestStreamToFile(t *testing.T) {
 	stream := make(Stream, len(testdataBlobHashes))
 	for i, hash := range testdataBlobHashes {
-		stream[i] = Blob(liblbrytesting.TestData(t, hash))
+		stream[i] = blob.Blob(liblbrytesting.TestData(t, hash))
 	}
 
 	data, err := stream.Decode()
@@ -126,7 +127,7 @@ func TestMakeStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(reconstructedStream) != totalBlobs+1 { // +1 for the terminating blob at the end
+	if len(reconstructedStream) != totalBlobs+1 { // +1 for the SD blob at index 0
 		t.Errorf("expected %d blobs in stream, got %d", totalBlobs+1, len(reconstructedStream))
 	}
 	if enc.SourceLen() != len(data) {

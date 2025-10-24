@@ -98,54 +98,56 @@ func TestBlob_Encrypt(t *testing.T) {
 	}
 
 	for testName, tt := range tests {
-		key := liblbrytesting.Unhex(t, tt.key)
-		iv := liblbrytesting.Unhex(t, tt.iv)
-		blob, err := NewBlob([]byte(tt.data), key, iv)
-		if err != nil {
-			if !tt.err {
-				t.Errorf("%s: %v", testName, err)
-			}
-		} else if tt.err {
-			t.Errorf("%s: expected an error but didn't get one", testName)
-		} else {
-			expected := liblbrytesting.Unhex(t, tt.ciphertext)
-			if len(blob) != len(expected) {
-				t.Errorf("%s: length mismatch. got %d, expected %d", testName, len(blob), len(expected))
-			}
-			if !bytes.Equal(blob, expected) {
-				// Compute hex strings first
-				blobHex := hex.EncodeToString(blob)
-				expectedHex := tt.ciphertext
-
-				// Compute safe start index - show last 100 chars if possible, or full string if shorter
-				desiredStart := 4194270
-				suffixLength := 100
-
-				blobStart := desiredStart
-				if blobStart >= len(blobHex) {
-					if len(blobHex) > suffixLength {
-						blobStart = len(blobHex) - suffixLength
-					} else {
-						blobStart = 0
-					}
+		t.Run(testName, func(t *testing.T) {
+			key := liblbrytesting.Unhex(t, tt.key)
+			iv := liblbrytesting.Unhex(t, tt.iv)
+			blob, err := NewBlob([]byte(tt.data), key, iv)
+			if err != nil {
+				if !tt.err {
+					t.Errorf("%s: %v", testName, err)
 				}
-
-				expectedStart := desiredStart
-				if expectedStart >= len(expectedHex) {
-					if len(expectedHex) > suffixLength {
-						expectedStart = len(expectedHex) - suffixLength
-					} else {
-						expectedStart = 0
-					}
+			} else if tt.err {
+				t.Errorf("%s: expected an error but didn't get one", testName)
+			} else {
+				expected := liblbrytesting.Unhex(t, tt.ciphertext)
+				if len(blob) != len(expected) {
+					t.Errorf("%s: length mismatch. got %d, expected %d", testName, len(blob), len(expected))
 				}
+				if !bytes.Equal(blob, expected) {
+					// Compute hex strings first
+					blobHex := hex.EncodeToString(blob)
+					expectedHex := tt.ciphertext
 
-				t.Errorf("%s: got %s, expected %s (len is %d)", testName,
-					blobHex[blobStart:],
-					expectedHex[expectedStart:],
-					len(tt.ciphertext),
-				)
+					// Compute safe start index - show last 100 chars if possible, or full string if shorter
+					desiredStart := 4194270
+					suffixLength := 100
+
+					blobStart := desiredStart
+					if blobStart >= len(blobHex) {
+						if len(blobHex) > suffixLength {
+							blobStart = len(blobHex) - suffixLength
+						} else {
+							blobStart = 0
+						}
+					}
+
+					expectedStart := desiredStart
+					if expectedStart >= len(expectedHex) {
+						if len(expectedHex) > suffixLength {
+							expectedStart = len(expectedHex) - suffixLength
+						} else {
+							expectedStart = 0
+						}
+					}
+
+					t.Errorf("%s: got %s, expected %s (decoded-len=%d bytes)", testName,
+						blobHex[blobStart:],
+						expectedHex[expectedStart:],
+						len(expected),
+					)
+				}
 			}
-		}
+		})
 	}
 }
 
