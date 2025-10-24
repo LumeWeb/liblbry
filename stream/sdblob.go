@@ -192,19 +192,19 @@ func (s *SDBlob) UnmarshalJSON(b []byte) error {
 }
 
 // ToJson returns the SD blob as JSON with indentation
-func (s SDBlob) ToJson() string {
+func (s SDBlob) ToJson() (string, error) {
 	j, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return string(j)
+	return string(j), nil
 }
 
 // ToBlob converts the SDBlob to a normal data Blob
-func (s SDBlob) ToBlob() []byte {
+func (s SDBlob) ToBlob() ([]byte, error) {
 	jsonSD, err := json.Marshal(s)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// COMPATIBILITY HACK to make json output match python's json. this can be
@@ -212,7 +212,7 @@ func (s SDBlob) ToBlob() []byte {
 	jsonSD = []byte(strings.Replace(string(jsonSD), ",", ", ", -1))
 	jsonSD = []byte(strings.Replace(string(jsonSD), ":", ": ", -1))
 
-	return jsonSD
+	return jsonSD, nil
 }
 
 // IsValid checks if the SD blob is valid by comparing its computed hash with the stored hash

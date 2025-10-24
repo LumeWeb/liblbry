@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/stretchr/testify/require"
 )
 
 // TestBlobInfoMarshalJSON tests BlobInfo MarshalJSON with hex encoding
@@ -24,9 +25,7 @@ func TestBlobInfoMarshalJSON(t *testing.T) {
 	}
 
 	data, err := json.Marshal(bi)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	expected := `{"length":2097152,"blob_num":0,"blob_hash":"e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8","iv":"30303030303030303030303030303031"}`
 	if string(data) != expected {
@@ -40,9 +39,7 @@ func TestBlobInfoUnmarshalJSON(t *testing.T) {
 
 	var bi BlobInfo
 	err := json.Unmarshal([]byte(jsonData), &bi)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	expectedBlobHash, _ := hex.DecodeString("e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8")
 	expectedIV, _ := hex.DecodeString("30303030303030303030303030303031")
@@ -85,9 +82,7 @@ func TestSDBlobMarshalJSON(t *testing.T) {
 	}
 
 	data, err := json.Marshal(sd)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	expected := `{"stream_name":"746573745f66696c65","blobs":[],"stream_type":"lbryfile","key":"30313233343536373031323334353637","suggested_file_name":"746573745f66696c65","stream_hash":"4fcd4064713bf639362248d3ac0c0ee527a93a08ce4991954d6e11b0317e79b6beedb6833e18e7ae8b0f14ddf258e386"}`
 	if string(data) != expected {
@@ -104,9 +99,7 @@ func TestSDBlobUnmarshalJSON(t *testing.T) {
 
 	sdBlob := SDBlob{}
 	err := json.Unmarshal([]byte(rawBlob), &sdBlob)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if !sdBlob.IsValid() {
 		t.Fatalf("decoded blob is not valid. expected stream hash %s, got %s",
@@ -114,9 +107,7 @@ func TestSDBlobUnmarshalJSON(t *testing.T) {
 	}
 
 	reEncoded, err := json.Marshal(sdBlob)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if !bytes.Equal(reEncoded, []byte(rawBlob)) {
 		dmp := diffmatchpatch.New()
@@ -163,16 +154,12 @@ func TestSDBlobRoundTrip(t *testing.T) {
 
 	// Marshal to JSON
 	data, err := json.Marshal(sd)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Unmarshal back to SDBlob
 	var sd2 SDBlob
 	err = json.Unmarshal(data, &sd2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// Compare fields
 	if sd2.StreamName != streamName {
@@ -254,9 +241,7 @@ func TestSDBlobEdgeCases(t *testing.T) {
 	}
 
 	data, err := json.Marshal(sd)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	expected := `{"stream_name":"","blobs":[],"stream_type":"lbryfile","key":"","suggested_file_name":"","stream_hash":""}`
 	if string(data) != expected {
@@ -267,9 +252,7 @@ func TestSDBlobEdgeCases(t *testing.T) {
 	jsonData := `{"stream_name":"","blobs":[],"key":"","suggested_file_name":"","stream_hash":""}`
 	var sd2 SDBlob
 	err = json.Unmarshal([]byte(jsonData), &sd2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if sd2.Key != nil {
 		t.Errorf("Key should be nil after unmarshaling empty string, got: %v", sd2.Key)
@@ -293,9 +276,7 @@ func TestBinaryFieldHexEncoding(t *testing.T) {
 
 	// Test decoding of hex to binary fields
 	decoded, err := hex.DecodeString(expectedHex)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if !bytes.Equal(decoded, testData) {
 		t.Errorf("Hex decoding failed. Expected: %v, Got: %v", testData, decoded)
@@ -311,9 +292,7 @@ func TestBinaryFieldHexEncoding(t *testing.T) {
 	}
 
 	decodedEmpty, err := hex.DecodeString(emptyHex)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if !bytes.Equal(decodedEmpty, emptyData) {
 		t.Errorf("Empty hex decoding failed. Expected: %v, Got: %v", emptyData, decodedEmpty)
@@ -337,17 +316,18 @@ func TestSDBlobToBlobAndFromBlob(t *testing.T) {
 	}
 
 	// Test ToBlob()
-	blob := sd.ToBlob()
+	blob, err := sd.ToBlob()
+	if err != nil {
+		t.Fatalf("ToBlob() returned error: %v", err)
+	}
 	if len(blob) == 0 {
 		t.Error("ToBlob() returned empty blob")
 	}
 
 	// Test FromBlob()
 	var sd2 SDBlob
-	err := sd2.FromBlob(blob)
-	if err != nil {
-		t.Fatal(err)
-	}
+	err = sd2.FromBlob(blob)
+	require.NoError(t, err)
 
 	// Compare fields
 	if sd2.StreamName != streamName {
@@ -389,17 +369,18 @@ func TestSDBlobToJson(t *testing.T) {
 	}
 
 	// Test ToJson()
-	jsonStr := sd.ToJson()
+	jsonStr, err := sd.ToJson()
+	if err != nil {
+		t.Fatalf("ToJson() returned error: %v", err)
+	}
 	if jsonStr == "" {
 		t.Error("ToJson() returned empty string")
 	}
 
 	// Verify it's valid JSON by unmarshaling it
 	var sd2 SDBlob
-	err := json.Unmarshal([]byte(jsonStr), &sd2)
-	if err != nil {
-		t.Errorf("ToJson() returned invalid JSON: %v", err)
-	}
+	err = json.Unmarshal([]byte(jsonStr), &sd2)
+	require.NoError(t, err)
 
 	// Compare with expected format (upstream uses MarshalIndent with 2 spaces)
 	expected := `{
@@ -454,8 +435,6 @@ func TestSdBlob_Hash(t *testing.T) {
 
 func unhex(t *testing.T, s string) []byte {
 	r, err := hex.DecodeString(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return r
 }
