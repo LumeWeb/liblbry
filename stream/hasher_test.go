@@ -8,10 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.lumeweb.com/liblbry/blob"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 )
 
 func TestSHA384Hasher_Hash(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string
@@ -54,7 +55,7 @@ func TestSHA384Hasher_Hash(t *testing.T) {
 }
 
 func TestSHA384Hasher_IsValid(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string
@@ -176,7 +177,7 @@ func TestSHA384Hasher_IsValid(t *testing.T) {
 }
 
 func TestSHA384Hasher_HashAndValidateConsistency(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name string
@@ -217,7 +218,7 @@ func TestBlobHashConstants(t *testing.T) {
 }
 
 func TestHasherInterfaceCompatibility(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string
@@ -283,7 +284,7 @@ func TestHasherInterfaceCompatibility(t *testing.T) {
 }
 
 func TestReferenceImplementationCompatibility(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name string
@@ -316,7 +317,7 @@ func TestReferenceImplementationCompatibility(t *testing.T) {
 }
 
 func TestEdgeCases(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string
@@ -358,7 +359,7 @@ func TestEdgeCases(t *testing.T) {
 }
 
 func TestHashValidationBoundaryConditions(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string

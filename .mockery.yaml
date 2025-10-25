@@ -9,3 +9,4 @@ packages:
   go.lumeweb.com/liblbry:
   go.lumeweb.com/liblbry/stream:
   go.lumeweb.com/liblbry/protocol:
+  go.lumeweb.com/liblbry/crypto:

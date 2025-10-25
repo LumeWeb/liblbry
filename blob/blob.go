@@ -13,6 +13,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha512"
 	"encoding/hex"
+	"fmt"
 
 	liblbcrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
@@ -177,6 +178,28 @@ func (b Blob) Decrypt(key, iv []byte) ([]byte, error) {
 	}
 
 	return decryptedData, nil
+}
+
+// ComputeBlobHash computes the hash of a blob
+func ComputeBlobHash(b Blob) ([]byte, error) {
+	_hasher := liblbcrypto.NewHasher()
+	hashStr := _hasher.Hash(b)
+	hash, err := hex.DecodeString(hashStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex hash from hasher: %w", err)
+	}
+	return hash, nil
+}
+
+// ComputeBlobHashBytes computes the hash of byte data
+func ComputeBlobHashBytes(data []byte) ([]byte, error) {
+	_hasher := liblbcrypto.NewHasher()
+	hashStr := _hasher.Hash(data)
+	hash, err := hex.DecodeString(hashStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex hash from hasher: %w", err)
+	}
+	return hash, nil
 }
 
 // https://github.com/fullsailor/pkcs7/blob/master/pkcs7.go#L468

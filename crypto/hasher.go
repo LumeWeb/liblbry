@@ -1,17 +1,21 @@
-package stream
+package crypto
 
 import (
 	"crypto/sha512"
 	"encoding/hex"
-
-	"go.lumeweb.com/liblbry/blob"
 )
+
+// Hasher interface defines the methods for hashing and validation
+type Hasher interface {
+	Hash(data []byte) string
+	IsValid(hash string) bool
+}
 
 // SHA384Hasher implements the Hasher interface using SHA-384
 type SHA384Hasher struct{}
 
 // NewHasher creates a new SHA384Hasher instance
-func NewHasher() *SHA384Hasher {
+func NewHasher() Hasher {
 	return &SHA384Hasher{}
 }
 
@@ -23,7 +27,7 @@ func (h *SHA384Hasher) Hash(data []byte) string {
 
 // IsValid checks if the given hash is a valid SHA-384 hash
 func (h *SHA384Hasher) IsValid(hash string) bool {
-	if len(hash) != blob.BlobHashHexLength {
+	if len(hash) != 96 { // SHA-384 produces 48 bytes = 96 hex characters
 		return false
 	}
 
