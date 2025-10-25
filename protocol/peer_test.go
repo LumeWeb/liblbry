@@ -213,31 +213,7 @@ func handleRequestAndCompareWithIP(t *testing.T, server PeerServer, requestJSON,
 	assert.Equal(t, expectedResponse.BlobDataPaymentRate, response.BlobDataPaymentRate)
 	assert.Equal(t, expectedResponse.IncomingBlob, response.IncomingBlob)
 
-	// Check blob data for successful requests
-	if req.RequestedBlob != "" {
-		// If there's an error in the response, we should not expect blob data
-		if response.IncomingBlob != nil && response.IncomingBlob.Error != "" {
-			// Expect nil blob data for error responses
-			if blobData != nil {
-				t.Errorf("Expected nil blob data for error response, got data for hash %s", req.RequestedBlob)
-			}
-			return
-		}
-
-		// For successful responses, we expect blob data
-		if blobData == nil {
-			t.Errorf("Expected blob data for request %s, got nil", req.RequestedBlob)
-			return
-		}
-
-		// Verify the blob data matches what we expect
-		expectedData, exists := blobs[req.RequestedBlob]
-		if !exists {
-			t.Errorf("Unexpected blob data returned for hash %s", req.RequestedBlob)
-		} else if !bytes.Equal(blobData, expectedData) {
-			t.Errorf("Blob data mismatch for hash %s. Expected %s, got %s", req.RequestedBlob, string(expectedData), string(blobData))
-		}
-	}
+	validateBlobData(t, req, response, blobData)
 }
 
 // Helper function to unmarshal request with error handling
@@ -273,15 +249,24 @@ func handleTestRequest(t *testing.T, server PeerServer, request CompositeRequest
 }
 
 // Helper function to check blob data
-func checkBlobData(t *testing.T, request CompositeRequest, response CompositeResponse, blobData []byte) {
+func validateBlobData(t *testing.T, request CompositeRequest, response CompositeResponse, blobData []byte) {
 	t.Helper()
-	if request.RequestedBlob != "" && blobData == nil {
-		// For any error response, we expect nil data
+	if request.RequestedBlob != "" {
+		// If there's an error in the response, we should not expect blob data
 		if response.IncomingBlob != nil && response.IncomingBlob.Error != "" {
+			// Expect nil blob data for error responses
+			if blobData != nil {
+				t.Errorf("Expected nil blob data for error response, got data for hash %s", request.RequestedBlob)
+			}
 			return
 		}
-		t.Errorf("Expected blob data for request %s, got nil", request.RequestedBlob)
-	} else if request.RequestedBlob != "" && blobData != nil {
+
+		// For successful responses, we expect blob data
+		if blobData == nil {
+			t.Errorf("Expected blob data for request %s, got nil", request.RequestedBlob)
+			return
+		}
+
 		// Verify the blob data matches what we expect
 		expectedData, exists := blobs[request.RequestedBlob]
 		if !exists {
@@ -291,6 +276,7 @@ func checkBlobData(t *testing.T, request CompositeRequest, response CompositeRes
 		}
 	}
 }
+
 
 // Helper function to create a CompositeRequest for availability checking
 func createAvailabilityRequest(blobHashes []string) CompositeRequest {
@@ -380,11 +366,11 @@ func testRequestAndCompare(t *testing.T, server PeerServer, request CompositeReq
 	assert.Equal(t, expectedResponse.BlobDataPaymentRate, response.BlobDataPaymentRate)
 	assert.Equal(t, expectedResponse.IncomingBlob, response.IncomingBlob)
 
-	checkBlobData(t, request, response, blobData)
+	validateBlobData(t, request, response, blobData)
 }
 
 // Helper function to create a test server with standard options
-func createTestServer(t *testing.T, withBlobs bool) (*mocks.MockBlobStore, net.Listener) {
+func setupTestListener(t *testing.T, withBlobs bool) (*mocks.MockBlobStore, net.Listener) {
 	t.Helper()
 	mockStore := setupMockStore(t, withBlobs)
 
@@ -417,6 +403,12 @@ func testConnectionRequest(t *testing.T, listener net.Listener, request []byte, 
 		t.Fatal("error opening connection", err)
 	}
 	defer func() { _ = conn.Close() }()
+
+	// Set a read deadline to prevent test hanging
+	err = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
+		t.Fatal("error setting read deadline", err)
+	}
 
 	response := make([]byte, testBufferSize)
 	_, err = conn.Write(request)
@@ -546,7 +538,7 @@ func TestProtector(t *testing.T) {
 }
 
 func TestRequestFromConnection(t *testing.T) {
-	mockStore, listener := createTestServer(t, true)
+	mockStore, listener := setupTestListener(t, true)
 	defer func() {
 		if err := listener.Close(); err != nil {
 			t.Errorf("Error closing listener: %v", err)
@@ -563,7 +555,7 @@ func TestRequestFromConnection(t *testing.T) {
 }
 
 func TestTimeoutHandling(t *testing.T) {
-	mockStore, listener := createTestServer(t, false)
+	mockStore, listener := setupTestListener(t, false)
 	defer func() {
 		if err := listener.Close(); err != nil {
 			t.Errorf("Error closing listener: %v", err)
@@ -589,7 +581,7 @@ func TestTimeoutHandling(t *testing.T) {
 }
 
 func TestInvalidDataHandling(t *testing.T) {
-	mockStore, listener := createTestServer(t, false)
+	mockStore, listener := setupTestListener(t, false)
 	s := NewPeerServer(mockStore)
 	defer func() {
 		if err := listener.Close(); err != nil {
