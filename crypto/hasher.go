@@ -5,6 +5,11 @@ import (
 	"encoding/hex"
 )
 
+const (
+	// SHA384HexLength is the length of a SHA-384 hash in hexadecimal (48 bytes * 2)
+	SHA384HexLength = 96
+)
+
 // Hasher interface defines the methods for hashing and validation
 type Hasher interface {
 	Hash(data []byte) string
@@ -27,7 +32,7 @@ func (h *SHA384Hasher) Hash(data []byte) string {
 
 // IsValid checks if the given hash is a valid SHA-384 hash
 func (h *SHA384Hasher) IsValid(hash string) bool {
-	if len(hash) != 96 { // SHA-384 produces 48 bytes = 96 hex characters
+	if len(hash) != SHA384HexLength {
 		return false
 	}
 
