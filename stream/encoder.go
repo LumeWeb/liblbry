@@ -288,6 +288,9 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 			// Call chunk handler
 			err = config.ChunkHandler(chunk)
 			if err != nil {
+				if err == io.ErrUnexpectedEOF {
+					return nil, err
+				}
 				return nil, liblbryerrors.Err("chunk handler failed for chunk %d: %w", chunkNumber, err)
 			}
 
@@ -327,7 +330,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 		}
 	}
 
-	blobHash, err := computeBlobHash(sdBlobData)
+	blobHash, err := blob.ComputeBlobHash(sdBlobData)
 	if err != nil {
 		return nil, liblbryerrors.Err("failed to compute SD blob hash: %w", err)
 	}

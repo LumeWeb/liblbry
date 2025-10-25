@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 )
 
 func TestHashIdentificationCompatibility(t *testing.T) {
@@ -264,7 +265,7 @@ func TestMultihashValidationCompatibility(t *testing.T) {
 }
 
 func TestHasherCompatibility(t *testing.T) {
-	hasher := NewHasher()
+	hasher := lbrycrypto.NewHasher()
 
 	tests := []struct {
 		name     string

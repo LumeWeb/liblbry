@@ -6,7 +6,11 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multihash"
+	"go.lumeweb.com/liblbry/crypto"
 )
+
+// Package-level hasher instance for reuse
+var hasher = crypto.NewHasher()
 
 const (
 	// SHA384MultihashCode is the multihash code for SHA-384 (SHA-2 family)
@@ -106,9 +110,6 @@ func IsValidMultihash(hash string) bool {
 
 	return true
 }
-
-// Package-level hasher instance for reuse
-var hasher = NewHasher()
 
 // IdentifyHash determines the type of the given hash
 func IdentifyHash(hash string) HashType {

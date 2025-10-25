@@ -249,16 +249,6 @@ func streamHash(hexStreamName, hexKey, hexSuggestedFileName string, blobInfos []
 	return sum.Sum(nil)
 }
 
-// computeBlobHash computes the hash of a blob
-func computeBlobHash(b blob.Blob) ([]byte, error) {
-	_hasher := NewHasher()
-	hashStr := _hasher.Hash(b)
-	hash, err := hex.DecodeString(hashStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid hex hash from hasher: %w", err)
-	}
-	return hash, nil
-}
 
 // NullIV returns a null initialization vector
 func NullIV() []byte {
