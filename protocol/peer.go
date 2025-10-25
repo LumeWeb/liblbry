@@ -1,3 +1,13 @@
+// Code adapted from https://github.com/LBRYFoundation/reflector.go - MIT License
+//
+// Adaptations made for liblbry:
+//   - Implemented LBRY peer protocol server with composite request/response handling
+//   - Added support for blob availability checking, data transfer, and payment rate negotiation
+//   - Integrated with liblbry's blob store and access control interfaces
+//   - Enhanced with connection timeout handling and proper error management
+//   - Added support for content protection and access control mechanisms
+//   - Maintained protocol compatibility with LBRY reflector specification
+
 package protocol
 
 import (
@@ -459,7 +469,12 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, pa
 
 	blobHash := blobHashes[0]
 
-	// Validate hash
+	// Validate hash length
+	if len(blobHash) != blob.BlobHashHexLength {
+		return PaymentRateTooLow, nil
+	}
+
+	// Validate hash format
 	if !stream.ValidateHash(blobHash) {
 		return PaymentRateTooLow, nil
 	}

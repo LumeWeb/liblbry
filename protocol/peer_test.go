@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ const (
 	testDeniedIP     = "192.168.1.1"
 	testTimeout      = 5 * time.Second
 	testBufferSize   = 8192
-	shortTestTimeout = 1 * time.Millisecond
+	shortTestTimeout = 10 * time.Millisecond
 
 	// Response constants
 	emptyAvailableBlobsResponse = `{"available_blobs":[]}`
@@ -176,6 +177,7 @@ func getBlobKeys() []string {
 	for k := range blobs {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 
