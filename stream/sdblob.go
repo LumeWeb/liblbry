@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"go.lumeweb.com/liblbry/blob"
 )
 
 // Adapted from https://github.com/lbryio/lbry.go
@@ -113,17 +115,14 @@ func (bi BlobInfo) Hash() []byte {
 
 // --- JSON serialization for SDBlob ---
 
-// SDBlobAlias prevents infinite recursion in MarshalJSON/UnmarshalJSON by
-// creating a type with the same structure but without the custom JSON methods
-type SDBlobAlias SDBlob
 
 type JSONSDBlob struct {
-	StreamName string `json:"stream_name"`
-	SDBlobAlias
-	StreamType        string `json:"stream_type"`
-	Key               string `json:"key"`
-	SuggestedFileName string `json:"suggested_file_name"`
-	StreamHash        string `json:"stream_hash"`
+	StreamName        string     `json:"stream_name"`
+	Blobs             []BlobInfo `json:"blobs"`
+	StreamType        string     `json:"stream_type"`
+	Key               string     `json:"key"`
+	SuggestedFileName string     `json:"suggested_file_name"`
+	StreamHash        string     `json:"stream_hash"`
 }
 
 // MarshalJSON implements custom JSON marshaling for SDBlob
@@ -131,12 +130,11 @@ func (s SDBlob) MarshalJSON() ([]byte, error) {
 	var tmp JSONSDBlob
 
 	tmp.StreamName = hex.EncodeToString([]byte(s.StreamName))
-	tmp.StreamType = streamTypeLBRYFile
-	tmp.StreamHash = hex.EncodeToString(s.StreamHash)
-	tmp.SuggestedFileName = hex.EncodeToString([]byte(s.SuggestedFileName))
+	tmp.Blobs = s.BlobInfos
+	tmp.StreamType = s.StreamType
 	tmp.Key = hex.EncodeToString(s.Key)
-
-	tmp.SDBlobAlias = SDBlobAlias(s)
+	tmp.SuggestedFileName = hex.EncodeToString([]byte(s.SuggestedFileName))
+	tmp.StreamHash = hex.EncodeToString(s.StreamHash)
 
 	return json.Marshal(tmp)
 }
@@ -149,44 +147,41 @@ func (s *SDBlob) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	*s = SDBlob(tmp.SDBlobAlias)
-
+	s.StreamName = ""
 	if tmp.StreamName != "" {
 		str, err := hex.DecodeString(tmp.StreamName)
 		if err != nil {
 			return err
 		}
 		s.StreamName = string(str)
-	} else {
-		s.StreamName = ""
 	}
 
+	s.BlobInfos = tmp.Blobs
+	s.StreamType = tmp.StreamType
+
+	s.Key = nil
+	if tmp.Key != "" {
+		s.Key, err = hex.DecodeString(tmp.Key)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.SuggestedFileName = ""
 	if tmp.SuggestedFileName != "" {
 		str, err := hex.DecodeString(tmp.SuggestedFileName)
 		if err != nil {
 			return err
 		}
 		s.SuggestedFileName = string(str)
-	} else {
-		s.SuggestedFileName = ""
 	}
 
+	s.StreamHash = nil
 	if tmp.StreamHash != "" {
 		s.StreamHash, err = hex.DecodeString(tmp.StreamHash)
 		if err != nil {
 			return err
 		}
-	} else {
-		s.StreamHash = nil
-	}
-
-	if tmp.Key != "" {
-		s.Key, err = hex.DecodeString(tmp.Key)
-		if err != nil {
-			return err
-		}
-	} else {
-		s.Key = nil
 	}
 
 	return nil
@@ -216,9 +211,9 @@ func (s SDBlob) ToBlob() ([]byte, error) {
 	return jsonSD, nil
 }
 
-// IsValid checks if the SD blob is valid by comparing its computed hash with the stored hash
+// IsValid checks if the SD blob is valid by comparing its stored stream hash with computed stream hash
 func (s SDBlob) IsValid() bool {
-	computedHash := s.Hash()
+	computedHash := s.computeStreamHash()
 	return bytes.Equal(computedHash, s.StreamHash)
 }
 
@@ -229,7 +224,9 @@ func (s *SDBlob) FromBlob(b []byte) error {
 
 // Hash returns a hash of the SD blob data
 func (s SDBlob) Hash() []byte {
-	return s.computeStreamHash()
+	blobData, _ := s.ToBlob()
+	hashBytes := sha512.Sum384(blobData)
+	return hashBytes[:]
 }
 
 // HashHex returns the SD blob hash as a hex string
@@ -253,9 +250,9 @@ func streamHash(hexStreamName, hexKey, hexSuggestedFileName string, blobInfos []
 }
 
 // computeBlobHash computes the hash of a blob
-func computeBlobHash(b Blob) ([]byte, error) {
-	hasher := NewHasher()
-	hashStr := hasher.Hash([]byte(b))
+func computeBlobHash(b blob.Blob) ([]byte, error) {
+	_hasher := NewHasher()
+	hashStr := _hasher.Hash(b)
 	hash, err := hex.DecodeString(hashStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid hex hash from hasher: %w", err)
@@ -269,14 +266,11 @@ func NullIV() []byte {
 }
 
 // addBlob adds a blob to the SDBlob
-func (s *SDBlob) addBlob(b Blob, iv []byte) error {
+func (s *SDBlob) addBlob(b blob.Blob, iv []byte) error {
 	if len(iv) == 0 {
 		return fmt.Errorf("empty IV")
 	}
-	blobHash, err := computeBlobHash(b)
-	if err != nil {
-		return fmt.Errorf("failed to compute blob hash: %w", err)
-	}
+	blobHash := b.Hash()
 	s.BlobInfos = append(s.BlobInfos, BlobInfo{
 		BlobNum:  len(s.BlobInfos),
 		Length:   len(b),

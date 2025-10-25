@@ -1,4 +1,4 @@
-package liblbry
+package errors
 
 import "errors"
 

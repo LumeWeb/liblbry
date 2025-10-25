@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.lumeweb.com/liblbry/blob"
 )
 
 func TestSHA384Hasher_Hash(t *testing.T) {
@@ -203,9 +204,9 @@ func TestBlobHashConstants(t *testing.T) {
 		expected int
 		actual   int
 	}{
-		{"SHA-384 byte size", 48, BlobHashSize},
-		{"SHA-384 hex length", 96, BlobHashHexLength},
-		{"hex length double byte size", BlobHashSize * 2, BlobHashHexLength},
+		{"SHA-384 byte size", 48, blob.BlobHashSize},
+		{"SHA-384 hex length", 96, blob.BlobHashHexLength},
+		{"hex length double byte size", blob.BlobHashSize * 2, blob.BlobHashHexLength},
 	}
 
 	for _, tt := range tests {
@@ -226,7 +227,7 @@ func TestHasherInterfaceCompatibility(t *testing.T) {
 			name: "generated hash length",
 			testFunc: func(t *testing.T) {
 				testHash := hasher.Hash([]byte("test"))
-				assert.Equal(t, BlobHashHexLength, len(testHash), "Generated hash should match expected length")
+				assert.Equal(t, blob.BlobHashHexLength, len(testHash), "Generated hash should match expected length")
 			},
 		},
 		{
