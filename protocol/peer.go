@@ -479,6 +479,11 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, pa
 		return PaymentRateTooLow, nil
 	}
 
+	// Check if blob is protected
+	if p.isProtected(blobHash) {
+		return ErrBlobProtected, nil
+	}
+
 	// Check access control
 	if p.accessControl != nil && !p.accessControl.Allow(blobHash, peerIP) {
 		return PaymentRateTooLow, nil

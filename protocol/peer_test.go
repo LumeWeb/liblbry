@@ -535,8 +535,14 @@ func TestProtector(t *testing.T) {
 
 	// Test with protected blob - should not be available
 	if len(blobKeys) > 0 {
+		// Test availability request
 		requestData := []byte(fmt.Sprintf(`{"requested_blobs":["%s"]}`, blobKeys[0]))
 		handleRequestAndCompare(t, s, requestData, []byte(emptyAvailableBlobsResponse))
+
+		// Test payment rate request with protected blob
+		requestData = []byte(fmt.Sprintf(`{"blob_data_payment_rate":0.0,"requested_blobs":["%s"]}`, blobKeys[0]))
+		expectedResponse := []byte(fmt.Sprintf(`{"available_blobs":[],"blob_data_payment_rate":"%s"}`, ErrBlobProtected))
+		handleRequestAndCompare(t, s, requestData, expectedResponse)
 	}
 
 	// Test with unprotected blob - should be available
