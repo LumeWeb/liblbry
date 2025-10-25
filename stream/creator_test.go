@@ -2,9 +2,12 @@ package stream
 
 import (
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -269,6 +272,74 @@ func TestDefaultStreamCreator_RoundTrip(t *testing.T) {
 	assert.Equal(t, testData, string(decodedData))
 }
 
+// mockFS implements fs.FS and returns non-seekable files
+type mockFS struct {
+	files map[string][]byte
+}
+
+func (m *mockFS) Open(name string) (fs.File, error) {
+	data, exists := m.files[name]
+	if !exists {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	
+	// Return a non-seekable file (like embed.FS)
+	return &mockNonSeekableFile{
+		reader: strings.NewReader(string(data)),
+		name:   name,
+		size:   int64(len(data)),
+	}, nil
+}
+
+// mockNonSeekableFile simulates a non-seekable file like those from embed.FS
+type mockNonSeekableFile struct {
+	reader *strings.Reader
+	name   string
+	size   int64
+}
+
+func (f *mockNonSeekableFile) Stat() (fs.FileInfo, error) {
+	return &mockFileInfo{name: f.name, size: f.size}, nil
+}
+
+func (f *mockNonSeekableFile) Read(p []byte) (int, error) {
+	return f.reader.Read(p)
+}
+
+func (f *mockNonSeekableFile) Close() error {
+	return nil
+}
+
+// mockFileInfo implements fs.FileInfo
+type mockFileInfo struct {
+	name string
+	size int64
+}
+
+func (fi *mockFileInfo) Name() string {
+	return fi.name
+}
+
+func (fi *mockFileInfo) Size() int64 {
+	return fi.size
+}
+
+func (fi *mockFileInfo) Mode() fs.FileMode {
+	return 0644
+}
+
+func (fi *mockFileInfo) ModTime() time.Time {
+	return time.Time{}
+}
+
+func (fi *mockFileInfo) IsDir() bool {
+	return false
+}
+
+func (fi *mockFileInfo) Sys() interface{} {
+	return nil
+}
+
 func TestDefaultStreamCreator_ChunkHandlerErrors(t *testing.T) {
 	// Create a manifest creator
 	manifestCreator := NewManifestCreator()
@@ -292,4 +363,77 @@ func TestDefaultStreamCreator_ChunkHandlerErrors(t *testing.T) {
 	
 	// Check that the error is the exact expected error type
 	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+}
+
+func TestDefaultStreamCreator_NonSeekableFileHandling(t *testing.T) {
+	// Create a manifest creator
+	manifestCreator := NewManifestCreator()
+
+	// Create a stream creator
+	streamCreator := NewStreamCreator(manifestCreator)
+
+	// Test 1: Small non-seekable file should work
+	t.Run("SmallNonSeekableFile", func(t *testing.T) {
+		// Create mock FS with small file
+		mockFS := &mockFS{
+			files: map[string][]byte{
+				"small.txt": []byte("This is a small test file"),
+			},
+		}
+
+		result, err := streamCreator.CreateStreamFromFile(mockFS, "small.txt")
+		require.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, int64(len("This is a small test file")), result.SourceSize)
+	})
+
+	// Test 2: Large non-seekable file should return error
+	t.Run("LargeNonSeekableFile", func(t *testing.T) {
+		// Create mock FS with large file (exceeding maxFileSizeForMemory)
+		largeData := make([]byte, maxFileSizeForMemory+1024) // 100MB + 1KB
+		for i := range largeData {
+			largeData[i] = byte('A' + (i % 26))
+		}
+
+		mockFS := &mockFS{
+			files: map[string][]byte{
+				"large.txt": largeData,
+			},
+		}
+
+		result, err := streamCreator.CreateStreamFromFile(mockFS, "large.txt")
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "exceeds maximum allowed size")
+		assert.Contains(t, err.Error(), "use CreateStreamFromPath instead")
+	})
+
+	// Test 3: Seekable files should continue to work
+	t.Run("SeekableFile", func(t *testing.T) {
+		// Create a temporary file (seekable)
+		tmpFile, err := os.CreateTemp("", "test_seekable_file")
+		require.NoError(t, err)
+		defer os.Remove(tmpFile.Name())
+
+		// Write test data to the file
+		testData := "This is test data for a seekable file"
+		_, err = tmpFile.WriteString(testData)
+		require.NoError(t, err)
+
+		// Close the file to ensure data is written
+		err = tmpFile.Close()
+		require.NoError(t, err)
+
+		// Create a manifest creator
+		manifestCreator := NewManifestCreator()
+
+		// Create a stream creator
+		streamCreator := NewStreamCreator(manifestCreator)
+
+		// Use the real filesystem which provides seekable files
+		result, err := streamCreator.CreateStreamFromFile(os.DirFS(filepath.Dir(tmpFile.Name())), filepath.Base(tmpFile.Name()))
+		require.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, int64(len(testData)), result.SourceSize)
+	})
 }

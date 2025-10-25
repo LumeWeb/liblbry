@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"io"
@@ -10,6 +11,8 @@ import (
 
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
+
+const maxFileSizeForMemory = 100 * 1024 * 1024 // 100MB
 
 // StreamCreator defines the interface for creating streams from data sources
 type StreamCreator interface {
@@ -39,9 +42,7 @@ func (sc *DefaultStreamCreator) CreateStream(source io.Reader, size int64, opts 
 
 	// Apply options to config
 	config := &StreamConfig{}
-	for _, opt := range opts {
-		opt(config)
-	}
+	applyOpts(config, opts)
 
 	// Generate a unique stream ID for chunks
 	streamID, err := sc.generateStreamID()
@@ -108,7 +109,27 @@ func (sc *DefaultStreamCreator) CreateStreamFromFile(fsys fs.FS, path string, op
 	// Get filename for suggested file name
 	filename := filepath.Base(path)
 
-	return sc.createStreamWithMetadata(file, info.Size(), filename, opts...)
+	// Check if file is seekable
+	if _, ok := file.(io.Seeker); ok {
+		// If seekable, proceed with original file
+		return sc.createStreamWithMetadata(file, info.Size(), filename, opts...)
+	}
+
+	// For non-seekable files, enforce size limit to avoid unbounded memory use
+	if info.Size() > maxFileSizeForMemory {
+		return nil, liblbryerrors.Err("non-seekable file size %d exceeds maximum allowed size %d - use CreateStreamFromPath instead", info.Size(), maxFileSizeForMemory)
+	}
+
+	// Read all data into memory for non-seekable files
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to read file data: %w", err)
+	}
+
+	// Create a seekable reader from the data
+	reader := bytes.NewReader(data)
+
+	return sc.createStreamWithMetadata(reader, int64(len(data)), filename, opts...)
 }
 
 // CreateStreamFromPath creates a stream from a file path
@@ -135,9 +156,7 @@ func (sc *DefaultStreamCreator) CreateStreamFromPath(path string, opts ...Stream
 func (sc *DefaultStreamCreator) createStreamWithMetadata(source io.Reader, size int64, filename string, opts ...StreamOption) (*StreamResult, error) {
 	// Apply options to config
 	config := &StreamConfig{}
-	for _, opt := range opts {
-		opt(config)
-	}
+	applyOpts(config, opts)
 
 	// If no existing SD blob is provided, create a manifest-based one
 	if len(config.ExistingSDBlob) == 0 {
@@ -171,7 +190,27 @@ func (sc *DefaultStreamCreator) createStreamWithMetadata(source io.Reader, size 
 	}
 
 	// Create stream with existing SD blob
-	return sc.CreateStream(source, size, opts...)
+	// We need to propagate the SD blob through options since CreateStream doesn't have direct access to the config
+	newOpts := appendOption(opts, func(c *StreamConfig) {
+		c.ExistingSDBlob = config.ExistingSDBlob
+	})
+	
+	return sc.CreateStream(source, size, newOpts...)
+}
+
+// applyOpts applies all StreamOption functions to the provided StreamConfig
+func applyOpts(config *StreamConfig, opts []StreamOption) {
+	for _, opt := range opts {
+		opt(config)
+	}
+}
+
+// appendOption creates a new slice of StreamOption with the provided option appended
+func appendOption(opts []StreamOption, opt StreamOption) []StreamOption {
+	newOpts := make([]StreamOption, len(opts)+1)
+	copy(newOpts, opts)
+	newOpts[len(opts)] = opt
+	return newOpts
 }
 
 // generateStreamID generates a unique identifier for a stream
