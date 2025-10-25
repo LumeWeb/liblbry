@@ -10,24 +10,24 @@ type Protector interface {
 
 // BlacklistProtector implements Protector interface using a blacklist
 type BlacklistProtector struct {
-	blacklist map[string]bool
+	blacklist map[string]struct{}
 	mutex     sync.RWMutex
 }
 
 // NewBlacklistProtector creates a new blacklist protector
 func NewBlacklistProtector() *BlacklistProtector {
 	return &BlacklistProtector{
-		blacklist: make(map[string]bool),
+		blacklist: make(map[string]struct{}),
 	}
 }
 
 // NewBlacklistProtectorFromHashes creates a blacklist protector from initial hashes
 func NewBlacklistProtectorFromHashes(hashes []string) *BlacklistProtector {
 	bp := &BlacklistProtector{
-		blacklist: make(map[string]bool),
+		blacklist: make(map[string]struct{}),
 	}
 	for _, hash := range hashes {
-		bp.blacklist[hash] = true
+		bp.blacklist[hash] = struct{}{}
 	}
 	return bp
 }
@@ -36,7 +36,8 @@ func NewBlacklistProtectorFromHashes(hashes []string) *BlacklistProtector {
 func (bp *BlacklistProtector) IsProtected(hash string) bool {
 	bp.mutex.RLock()
 	defer bp.mutex.RUnlock()
-	return bp.blacklist[hash]
+	_, ok := bp.blacklist[hash]
+	return ok
 }
 
 // Name returns the protector name
@@ -48,7 +49,7 @@ func (bp *BlacklistProtector) Name() string {
 func (bp *BlacklistProtector) AddHash(hash string) {
 	bp.mutex.Lock()
 	defer bp.mutex.Unlock()
-	bp.blacklist[hash] = true
+	bp.blacklist[hash] = struct{}{}
 }
 
 // RemoveHash removes a hash from the blacklist

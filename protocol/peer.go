@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/stream"
+	"go.uber.org/zap"
 )
 
 // PeerServer defines the interface for handling peer connections
@@ -47,19 +48,19 @@ const (
 	DefaultTimeout = 1 * time.Minute
 	MaxRequestSize = 64 * 1024 // 64KB max request size
 	LbrycrdAddress = "127.0.0.1:50001"
-	
+
 	// Response constants
 	PaymentRateAccepted = "RATE_ACCEPTED"
 	PaymentRateTooLow   = "RATE_TOO_LOW"
-	
+
 	// Error constants
-	ErrRequestTooLarge  = "request is too large"
-	ErrInvalidData      = "Invalid data"
-	ErrBlobNotFound     = "blob not found"
-	ErrAccessDenied     = "access denied"
-	ErrInvalidHash      = "invalid hash"
-	ErrInvalidHashLen   = "Invalid blob hash length"
-	ErrBlobProtected    = "requested blob is protected"
+	ErrRequestTooLarge = "request is too large"
+	ErrInvalidData     = "Invalid data"
+	ErrBlobNotFound    = "blob not found"
+	ErrAccessDenied    = "access denied"
+	ErrInvalidHash     = "invalid hash"
+	ErrInvalidHashLen  = "Invalid blob hash length"
+	ErrBlobProtected   = "requested blob is protected"
 )
 
 // Protocol errors
@@ -97,6 +98,7 @@ type DefaultPeerServer struct {
 	protector         Protector
 	accessControl     liblbry.AccessControl
 	connectionTimeout time.Duration
+	logger            *zap.Logger
 }
 
 // ServerOption configures the peer server
@@ -120,6 +122,7 @@ func NewPeerServer(store liblbry.BlobStore, options ...ServerOption) PeerServer 
 		protector:         nil, // Default to no protection
 		accessControl:     nil, // Default to no access control
 		connectionTimeout: DefaultTimeout,
+		logger:            zap.NewNop(), // Default to no-op logger
 	}
 
 	// Apply options using helper function
@@ -149,6 +152,13 @@ func WithTimeout(timeout time.Duration) ServerOption {
 	}
 }
 
+// WithLogger sets the zap logger for the server
+func WithLogger(logger *zap.Logger) ServerOption {
+	return func(s *DefaultPeerServer) {
+		s.logger = logger
+	}
+}
+
 // HandleConnection handles an incoming peer connection
 func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -158,7 +168,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		// Set read deadline before reading message
 		err := conn.SetReadDeadline(time.Now().Add(p.connectionTimeout))
 		if err != nil {
-			fmt.Printf("Error setting read deadline: %v\n", err)
+			p.logger.Error("Error setting read deadline", zap.Error(err))
 			return
 		}
 
@@ -166,7 +176,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		message, err := p.readNextMessage(reader)
 		if err != nil {
 			if err != io.EOF {
-				fmt.Printf("Error reading from connection: %v\n", err)
+				p.logger.Error("Error reading from connection", zap.Error(err))
 			}
 			return
 		}
@@ -174,7 +184,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		// Clear read deadline after reading
 		err = conn.SetReadDeadline(time.Time{})
 		if err != nil {
-			fmt.Printf("Error clearing read deadline: %v\n", err)
+			p.logger.Error("Error clearing read deadline", zap.Error(err))
 			return
 		}
 
@@ -195,7 +205,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		peerIP := getPeerIP(conn)
 
 		// Handle request
-		response, blobData, err := p.handleRequest(request, message, peerIP)
+		response, blobData, err := p.handleRequest(request, peerIP)
 		if err != nil {
 			p.sendError(conn, err.Error())
 			continue
@@ -204,14 +214,14 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		// Set write deadline before writing response
 		err = conn.SetWriteDeadline(time.Now().Add(p.connectionTimeout))
 		if err != nil {
-			fmt.Printf("Error setting write deadline: %v\n", err)
+			p.logger.Error("Error setting write deadline", zap.Error(err))
 			return
 		}
 
 		// Send response
 		if err := p.sendResponse(conn, response, blobData); err != nil {
 			if !strings.Contains(err.Error(), "connection reset by peer") && !strings.Contains(err.Error(), "broken pipe") {
-				fmt.Printf("Error sending response: %v\n", err)
+				p.logger.Error("Error sending response", zap.Error(err))
 			}
 			return
 		}
@@ -219,7 +229,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		// Clear write deadline after writing
 		err = conn.SetWriteDeadline(time.Time{})
 		if err != nil {
-			fmt.Printf("Error clearing write deadline: %v\n", err)
+			p.logger.Error("Error clearing write deadline", zap.Error(err))
 			return
 		}
 	}
@@ -233,44 +243,50 @@ func IsValidJSON(b []byte) bool {
 
 // readNextMessage reads the next complete JSON message from the connection
 func (p *DefaultPeerServer) readNextMessage(reader *bufio.Reader) ([]byte, error) {
-	// Read first byte and check if it's '{'
-	firstByte, err := reader.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-
-	if firstByte != '{' {
-		return nil, errInvalidData
-	}
-
-	// Create buffer with first byte
-	buffer := []byte{firstByte}
-
-	// Read until we have a complete valid JSON message
+	// Skip leading ASCII whitespace (space, tab, CR, LF)
 	for {
-		// Check if we've exceeded max request size
-		if len(buffer) > MaxRequestSize {
-			return nil, errRequestTooLarge
-		}
-
-		// Read until we find a closing brace
-		chunk, err := reader.ReadBytes('}')
+		firstByte, err := reader.ReadByte()
 		if err != nil {
 			return nil, err
 		}
 
-		// Append chunk to buffer
-		buffer = append(buffer, chunk...)
+		// Check if byte is not ASCII whitespace
+		if firstByte != ' ' && firstByte != '\t' && firstByte != '\r' && firstByte != '\n' {
+			// Found non-whitespace byte, check if it's '{'
+			if firstByte != '{' {
+				return nil, errInvalidData
+			}
 
-		// Check if we have valid JSON
-		if IsValidJSON(buffer) {
-			return buffer, nil
+			// Create buffer with first byte
+			buffer := []byte{firstByte}
+
+			// Read until we have a complete valid JSON message
+			for {
+				// Check if we've exceeded max request size
+				if len(buffer) > MaxRequestSize {
+					return nil, errRequestTooLarge
+				}
+
+				// Read until we find a closing brace
+				chunk, err := reader.ReadBytes('}')
+				if err != nil {
+					return nil, err
+				}
+
+				// Append chunk to buffer
+				buffer = append(buffer, chunk...)
+
+				// Check if we have valid JSON
+				if IsValidJSON(buffer) {
+					return buffer, nil
+				}
+
+				// If we don't have valid JSON yet, continue reading
+			}
 		}
-
-		// If we don't have valid JSON yet, continue reading
+		// Continue loop to skip whitespace
 	}
 }
-
 
 // parseRequest parses an incoming request
 func (p *DefaultPeerServer) parseRequest(data []byte) (CompositeRequest, error) {
@@ -286,7 +302,7 @@ func (p *DefaultPeerServer) parseRequest(data []byte) (CompositeRequest, error) 
 }
 
 // handleRequest processes a parsed request and returns a response
-func (p *DefaultPeerServer) handleRequest(request CompositeRequest, originalData []byte, peerIP string) (CompositeResponse, []byte, error) {
+func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP string) (CompositeResponse, []byte, error) {
 	response := CompositeResponse{
 		AvailableBlobs: []string{}, // Always initialize as empty slice
 	}
@@ -307,9 +323,9 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, originalData
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
-		
+
 		response.BlobDataPaymentRate = paymentRateResponse
-		
+
 		// Also handle availability if requested_blobs is present
 		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
 	}
@@ -317,7 +333,7 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, originalData
 	// Handle LBRYcrd address request
 	if request.LBRYcrdAddress {
 		response.LbrycrdAddress = LbrycrdAddress
-		
+
 		// Also handle availability if requested_blobs is present
 		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
 	}
@@ -411,7 +427,10 @@ func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string
 	// Get blob data
 	data, err := p.store.Get(blobHash)
 	if err != nil {
-		return p.createIncomingBlobError(blobHash, fmt.Sprintf("failed to retrieve blob: %v", err)), nil, nil
+		// Log detailed error server-side
+		p.logger.Error("Failed to retrieve blob", zap.String("blobHash", blobHash), zap.Error(err))
+		// Return generic error to client
+		return p.createIncomingBlobError(blobHash, "failed to retrieve blob"), nil, nil
 	}
 
 	if data == nil {
@@ -432,7 +451,7 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, pa
 	if paymentRate < 0 {
 		return PaymentRateTooLow, nil
 	}
-	
+
 	// For now, we only handle the first blob hash in the list
 	if len(blobHashes) == 0 {
 		return PaymentRateAccepted, nil
@@ -485,16 +504,27 @@ func (p *DefaultPeerServer) sendResponse(conn net.Conn, response CompositeRespon
 
 // sendError sends an error response back to the client
 func (p *DefaultPeerServer) sendError(conn net.Conn, errorMsg string) {
+	// Ensure error writes respect connection timeout
+	if err := conn.SetWriteDeadline(time.Now().Add(p.connectionTimeout)); err != nil {
+		p.logger.Error("Error setting write deadline", zap.Error(err))
+		return
+	}
+	defer func() {
+		if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+			p.logger.Error("Error clearing write deadline", zap.Error(err))
+		}
+	}()
+
 	response := createErrorResponse(errorMsg)
 	data, err := json.Marshal(response)
 	if err != nil {
-		fmt.Printf("Failed to marshal error response: %v\n", err)
+		p.logger.Error("Failed to marshal error response", zap.Error(err))
 		return
 	}
 
 	_, err = conn.Write(data)
 	if err != nil {
-		fmt.Printf("Failed to send error response: %v\n", err)
+		p.logger.Error("Failed to send error response", zap.Error(err))
 	}
 }
 
