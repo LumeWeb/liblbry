@@ -61,9 +61,6 @@ func (m *DefaultManifestCreator) CreateManifest(source io.Reader, size int64) (*
 
 	// Get the SD blob
 	sd := encoder.SDBlob()
-	
-	// Ensure the key is properly assigned to the SD blob
-	sd.Key = key
 
 	// Serialize the SD blob
 	sdBlobData, err := sd.ToBlob()
