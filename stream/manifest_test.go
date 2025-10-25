@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 )
 
 func TestDefaultManifestCreator_CreateManifest(t *testing.T) {
@@ -28,8 +29,9 @@ func TestDefaultManifestCreator_CreateManifest(t *testing.T) {
 	assert.Empty(t, sd.StreamName)
 	assert.Empty(t, sd.SuggestedFileName)
 
-	// Key should be populated by the manifest creator
+	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
+	assert.Len(t, sd.Key, lbrycrypto.KeySize)
 
 	// StreamHash should be computed
 	assert.NotEmpty(t, sd.StreamHash)
@@ -81,8 +83,9 @@ func TestDefaultManifestCreator_CreateManifestFromPath(t *testing.T) {
 	assert.Empty(t, sd.StreamName)
 	assert.Empty(t, sd.SuggestedFileName)
 
-	// Key should be populated by the manifest creator
+	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
+	assert.Len(t, sd.Key, lbrycrypto.KeySize)
 
 	// StreamHash should be computed
 	assert.NotEmpty(t, sd.StreamHash)
@@ -129,8 +132,9 @@ func TestDefaultManifestCreator_ParseManifest(t *testing.T) {
 	// StreamType should be lbryfile
 	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
 
-	// Key should be populated
+	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
+	assert.Len(t, sd.Key, lbrycrypto.KeySize)
 
 	// StreamHash should be computed
 	assert.NotEmpty(t, sd.StreamHash)
@@ -221,6 +225,7 @@ func TestDefaultManifestCreator_CreateManifest_LargeData(t *testing.T) {
 	assert.Empty(t, sd.SuggestedFileName)
 	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
 	assert.NotEmpty(t, sd.Key)
+	assert.Len(t, sd.Key, lbrycrypto.KeySize)
 	assert.NotEmpty(t, sd.StreamHash)
 }
 

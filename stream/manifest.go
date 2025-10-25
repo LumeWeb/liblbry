@@ -1,11 +1,13 @@
 package stream
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 
-	"go.lumeweb.com/liblbry/crypto"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 )
 
 // ManifestCreator defines the interface for creating and parsing SD blob manifests
@@ -33,13 +35,18 @@ func NewManifestCreator() ManifestCreator {
 
 // CreateManifest creates an SD blob manifest from a reader
 func (m *DefaultManifestCreator) CreateManifest(source io.Reader, size int64) (*SDBlob, []byte, error) {
-	encoder := NewEncoder(source).SourceSizeHint(int(size))
-
 	// Generate a random key for encryption
-	key, err := crypto.GenerateKey()
+	key, err := lbrycrypto.GenerateKey()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate key: %w", err)
 	}
+
+	if size > int64(math.MaxInt) {
+		return nil, nil, fmt.Errorf("size hint overflows int: %d", size)
+	}
+
+	// Create encoder with the generated key before processing blobs
+	encoder := NewEncoderWithIVs(source, key, nil).SourceSizeHint(int(size))
 
 	// Process all blobs
 	for {
@@ -54,6 +61,8 @@ func (m *DefaultManifestCreator) CreateManifest(source io.Reader, size int64) (*
 
 	// Get the SD blob
 	sd := encoder.SDBlob()
+	
+	// Ensure the key is properly assigned to the SD blob
 	sd.Key = key
 
 	// Serialize the SD blob
@@ -66,14 +75,14 @@ func (m *DefaultManifestCreator) CreateManifest(source io.Reader, size int64) (*
 }
 
 // CreateManifestFromPath creates an SD blob manifest from a file path
-func (m *DefaultManifestCreator) CreateManifestFromPath(path string) (*SDBlob, []byte, error) {
+func (m *DefaultManifestCreator) CreateManifestFromPath(path string) (_ *SDBlob, _ []byte, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			err = fmt.Errorf("failed to close file: %w", closeErr)
+		if cerr := file.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to close file %q: %w", path, cerr))
 		}
 	}()
 
