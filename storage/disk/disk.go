@@ -63,7 +63,7 @@ func validateHash(hash string) bool {
 // The operation parameter is used for logging purposes.
 func validateHashWithError(hash string, operation string) error {
 	if !validateHash(hash) {
-		return fmt.Errorf("invalid hash format: %s", hash)
+		return fmt.Errorf("%s: invalid hash format: %s", operation, hash)
 	}
 	return nil
 }
@@ -89,8 +89,11 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	tmpPath := tmp.Name()
+	
+	// Use cleanup flag to control whether we remove the temp file
+	cleanup := true
 	defer func() {
-		if tmp != nil {
+		if cleanup {
 			_ = tmp.Close()
 			_ = os.Remove(tmpPath)
 		}
@@ -113,7 +116,6 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		logErrorIfLogger(logger, "failed to close temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
 		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
-	tmp = nil // Don't clean up in defer since we're about to rename
 
 	// Set restrictive permissions (owner read/write only)
 	if err := os.Chmod(tmpPath, 0600); err != nil {
@@ -126,6 +128,9 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		logErrorIfLogger(logger, "failed to rename temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath), zap.String("path", path))
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
+	
+	// Only if rename succeeds do we skip cleanup
+	cleanup = false
 
 	// Best-effort sync of parent directory to ensure rename is durable
 	if d, err := os.Open(dir); err == nil {
@@ -216,8 +221,9 @@ func safeJoin(base, hash string) (string, error) {
 	// Clean the path to resolve any ".." or "." components
 	cleanPath := filepath.Clean(expectedPath)
 
-	// Ensure the cleaned path is still within the base directory
-	if !strings.HasPrefix(cleanPath, filepath.Clean(base)+string(filepath.Separator)) {
+	// Ensure the cleaned path is still within the base directory using Rel to handle all cases
+	rel, err := filepath.Rel(filepath.Clean(base), cleanPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 		return "", fmt.Errorf("path traversal attempt detected: %s", hash)
 	}
 
@@ -248,8 +254,9 @@ func safeJoinSD(base, hash string) (string, error) {
 	// Clean the path to resolve any ".." or "." components
 	cleanPath := filepath.Clean(expectedPath)
 
-	// Ensure the cleaned path is still within the base directory
-	if !strings.HasPrefix(cleanPath, filepath.Clean(base)+string(filepath.Separator)) {
+	// Ensure the cleaned path is still within the base directory using Rel to handle all cases
+	rel, err := filepath.Rel(filepath.Clean(base), cleanPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 		return "", fmt.Errorf("path traversal attempt detected: %s", hash)
 	}
 
@@ -308,26 +315,26 @@ func (f DiskStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, e
 		return nil, err
 	}
 
-	// Create the directory if it doesn't exist
-	if err := os.MkdirAll(path, 0755); err != nil {
+	// Clean and validate the base path first
+	cleanPath := filepath.Clean(path)
+	if err := rejectSymlink(cleanPath); err != nil {
+		if f.logger != nil {
+			f.logger.Error("failed to create disk store - path contains symlink", zap.String("path", cleanPath), zap.Error(err))
+		}
+		return nil, err
+	}
+
+	// Create the directory if it doesn't exist (using cleaned path)
+	if err := os.MkdirAll(cleanPath, 0755); err != nil {
 		err = fmt.Errorf("failed to create storage directory: %w", err)
 		if f.logger != nil {
-			f.logger.Error("failed to create disk store", zap.Error(err))
+			f.logger.Error("failed to create disk store", zap.Error(err), zap.String("path", cleanPath))
 		}
 		return nil, err
 	}
 
 	if f.logger != nil {
-		f.logger.Debug("created disk store", zap.String("path", path))
-	}
-
-	// Clean and validate the base path
-	cleanPath := filepath.Clean(path)
-	if err := rejectSymlink(cleanPath); err != nil {
-		if f.logger != nil {
-			f.logger.Error("failed to create disk store - path contains symlink", zap.String("path", path), zap.Error(err))
-		}
-		return nil, err
+		f.logger.Debug("created disk store", zap.String("path", cleanPath))
 	}
 
 	return &DiskStore{path: cleanPath, logger: f.logger}, nil
