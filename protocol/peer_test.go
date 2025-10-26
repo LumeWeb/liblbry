@@ -17,29 +17,6 @@ import (
 	protocolmocks "go.lumeweb.com/liblbry/protocol/mocks"
 )
 
-// Test constants
-const (
-	testStoreName    = "test"
-	testHost         = "127.0.0.1:0"
-	testAllowedIP    = "127.0.0.1"
-	testDeniedIP     = "192.168.1.1"
-	testTimeout      = 5 * time.Second
-	testBufferSize   = 8192
-	shortTestTimeout = 10 * time.Millisecond
-
-	// Response constants
-	emptyAvailableBlobsResponse = `{"available_blobs":[]}`
-)
-
-// Blob hash constants
-const (
-	validBlobHash1 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	validBlobHash2 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-	validBlobHash3 = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
-
-	invalidBlobHash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	shortBlobHash   = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde"
-)
 
 var blobs = map[string][]byte{
 	validBlobHash1: []byte("abcdefg"),
@@ -499,7 +476,7 @@ func TestAccessControl(t *testing.T) {
 	if len(blobKeys) > 0 {
 		requestData := []byte(fmt.Sprintf(`{"requested_blobs":["%s"]}`, blobKeys[0]))
 		expectedResponse := []byte(emptyAvailableBlobsResponse)
-		handleRequestAndCompareWithIP(t, s, requestData, expectedResponse, "192.168.1.1")
+		handleRequestAndCompareWithIP(t, s, requestData, expectedResponse, testDeniedIP)
 	}
 }
 

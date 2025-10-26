@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -175,7 +176,8 @@ func TestDoHandshake_Success(t *testing.T) {
 	conn.WriteToReadBuffer(handshakeData)
 
 	// Perform handshake
-	err := server.(*DefaultReflectorServer).doHandshake(conn)
+	reader := bufio.NewReader(conn)
+	err := server.(*DefaultReflectorServer).doHandshake(conn, reader)
 
 	assert.NoError(t, err, "Expected handshake to succeed")
 
@@ -201,7 +203,8 @@ func TestDoHandshake_InvalidVersion(t *testing.T) {
 	conn.WriteToReadBuffer(handshakeData)
 
 	// Perform handshake
-	err := server.(*DefaultReflectorServer).doHandshake(conn)
+	reader := bufio.NewReader(conn)
+	err := server.(*DefaultReflectorServer).doHandshake(conn, reader)
 
 	assert.Error(t, err, "Expected handshake to fail with invalid version")
 	assert.True(t, errors.Is(err, ErrProtocolVersion), "Expected ErrProtocolVersion")
@@ -218,7 +221,8 @@ func TestDoHandshake_MissingVersion(t *testing.T) {
 	conn.WriteToReadBuffer(handshakeData)
 
 	// Perform handshake
-	err := server.(*DefaultReflectorServer).doHandshake(conn)
+	reader := bufio.NewReader(conn)
+	err := server.(*DefaultReflectorServer).doHandshake(conn, reader)
 
 	assert.Error(t, err, "Expected handshake to fail with missing version")
 	assert.True(t, errors.Is(err, ErrHandshakeMissing), "Expected ErrHandshakeMissing")
@@ -238,7 +242,8 @@ func TestReadBlobRequest_RegularBlob(t *testing.T) {
 	conn.WriteToReadBuffer(requestData)
 
 	// Read blob request
-	blobSize, blobHash, isSdBlob, err := server.(*DefaultReflectorServer).readBlobRequest(conn)
+	reader := bufio.NewReader(conn)
+	blobSize, blobHash, isSdBlob, err := server.(*DefaultReflectorServer).readBlobRequest(conn, reader)
 
 	assert.NoError(t, err, "Expected readBlobRequest to succeed")
 	assert.Equal(t, 1024, blobSize, "Expected blob size 1024")
@@ -260,7 +265,8 @@ func TestReadBlobRequest_SDBlob(t *testing.T) {
 	conn.WriteToReadBuffer(requestData)
 
 	// Read blob request
-	blobSize, blobHash, isSdBlob, err := server.(*DefaultReflectorServer).readBlobRequest(conn)
+	reader := bufio.NewReader(conn)
+	blobSize, blobHash, isSdBlob, err := server.(*DefaultReflectorServer).readBlobRequest(conn, reader)
 
 	assert.NoError(t, err, "Expected readBlobRequest to succeed")
 	assert.Equal(t, 512, blobSize, "Expected blob size 512")
@@ -282,7 +288,8 @@ func TestReadBlobRequest_EmptyHash(t *testing.T) {
 	conn.WriteToReadBuffer(requestData)
 
 	// Read blob request
-	_, _, _, err := server.(*DefaultReflectorServer).readBlobRequest(conn)
+	reader := bufio.NewReader(conn)
+	_, _, _, err := server.(*DefaultReflectorServer).readBlobRequest(conn, reader)
 
 	assert.Error(t, err, "Expected readBlobRequest to fail with empty hash")
 	assert.True(t, errors.Is(err, ErrBlobHashEmpty), "Expected ErrBlobHashEmpty")
@@ -302,7 +309,8 @@ func TestReadBlobRequest_BlobTooBig(t *testing.T) {
 	conn.WriteToReadBuffer(requestData)
 
 	// Read blob request
-	_, _, _, err := server.(*DefaultReflectorServer).readBlobRequest(conn)
+	reader := bufio.NewReader(conn)
+	_, _, _, err := server.(*DefaultReflectorServer).readBlobRequest(conn, reader)
 
 	assert.Error(t, err, "Expected readBlobRequest to fail with blob too big")
 	assert.True(t, errors.Is(err, ErrBlobTooBig), "Expected ErrBlobTooBig")
@@ -315,7 +323,7 @@ func TestShouldAcceptBlob_NewBlob(t *testing.T) {
 	// Mock store methods
 	store.On("Has", reflectorValidBlobHash1).Return(false, nil)
 
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false)
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false, "127.0.0.1")
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new blob")
@@ -329,7 +337,7 @@ func TestShouldAcceptBlob_ExistingBlob(t *testing.T) {
 	// Mock store methods - blob already exists
 	store.On("Has", reflectorValidBlobHash1).Return(true, nil)
 
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false)
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false, "127.0.0.1")
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing blob")
@@ -453,7 +461,7 @@ func TestReceiveBlob_Success(t *testing.T) {
 	store.On("Has", blobHash).Return(false, nil)
 
 	// Test shouldAcceptBlob first
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(blobHash, false)
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(blobHash, false, "127.0.0.1")
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new blob")
 	assert.Empty(t, neededBlobs, "Expected no needed blobs for regular blob")
@@ -493,7 +501,7 @@ func TestReceiveBlob_SDBlob(t *testing.T) {
 	store.On("Has", sdHash).Return(false, nil)
 
 	// Test shouldAcceptBlob for SD blob
-	shouldSend, _, err := server.(*DefaultReflectorServer).shouldAcceptBlob(sdHash, true)
+	shouldSend, _, err := server.(*DefaultReflectorServer).shouldAcceptBlob(sdHash, true, "127.0.0.1")
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new SD blob")
 
@@ -523,7 +531,8 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 	conn.WriteToReadBuffer(requestData)
 
 	// Receive blob (should not read blob data since we don't want it)
-	err := server.(*DefaultReflectorServer).receiveBlob(conn)
+	reader := bufio.NewReader(conn)
+	err := server.(*DefaultReflectorServer).receiveBlob(conn, reader)
 
 	assert.NoError(t, err, "Expected receiveBlob to succeed for existing blob")
 

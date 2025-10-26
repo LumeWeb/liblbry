@@ -139,8 +139,10 @@ func WithReflectorLogger(logger *zap.Logger) ReflectorServerOption {
 func (r *DefaultReflectorServer) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	reader := bufio.NewReader(conn)
+
 	// Perform handshake
-	if err := r.doHandshake(conn); err != nil {
+	if err := r.doHandshake(conn, reader); err != nil {
 		r.logger.Error("Handshake failed", zap.Error(err))
 		r.sendError(conn, err)
 		return
@@ -148,7 +150,7 @@ func (r *DefaultReflectorServer) HandleConnection(conn net.Conn) {
 
 	// Handle blob uploads
 	for {
-		err := r.receiveBlob(conn)
+		err := r.receiveBlob(conn, reader)
 		if err != nil {
 			if err == io.EOF {
 				return // Normal connection close
@@ -161,9 +163,9 @@ func (r *DefaultReflectorServer) HandleConnection(conn net.Conn) {
 }
 
 // doHandshake performs the protocol handshake
-func (r *DefaultReflectorServer) doHandshake(conn net.Conn) error {
+func (r *DefaultReflectorServer) doHandshake(conn net.Conn, reader *bufio.Reader) error {
 	var handshake HandshakeRequestResponse
-	if err := r.readJSON(conn, &handshake); err != nil {
+	if err := r.readJSON(conn, reader, &handshake); err != nil {
 		return err
 	}
 
@@ -181,15 +183,20 @@ func (r *DefaultReflectorServer) doHandshake(conn net.Conn) error {
 }
 
 // receiveBlob handles a blob upload request
-func (r *DefaultReflectorServer) receiveBlob(conn net.Conn) error {
+func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader) error {
 	// Read blob request
-	blobSize, blobHash, isSdBlob, err := r.readBlobRequest(conn)
+	blobSize, blobHash, isSdBlob, err := r.readBlobRequest(conn, reader)
 	if err != nil {
 		return err
 	}
 
+	peerIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		return fmt.Errorf("failed to parse peer address: %w", err)
+	}
+
 	// Check if we want this blob
-	shouldSend, neededBlobs, err := r.shouldAcceptBlob(blobHash, isSdBlob)
+	shouldSend, neededBlobs, err := r.shouldAcceptBlob(blobHash, isSdBlob, peerIP)
 	if err != nil {
 		return err
 	}
@@ -204,7 +211,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn) error {
 	}
 
 	// Read blob data
-	blobData, err := r.readRawBlob(conn, blobSize)
+	blobData, err := r.readRawBlob(conn, reader, blobSize)
 	if err != nil {
 		// Send transfer failure response
 		if sendErr := r.sendTransferResponse(conn, false, isSdBlob); sendErr != nil {
@@ -240,9 +247,9 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn) error {
 }
 
 // readBlobRequest reads and validates a blob upload request
-func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn) (int, string, bool, error) {
+func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Reader) (int, string, bool, error) {
 	var request SendBlobRequest
-	if err := r.readJSON(conn, &request); err != nil {
+	if err := r.readJSON(conn, reader, &request); err != nil {
 		return 0, "", false, fmt.Errorf("%w: %v", ErrInvalidBlobRequest, err)
 	}
 
@@ -272,7 +279,12 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn) (int, string, bo
 }
 
 // shouldAcceptBlob determines if the server should accept a blob
-func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool) (bool, []string, error) {
+func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool, peerIP string) (bool, []string, error) {
+	// Check access control
+	if r.accessControl != nil && !r.accessControl.Allow(blobHash, peerIP) {
+		return false, []string{}, nil
+	}
+
 	// Check if blob already exists
 	blobExists, err := r.store.Has(blobHash)
 	if err != nil {
@@ -339,14 +351,14 @@ func (r *DefaultReflectorServer) sendTransferResponse(conn net.Conn, receivedBlo
 	return r.writeData(conn, response)
 }
 
-// readRawBlob reads raw blob data from the connection
-func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, blobSize int) ([]byte, error) {
+// readRawBlob reads raw blob data from the connection with timeout
+func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, reader *bufio.Reader, blobSize int) ([]byte, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
 		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
 	blob := make([]byte, blobSize)
-	_, err := io.ReadFull(bufio.NewReader(conn), blob)
+	_, err := io.ReadFull(reader, blob)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read blob data: %w", err)
 	}
@@ -354,17 +366,17 @@ func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, blobSize int) ([]byt
 	return blob, nil
 }
 
-// readJSON reads and unmarshals JSON from the connection
-func (r *DefaultReflectorServer) readJSON(conn net.Conn, v interface{}) error {
+// readJSON reads and unmarshals JSON from the connection with timeout
+func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v interface{}) error {
 	if err := conn.SetReadDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
 		return fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
-	dec := json.NewDecoder(conn)
+	dec := json.NewDecoder(reader)
 	if err := dec.Decode(v); err != nil {
 		data, _ := io.ReadAll(dec.Buffered())
 		if len(data) > 0 {
-			return fmt.Errorf("%w: %s. Data: %s", err, err.Error(), hex.EncodeToString(data))
+			return fmt.Errorf("failed to decode JSON: %w; data=%s", err, hex.EncodeToString(data))
 		}
 		return fmt.Errorf("failed to decode JSON: %w", err)
 	}
