@@ -31,12 +31,10 @@ func TestLoggerIntegration(t *testing.T) {
 	
 	// Test putting and getting data (should not panic even with no-op logger)
 	testData := []byte("test data")
-	testHash := "testhash1234567890"
+	testHash := "84eaddedccac7c406994a857e6c821f5ab3f0e700a81d716afd2570d11d5ef0e963152e95459ddc3637b4011ba3b38c2"
 	
 	err = store.Put(testHash, testData)
-	if err != nil {
-		t.Fatalf("Failed to put data: %v", err)
-	}
+	require.NoError(t, err, "Failed to put data")
 	
 	// Test 2: Logger properly configured from config
 	logger = zap.NewNop()
@@ -46,15 +44,11 @@ func TestLoggerIntegration(t *testing.T) {
 	require.NoError(t, configWithLogger.Set("logger", logger))
 	
 	storeWithLogger, err := factory.CreateStore(configWithLogger)
-	if err != nil {
-		t.Fatalf("Failed to create store with logger: %v", err)
-	}
+	require.NoError(t, err, "Failed to create store with logger")
 	
 	// Test putting and getting data with actual logger
 	err = storeWithLogger.Put(testHash, testData)
-	if err != nil {
-		t.Fatalf("Failed to put data with logger: %v", err)
-	}
+	require.NoError(t, err, "Failed to put data with logger")
 	
 	// Test 3: Verify both stores implement the interface
 	if store.Name() != "disk" {
@@ -69,18 +63,14 @@ func TestLoggerIntegration(t *testing.T) {
 func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 	// Test with valid config including logger
 	t.Run("WithLoggerConfig", func(t *testing.T) {
-		tempDir := t.TempDir()
-		logger := zap.NewNop()
-		factory := &DiskStoreFactory{}
+		factory, tempDir := setupTestFactory(t)
 		k := koanf.New(".")
 		require.NoError(t, k.Set("path", tempDir))
-		require.NoError(t, k.Set("logger", logger))
+		require.NoError(t, k.Set("logger", factory.logger))
 		config := k
 
 		store, err := factory.CreateStore(config)
-		if err != nil {
-			t.Fatalf("CreateStore failed with valid config: %v", err)
-		}
+		require.NoError(t, err, "CreateStore failed with valid config")
 
 		if store == nil {
 			t.Fatal("CreateStore returned nil store")
@@ -93,16 +83,13 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with config without logger
 	t.Run("WithoutLoggerConfig", func(t *testing.T) {
-		tempDir := t.TempDir()
-		factory := &DiskStoreFactory{}
+		factory, tempDir := setupTestFactory(t)
 		k := koanf.New(".")
 		require.NoError(t, k.Set("path", tempDir))
 		config := k
 
 		store, err := factory.CreateStore(config)
-		if err != nil {
-			t.Fatalf("CreateStore failed without logger config: %v", err)
-		}
+		require.NoError(t, err, "CreateStore failed without logger config")
 
 		if store == nil {
 			t.Fatal("CreateStore returned nil store without logger config")
@@ -115,13 +102,11 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with nil config
 	t.Run("NilConfig", func(t *testing.T) {
-		factory := &DiskStoreFactory{}
+		factory, _ := setupTestFactory(t)
 		var config *koanf.Koanf
 
 		store, err := factory.CreateStore(config)
-		if err == nil {
-			t.Fatal("Expected error for nil config, but got none")
-		}
+		require.Error(t, err, "Expected error for nil config, but got none")
 
 		if store != nil {
 			t.Fatal("Expected nil store for nil config")
@@ -130,7 +115,7 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test Name method
 	t.Run("NameMethod", func(t *testing.T) {
-		factory := &DiskStoreFactory{}
+		factory, _ := setupTestFactory(t)
 		expectedName := "disk"
 		actualName := factory.Name()
 
@@ -142,10 +127,12 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 // Test that the BlobStore interface is properly implemented
 func TestLoggerStore_Interface(t *testing.T) {
-	var _ liblbry.BlobStore = &DiskStore{}
+	store, _ := setupTestStore(t)
+	var _ liblbry.BlobStore = store
 }
 
 // Test that the StoreFactory interface is properly implemented
 func TestLoggerStoreFactory_Interface(t *testing.T) {
-	var _ liblbry.StoreFactory = &DiskStoreFactory{}
+	factory, _ := setupTestFactory(t)
+	var _ liblbry.StoreFactory = factory
 }

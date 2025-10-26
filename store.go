@@ -11,10 +11,18 @@ type StoreFactory interface {
 	Name() string
 }
 
+// LoggerGetter defines an interface for types that can provide their logger
+type LoggerGetter interface {
+	GetLogger() *zap.Logger
+}
+
 // LoggerSetter defines an interface for types that can have a logger configured
 type LoggerSetter interface {
 	SetLogger(*zap.Logger)
 }
+
+// defaultLogger is the package-level default logger
+var defaultLogger = zap.NewNop()
 
 // StoreFactoryOption defines a functional option for configuring StoreFactory implementations
 type StoreFactoryOption interface {
@@ -40,17 +48,28 @@ func WithLogger(logger *zap.Logger) StoreFactoryOption {
 }
 
 // CreateStorageFactory is a generic helper function that creates instances of StoreFactory implementations
-func CreateStorageFactory[T any](logger *zap.Logger) (T, error) {
+func CreateStorageFactory[T StoreFactory](logger *zap.Logger) (T, error) {
 	return CreateStorageFactoryWithOptions[T](WithLogger(logger))
 }
 
 // CreateStorageFactoryWithOptions is a generic helper function that creates instances of StoreFactory implementations with options
-func CreateStorageFactoryWithOptions[T any](opts ...StoreFactoryOption) (T, error) {
+func CreateStorageFactoryWithOptions[T StoreFactory](opts ...StoreFactoryOption) (T, error) {
 	var factory T
+
 	for _, opt := range opts {
 		if err := opt.Apply(&factory); err != nil {
 			return factory, err
 		}
 	}
+
+	// Ensure predictable logger defaulting
+	if lg, ok := any(&factory).(LoggerGetter); ok {
+		if lg.GetLogger() == nil {
+			if ls, ok := any(&factory).(LoggerSetter); ok {
+				ls.SetLogger(defaultLogger)
+			}
+		}
+	}
+
 	return factory, nil
 }

@@ -1,29 +1,260 @@
-// Package liblbry implements a disk-based blob storage backend
+// Package disk implements a disk-based blob storage backend.
+//
+// The disk storage organizes blobs in a two-level directory structure based on
+// the first two characters of the blob hash. Regular blobs are stored directly
+// under the base path, while SD blobs are stored in an "sd" subdirectory.
+//
+// Example directory structure:
+//
+//	storage/
+//	  ├── ab/
+//	  │   ├── abc123... (regular blob)
+//	  │   └── abd456... (regular blob)
+//	  ├── cd/
+//	  │   └── cde789... (regular blob)
+//	  └── sd/
+//	      ├── ef/
+//	      │   └── efg123... (SD blob)
+//	      └── gh/
+//	          └── ghi456... (SD blob)
 package disk
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/knadh/koanf/v2"
-	"go.lumeweb.com/liblbry"
+	liblbry "go.lumeweb.com/liblbry"
 	"go.uber.org/zap"
 )
 
-// DiskStore implements the BlobStore interface using the file system
+var safeHashRe = regexp.MustCompile(`^[a-fA-F0-9]{96}$`)
+
+// DiskStore implements the BlobStore interface using the file system.
+//
+// It provides methods to store, retrieve, and check for the existence of blobs
+// on disk. Blobs are stored in a hierarchical directory structure to prevent
+// having too many files in a single directory.
 type DiskStore struct {
 	path   string
 	logger *zap.Logger
 }
 
-// DiskStoreFactory implements the StoreFactory interface for creating DiskStore instances
+// DiskStoreFactory implements the StoreFactory interface for creating DiskStore instances.
+//
+// It creates DiskStore objects configured with a base storage path.
 type DiskStoreFactory struct {
 	logger *zap.Logger
 }
 
-// CreateStore creates a new DiskStore instance from the provided configuration
-func (f *DiskStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, error) {
+// validateHash checks if the hash format is valid.
+//
+// A valid hash is a 96-character hexadecimal string.
+func validateHash(hash string) bool {
+	return safeHashRe.MatchString(hash)
+}
+
+// validateHashWithError combines hash validation with error creation.
+//
+// It checks if the hash format is valid and returns an error if not.
+// The operation parameter is used for logging purposes.
+func validateHashWithError(hash string, operation string) error {
+	if !validateHash(hash) {
+		return fmt.Errorf("invalid hash format: %s", hash)
+	}
+	return nil
+}
+
+// atomicWrite handles the atomic write pattern used in Put/PutSD.
+//
+// It writes data to a temporary file first and then renames it to the final path,
+// ensuring that the file is either completely written or not written at all.
+// The operation parameter is used for logging purposes.
+func atomicWrite(path string, data []byte, logger *zap.Logger, operation string) error {
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(path)
+	
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		logErrorIfLogger(logger, "failed to create directory for "+operation+" operation", err, zap.String("dir", dir))
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Perform atomic write using temporary file
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		logErrorIfLogger(logger, "failed to write temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
+		return fmt.Errorf("failed to write temporary file: %w", err)
+	}
+
+	// Rename temporary file to final path
+	if err := os.Rename(tmpPath, path); err != nil {
+		// Clean up temporary file if rename fails
+		_ = os.Remove(tmpPath)
+		logErrorIfLogger(logger, "failed to rename temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath), zap.String("path", path))
+		return fmt.Errorf("failed to rename temporary file: %w", err)
+	}
+
+	return nil
+}
+
+// checkBlobPaths checks both regular and SD blob paths, returns data if found.
+//
+// It first attempts to find a regular blob, and if not found, tries to find an SD blob.
+// Returns the data, any error encountered, and a boolean indicating if the blob was found.
+// The operation parameter is used for logging purposes.
+func checkBlobPaths(basePath, hash string, logger *zap.Logger, operation string) ([]byte, error, bool) {
+	// Try to get regular blob with safe path construction
+	blobPath, err := safeJoin(basePath, hash)
+	if err != nil {
+		logDebugIfLogger(logger, "unsafe path detected for "+operation+" operation", zap.String("hash", hash), zap.Error(err))
+		return nil, err, false
+	}
+
+	data, err := os.ReadFile(blobPath)
+	if err == nil {
+		logDebugIfLogger(logger, "retrieved regular blob", zap.String("hash", hash), zap.String("path", blobPath))
+		return data, nil, true
+	}
+	if !os.IsNotExist(err) {
+		logErrorIfLogger(logger, "failed to read regular blob", err, zap.String("hash", hash), zap.String("path", blobPath))
+		return nil, err, false
+	}
+
+	// If regular blob doesn't exist, try SD blob
+	sdBlobPath, err := safeJoinSD(basePath, hash)
+	if err != nil {
+		logDebugIfLogger(logger, "unsafe path detected for "+operation+" operation (SD blob)", zap.String("hash", hash), zap.Error(err))
+		return nil, err, false
+	}
+
+	data, err = os.ReadFile(sdBlobPath)
+	if err == nil {
+		logDebugIfLogger(logger, "retrieved SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
+		return data, nil, true
+	}
+	if !os.IsNotExist(err) {
+		logErrorIfLogger(logger, "failed to read SD blob", err, zap.String("hash", hash), zap.String("path", sdBlobPath))
+		return nil, err, false
+	}
+
+	// If neither exists, return not found error
+	logDebugIfLogger(logger, "blob not found for "+operation+" operation", zap.String("hash", hash))
+	return nil, fmt.Errorf("blob not found: %s", hash), false
+}
+
+// logDebugIfLogger eliminates repeated logger nil checks for debug logs.
+//
+// It logs a debug message only if the logger is not nil.
+func logDebugIfLogger(logger *zap.Logger, msg string, fields ...zap.Field) {
+	if logger != nil {
+		logger.Debug(msg, fields...)
+	}
+}
+
+// logErrorIfLogger eliminates repeated logger nil checks for error logs.
+//
+// It logs an error message only if the logger is not nil.
+func logErrorIfLogger(logger *zap.Logger, msg string, err error, fields ...zap.Field) {
+	if logger != nil {
+		logger.Error(msg, append(fields, zap.Error(err))...)
+	}
+}
+
+// safeJoin safely joins paths and ensures they don't escape the base directory.
+//
+// It validates the hash format, constructs a safe path, and checks for path traversal attempts.
+// It also verifies that directories in the path are not symlinks.
+func safeJoin(base, hash string) (string, error) {
+	// Validate hash format
+	if !validateHash(hash) {
+		return "", fmt.Errorf("invalid hash format: %s", hash)
+	}
+
+	// Create the expected path
+	subDir := hash[:2]
+	expectedPath := filepath.Join(base, subDir, hash)
+
+	// Clean the path to resolve any ".." or "." components
+	cleanPath := filepath.Clean(expectedPath)
+
+	// Ensure the cleaned path is still within the base directory
+	if !strings.HasPrefix(cleanPath, filepath.Clean(base)+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal attempt detected: %s", hash)
+	}
+
+	// Check for symlinks in the base directory and subdirectory
+	subDirPath := filepath.Join(base, subDir)
+	if err := rejectSymlink(subDirPath); err != nil {
+		return "", err
+	}
+
+	return cleanPath, nil
+}
+
+// safeJoinSD safely joins paths for SD blobs and ensures they don't escape the base directory.
+//
+// It validates the hash format, constructs a safe path for SD blobs, and checks for path traversal attempts.
+// It also verifies that directories in the path (base, sd, and subdirectory) are not symlinks.
+func safeJoinSD(base, hash string) (string, error) {
+	// Validate hash format
+	if !validateHash(hash) {
+		return "", fmt.Errorf("invalid hash format: %s", hash)
+	}
+
+	// Create the expected path for SD blob
+	sdDir := "sd"
+	subDir := hash[:2]
+	expectedPath := filepath.Join(base, sdDir, subDir, hash)
+
+	// Clean the path to resolve any ".." or "." components
+	cleanPath := filepath.Clean(expectedPath)
+
+	// Ensure the cleaned path is still within the base directory
+	if !strings.HasPrefix(cleanPath, filepath.Clean(base)+string(filepath.Separator)) {
+		return "", fmt.Errorf("path traversal attempt detected: %s", hash)
+	}
+
+	// Check for symlinks in the base directory, sd directory, and subdirectory
+	sdDirPath := filepath.Join(base, sdDir)
+	subDirPath := filepath.Join(base, sdDir, subDir)
+	
+	if err := rejectSymlink(sdDirPath); err != nil {
+		return "", err
+	}
+	
+	if err := rejectSymlink(subDirPath); err != nil {
+		return "", err
+	}
+
+	return cleanPath, nil
+}
+
+// rejectSymlink checks if the given path is a symlink.
+//
+// It returns an error if the path is a symlink, which helps prevent symlink-based attacks.
+func rejectSymlink(path string) error {
+	// Check if this path is a symlink
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink detected in path: %s", path)
+	}
+	return nil
+}
+
+// CreateStore creates a new DiskStore instance from the provided configuration.
+//
+// It validates the configuration, creates the storage directory if it doesn't exist,
+// and initializes a new DiskStore with the specified path.
+//
+// Parameters:
+//   - config: A koanf configuration object containing the storage path
+//
+// Returns:
+//   - liblbry.BlobStore: A new DiskStore instance
+//   - error: Any error encountered during store creation, or an error if the configuration is invalid
+func (f DiskStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, error) {
 	if config == nil {
 		err := fmt.Errorf("configuration cannot be nil")
 		if f.logger != nil {
@@ -54,189 +285,187 @@ func (f *DiskStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, 
 		f.logger.Debug("created disk store", zap.String("path", path))
 	}
 
-	return &DiskStore{path: path, logger: f.logger}, nil
+	// Clean and validate the base path
+	cleanPath := filepath.Clean(path)
+	if err := rejectSymlink(cleanPath); err != nil {
+		if f.logger != nil {
+			f.logger.Error("failed to create disk store - path contains symlink", zap.String("path", path), zap.Error(err))
+		}
+		return nil, err
+	}
+
+	return &DiskStore{path: cleanPath, logger: f.logger}, nil
 }
 
-// Name returns the name of the factory
-func (f *DiskStoreFactory) Name() string {
+// Name returns the name of the factory.
+//
+// This method is part of the StoreFactory interface.
+func (f DiskStoreFactory) Name() string {
 	if f.logger != nil {
 		f.logger.Debug("returning disk store factory name")
 	}
 	return "disk"
 }
 
-// SetLogger configures the factory with a logger
+// SetLogger configures the factory with a logger.
+//
+// This method allows setting a logger for the factory after creation.
 func (f *DiskStoreFactory) SetLogger(logger *zap.Logger) {
 	f.logger = logger
 }
 
-// Has checks if a blob exists in the disk store
+// GetLogger returns the factory's logger.
+//
+// This method returns the logger currently configured for the factory.
+func (f *DiskStoreFactory) GetLogger() *zap.Logger {
+	return f.logger
+}
+
+// Has checks if a blob exists in the disk store.
+//
+// It first attempts to check for a regular blob, and if not found, tries to check for an SD blob.
+// Invalid hash formats are handled gracefully by returning false with no error.
+//
+// Parameters:
+//   - hash: The 96-character hexadecimal hash of the blob to check
+//
+// Returns:
+//   - bool: True if the blob exists, false otherwise
+//   - error: Any error encountered during the check operation
 func (d *DiskStore) Has(hash string) (bool, error) {
-	if len(hash) < 2 {
-		if d.logger != nil {
-			d.logger.Debug("invalid hash length for Has operation", zap.String("hash", hash))
-		}
+	// Validate hash format
+	if !validateHash(hash) {
+		logDebugIfLogger(d.logger, "invalid hash format for Has operation", zap.String("hash", hash))
 		return false, nil
 	}
 
-	// Check regular blob
-	blobPath := filepath.Join(d.path, hash[:2], hash)
+	// Check regular blob with safe path construction
+	blobPath, err := safeJoin(d.path, hash)
+	if err != nil {
+		logDebugIfLogger(d.logger, "unsafe path detected for Has operation", zap.String("hash", hash), zap.Error(err))
+		return false, nil
+	}
+
 	if _, err := os.Stat(blobPath); err == nil {
-		if d.logger != nil {
-			d.logger.Debug("found regular blob", zap.String("hash", hash), zap.String("path", blobPath))
-		}
+		logDebugIfLogger(d.logger, "found regular blob", zap.String("hash", hash), zap.String("path", blobPath))
 		return true, nil
 	}
 
-	// Check SD blob
-	sdBlobPath := filepath.Join(d.path, "sd", hash[:2], hash)
+	// Check SD blob with safe path construction
+	sdBlobPath, err := safeJoinSD(d.path, hash)
+	if err != nil {
+		logDebugIfLogger(d.logger, "unsafe path detected for Has operation (SD blob)", zap.String("hash", hash), zap.Error(err))
+		return false, nil
+	}
+
 	if _, err := os.Stat(sdBlobPath); err == nil {
-		if d.logger != nil {
-			d.logger.Debug("found SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
-		}
+		logDebugIfLogger(d.logger, "found SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
 		return true, nil
 	}
 
-	if d.logger != nil {
-		d.logger.Debug("blob not found", zap.String("hash", hash))
-	}
+	logDebugIfLogger(d.logger, "blob not found", zap.String("hash", hash))
 	return false, nil
 }
 
-// Get retrieves a blob from the disk store
+// Get retrieves a blob from the disk store.
+//
+// It first attempts to retrieve a regular blob, and if not found, tries to retrieve an SD blob.
+// Returns the blob data and any error encountered during retrieval.
+//
+// Parameters:
+//   - hash: The 96-character hexadecimal hash of the blob to retrieve
+//
+// Returns:
+//   - []byte: The blob data
+//   - error: Any error encountered during retrieval, or an error if the hash format is invalid
 func (d *DiskStore) Get(hash string) ([]byte, error) {
-	if len(hash) < 2 {
-		err := fmt.Errorf("invalid hash: %s", hash)
-		if d.logger != nil {
-			d.logger.Error("invalid hash for Get operation", zap.String("hash", hash), zap.Error(err))
-		}
+	// Validate hash format
+	if err := validateHashWithError(hash, "Get"); err != nil {
+		logDebugIfLogger(d.logger, "invalid hash format for Get operation", zap.String("hash", hash))
 		return nil, err
 	}
 
-	// Try to get regular blob first
-	blobPath := filepath.Join(d.path, hash[:2], hash)
-	if data, err := os.ReadFile(blobPath); err == nil {
-		if d.logger != nil {
-			d.logger.Debug("retrieved regular blob", 
-				zap.String("hash", hash), 
-				zap.String("path", blobPath), 
-				zap.Int("size", len(data)))
-		}
-		return data, nil
+	data, err, found := checkBlobPaths(d.path, hash, d.logger, "Get")
+	if found {
+		return data, err
 	}
-
-	// Try to get SD blob
-	sdBlobPath := filepath.Join(d.path, "sd", hash[:2], hash)
-	if data, err := os.ReadFile(sdBlobPath); err == nil {
-		if d.logger != nil {
-			d.logger.Debug("retrieved SD blob", 
-				zap.String("hash", hash), 
-				zap.String("path", sdBlobPath), 
-				zap.Int("size", len(data)))
-		}
-		return data, nil
-	}
-
-	err := fmt.Errorf("blob not found: %s", hash)
-	if d.logger != nil {
-		d.logger.Debug("blob not found in Get operation", zap.String("hash", hash), zap.Error(err))
-	}
+	
 	return nil, err
 }
 
-// Put stores a regular blob in the disk store
+// Put stores a blob in the disk store using atomic write.
+//
+// The blob is stored in a hierarchical directory structure based on the first
+// two characters of the hash. The write operation is atomic, using a temporary
+// file that is renamed to the final path.
+//
+// Parameters:
+//   - hash: The 96-character hexadecimal hash of the blob
+//   - data: The blob data to store
+//
+// Returns:
+//   - error: Any error encountered during storage, or an error if the hash format is invalid
 func (d *DiskStore) Put(hash string, data []byte) error {
-	if len(hash) < 2 {
-		err := fmt.Errorf("invalid hash: %s", hash)
-		if d.logger != nil {
-			d.logger.Error("invalid hash for Put operation", zap.String("hash", hash), zap.Error(err))
-		}
+	// Validate hash format
+	if err := validateHashWithError(hash, "Put"); err != nil {
+		logDebugIfLogger(d.logger, "invalid hash format for Put operation", zap.String("hash", hash))
 		return err
 	}
 
-	// Create directory structure
-	blobDir := filepath.Join(d.path, hash[:2])
-	if err := os.MkdirAll(blobDir, 0755); err != nil {
-		err = fmt.Errorf("failed to create blob directory: %w", err)
-		if d.logger != nil {
-			d.logger.Error("failed to create blob directory", 
-				zap.String("hash", hash), 
-				zap.String("directory", blobDir), 
-				zap.Error(err))
-		}
+	// Create safe path for the blob
+	blobPath, err := safeJoin(d.path, hash)
+	if err != nil {
+		logDebugIfLogger(d.logger, "unsafe path detected for Put operation", zap.String("hash", hash), zap.Error(err))
 		return err
 	}
 
-	// Write blob data
-	blobPath := filepath.Join(blobDir, hash)
-	if err := os.WriteFile(blobPath, data, 0644); err != nil {
-		err = fmt.Errorf("failed to write blob: %w", err)
-		if d.logger != nil {
-			d.logger.Error("failed to write blob", 
-				zap.String("hash", hash), 
-				zap.String("path", blobPath), 
-				zap.Int("size", len(data)), 
-				zap.Error(err))
-		}
+	if err := atomicWrite(blobPath, data, d.logger, "Put"); err != nil {
 		return err
 	}
 
-	if d.logger != nil {
-		d.logger.Debug("stored regular blob", 
-			zap.String("hash", hash), 
-			zap.String("path", blobPath), 
-			zap.Int("size", len(data)))
-	}
+	logDebugIfLogger(d.logger, "stored blob", zap.String("hash", hash), zap.String("path", blobPath))
+
 	return nil
 }
 
-// PutSD stores an SD blob in the disk store
+// PutSD stores an SD blob in the disk store using atomic write.
+//
+// SD blobs are stored in a separate "sd" subdirectory with the same hierarchical
+// structure as regular blobs. The write operation is atomic, using a temporary
+// file that is renamed to the final path.
+//
+// Parameters:
+//   - hash: The 96-character hexadecimal hash of the SD blob
+//   - data: The SD blob data to store
+//
+// Returns:
+//   - error: Any error encountered during storage, or an error if the hash format is invalid
 func (d *DiskStore) PutSD(hash string, data []byte) error {
-	if len(hash) < 2 {
-		err := fmt.Errorf("invalid hash: %s", hash)
-		if d.logger != nil {
-			d.logger.Error("invalid hash for PutSD operation", zap.String("hash", hash), zap.Error(err))
-		}
+	// Validate hash format
+	if err := validateHashWithError(hash, "PutSD"); err != nil {
+		logDebugIfLogger(d.logger, "invalid hash format for PutSD operation", zap.String("hash", hash))
 		return err
 	}
 
-	// Create directory structure for SD blobs
-	sdBlobDir := filepath.Join(d.path, "sd", hash[:2])
-	if err := os.MkdirAll(sdBlobDir, 0755); err != nil {
-		err = fmt.Errorf("failed to create SD blob directory: %w", err)
-		if d.logger != nil {
-			d.logger.Error("failed to create SD blob directory", 
-				zap.String("hash", hash), 
-				zap.String("directory", sdBlobDir), 
-				zap.Error(err))
-		}
+	// Create safe path for the SD blob
+	sdBlobPath, err := safeJoinSD(d.path, hash)
+	if err != nil {
+		logDebugIfLogger(d.logger, "unsafe path detected for PutSD operation", zap.String("hash", hash), zap.Error(err))
 		return err
 	}
 
-	// Write SD blob data
-	sdBlobPath := filepath.Join(sdBlobDir, hash)
-	if err := os.WriteFile(sdBlobPath, data, 0644); err != nil {
-		err = fmt.Errorf("failed to write SD blob: %w", err)
-		if d.logger != nil {
-			d.logger.Error("failed to write SD blob", 
-				zap.String("hash", hash), 
-				zap.String("path", sdBlobPath), 
-				zap.Int("size", len(data)), 
-				zap.Error(err))
-		}
+	if err := atomicWrite(sdBlobPath, data, d.logger, "PutSD"); err != nil {
 		return err
 	}
 
-	if d.logger != nil {
-		d.logger.Debug("stored SD blob", 
-			zap.String("hash", hash), 
-			zap.String("path", sdBlobPath), 
-			zap.Int("size", len(data)))
-	}
+	logDebugIfLogger(d.logger, "stored SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
+
 	return nil
 }
 
-// Name returns the name of the disk store
+// Name returns the name of the store.
+//
+// This method is part of the BlobStore interface.
 func (d *DiskStore) Name() string {
 	if d.logger != nil {
 		d.logger.Debug("returning disk store name")

@@ -13,43 +13,148 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// setupTestStore creates a temporary directory, logger, and disk store for testing
+func setupTestStore(t *testing.T) (*DiskStore, string) {
+	tempDir := t.TempDir()
+	logger := zap.NewNop()
+	store := &DiskStore{path: tempDir, logger: logger}
+	return store, tempDir
+}
+
+// setupTestFactory creates a disk store factory for testing
+func setupTestFactory(t *testing.T) (*DiskStoreFactory, string) {
+	tempDir := t.TempDir()
+	logger := zap.NewNop()
+	factory := &DiskStoreFactory{logger: logger}
+	return factory, tempDir
+}
+
+
+// testInvalidHashes tests all invalid hash scenarios
+func testInvalidHashes(t *testing.T, store *DiskStore) {
+	t.Helper()
+	
+	invalidHashes := []string{
+		"",              // empty hash
+		"a",             // too short (1 character)
+		"abc@",          // invalid character @
+		"abc#",          // invalid character #
+		"abc$",          // invalid character $
+		"abc%",          // invalid character %
+		"abc def",       // space character
+		"../abc123",     // path traversal
+		"..\\abc123",    // windows path traversal
+		"/abc123",       // absolute path
+		"\\abc123",      // windows absolute path
+		"abc123/def456", // path separator
+		"abc123\\def456", // windows path separator
+		"abc123\000def456", // null byte
+		"abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd12345", // too long (97 characters)
+	}
+
+	for _, hash := range invalidHashes {
+		t.Run("InvalidHash_"+hash, func(t *testing.T) {
+			// Test Put with invalid hash
+			err := store.Put(hash, []byte("test"))
+			require.Error(t, err, "Expected error for invalid hash: %s", hash)
+
+			// Test PutSD with invalid hash
+			err = store.PutSD(hash, []byte("test"))
+			require.Error(t, err, "Expected error for invalid hash: %s", hash)
+
+			// Test Get with invalid hash
+			_, err = store.Get(hash)
+			require.Error(t, err, "Expected error for invalid hash: %s", hash)
+
+			// Test Has with invalid hash - should return false, nil (not an error)
+			exists, err := store.Has(hash)
+			require.NoError(t, err, "Has should not return an error for invalid hash: %s", hash)
+			require.False(t, exists, "Has should return false for invalid hash: %s", hash)
+		})
+	}
+}
+
+// testPathTraversal tests path traversal attempts
+func testPathTraversal(t *testing.T, store *DiskStore) {
+	t.Helper()
+	
+	traversalAttempts := []struct {
+		name string
+		hash string
+	}{
+		{"DotDotSlash", "../abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"},
+		{"DotDotBackslash", "..\\abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"},
+		{"MultipleDotDot", "../../../abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"},
+		{"DotDotInSubdir", "ab/../abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"},
+		{"DotDotBackslashInSubdir", "ab\\..\\abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"},
+	}
+
+	for _, attempt := range traversalAttempts {
+		t.Run(attempt.name, func(t *testing.T) {
+			// Test Put with path traversal attempt
+			err := store.Put(attempt.hash, []byte("test"))
+			require.Error(t, err, "Expected error for path traversal attempt: %s", attempt.name)
+
+			// Test PutSD with path traversal attempt
+			err = store.PutSD(attempt.hash, []byte("test"))
+			require.Error(t, err, "Expected error for path traversal attempt: %s", attempt.name)
+		})
+	}
+}
+
+// setupSymlinkAttack sets up a symlink attack scenario and returns the symlink target path
+func setupSymlinkAttack(t *testing.T, baseDir, hash string) string {
+	t.Helper()
+	
+	// Create a directory that will be replaced with a symlink
+	legitimateDir := filepath.Join(baseDir, hash[:2])
+	err := os.MkdirAll(legitimateDir, 0755)
+	require.NoError(t, err)
+
+	// Remove the directory and replace it with a symlink pointing outside
+	err = os.RemoveAll(legitimateDir)
+	require.NoError(t, err)
+
+	symlinkTarget := filepath.Join(baseDir, "..", "symlink_target")
+	err = os.MkdirAll(symlinkTarget, 0755)
+	require.NoError(t, err)
+
+	err = os.Symlink(symlinkTarget, legitimateDir)
+	require.NoError(t, err)
+	
+	return symlinkTarget
+}
+
 func TestDiskStoreFactory_CreateStore(t *testing.T) {
 	// Test with valid config
 	t.Run("ValidConfig", func(t *testing.T) {
-		tempDir := t.TempDir()
-		logger := zap.NewNop()
-		factory, err := liblbry.CreateStorageFactory[DiskStoreFactory](logger)
-		if err != nil {
-			t.Fatalf("CreateStorageFactory failed: %v", err)
-		}
+		store, _ := setupTestStore(t)
+		factory, err := liblbry.CreateStorageFactory[DiskStoreFactory](store.logger)
+		require.NoError(t, err, "CreateStorageFactory failed")
+		
 		k := koanf.New(".")
-		require.NoError(t, k.Set("path", tempDir))
+		require.NoError(t, k.Set("path", store.path))
 		config := k
 
-		store, err := factory.CreateStore(config)
-		if err != nil {
-			t.Fatalf("CreateStore failed with valid config: %v", err)
-		}
+		createdStore, err := factory.CreateStore(config)
+		require.NoError(t, err, "CreateStore failed with valid config")
 
-		if store == nil {
+		if createdStore == nil {
 			t.Fatal("CreateStore returned nil store")
 		}
 
-		if store.Name() != "disk" {
-			t.Errorf("Expected store name 'disk', got '%s'", store.Name())
+		if createdStore.Name() != "disk" {
+			t.Errorf("Expected store name 'disk', got '%s'", createdStore.Name())
 		}
 	})
 
 	// Test with missing path config
 	t.Run("MissingPathConfig", func(t *testing.T) {
-		logger := zap.NewNop()
-		factory := &DiskStoreFactory{logger: logger}
+		factory, _ := setupTestFactory(t)
 		config := koanf.New(".")
 
 		store, err := factory.CreateStore(config)
-		if err == nil {
-			t.Fatal("Expected error for missing path config, but got none")
-		}
+		require.Error(t, err, "Expected error for missing path config, but got none")
 
 		if store != nil {
 			t.Fatal("Expected nil store for missing path config")
@@ -58,14 +163,11 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with nil config
 	t.Run("NilConfig", func(t *testing.T) {
-		logger := zap.NewNop()
-		factory := &DiskStoreFactory{logger: logger}
+		factory, _ := setupTestFactory(t)
 		var config *koanf.Koanf
 
 		store, err := factory.CreateStore(config)
-		if err == nil {
-			t.Fatal("Expected error for nil config, but got none")
-		}
+		require.Error(t, err, "Expected error for nil config, but got none")
 
 		if store != nil {
 			t.Fatal("Expected nil store for nil config")
@@ -74,8 +176,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 
 	// Test Name method
 	t.Run("NameMethod", func(t *testing.T) {
-		logger := zap.NewNop()
-		factory := &DiskStoreFactory{logger: logger}
+		factory, _ := setupTestFactory(t)
 		expectedName := "disk"
 		actualName := factory.Name()
 
@@ -86,9 +187,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 }
 
 func TestDiskStore_PutAndGet(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
 	testCases := []struct {
 		name      string
@@ -98,13 +197,13 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 	}{
 		{
 			name:      "ValidRegularBlob",
-			hash:      "abcd1234",
+			hash:      "76fd253c8fd922886c60e2dfc1c7f47a213ad035b9622b9a3be5377e66eccf7c026919fccd771ca1d2b0a87bf4b4ce7b",
 			data:      []byte("test data"),
 			expectErr: false,
 		},
 		{
 			name:      "ValidSDBlob",
-			hash:      "1234abcd",
+			hash:      "47ebe801fbdae21f43239f0ec7c1b1d0e8072c3c72963078c22c447bac59e45cfa065581410e5a67390df90e615a27e2",
 			data:      []byte("sd blob data"),
 			expectErr: false,
 		},
@@ -116,19 +215,19 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 		},
 		{
 			name:      "EmptyData",
-			hash:      "emptydata",
+			hash:      "7624adee9da4bdbeb48f63ce440eb4619cd8d128fc8d79b0d38013bad4d24f05b70660aebbc390e9f86f3e34b6eb8f01",
 			data:      []byte{},
 			expectErr: false,
 		},
 		{
 			name:      "LargeData",
-			hash:      "largedata",
+			hash:      "42bdb10fa69c9082304dd6af0881fcfe6f4c3cb5eebc75fdda49da043fb06b7d5701bea596f6f9b09bc420465eba1e25",
 			data:      generateLargeData(1024 * 1024), // 1MB
 			expectErr: false,
 		},
 		{
 			name:      "SpecialCharacters",
-			hash:      "specialchars",
+			hash:      "86611c066b95318cd2ed08482cdb91b785cea7479564430d25cec003078fb412732f686380fdbae918c16490f5074fb3",
 			data:      []byte("test data with special chars: \x00\x01\x02\xFF"),
 			expectErr: false,
 		},
@@ -138,23 +237,15 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test Put
 			err := store.Put(tc.hash, tc.data)
-			if tc.expectErr && err == nil {
-				t.Fatal("Expected error but got none")
-			}
-			if !tc.expectErr && err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			// Skip Get test if Put failed as expected
 			if tc.expectErr {
+				require.Error(t, err, "Expected error but got none")
 				return
 			}
+			require.NoError(t, err, "Unexpected error")
 
 			// Test Get
 			retrievedData, err := store.Get(tc.hash)
-			if err != nil {
-				t.Fatalf("Get failed: %v", err)
-			}
+			require.NoError(t, err, "Get failed")
 
 			if string(retrievedData) != string(tc.data) {
 				t.Error("Retrieved data doesn't match original data")
@@ -164,9 +255,7 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 }
 
 func TestDiskStore_PutSDAndGet(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
 	testCases := []struct {
 		name      string
@@ -176,7 +265,7 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 	}{
 		{
 			name:      "ValidSDBlob",
-			hash:      "sd1234abcd",
+			hash:      "573c7c58aeecae156f23f760f280c509001b4586b00cc32b37f6edfe5c0d034c748bbf423ab71347ff3f5cb073a7230e",
 			data:      []byte("sd blob test data"),
 			expectErr: false,
 		},
@@ -188,13 +277,13 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 		},
 		{
 			name:      "EmptySDBlob",
-			hash:      "sdempty",
+			hash:      "1c1e2c3ff5d5740054f39f10291a9eae6131851221312d3a1c550323f2631166737ee6a68e4c3ddc793527a84f25bdd8",
 			data:      []byte{},
 			expectErr: false,
 		},
 		{
 			name:      "LargeSDBlob",
-			hash:      "sdlarge",
+			hash:      "8c61dd29ff14d73b37ea12502ae708e5c76d614ad774998b4ba41904774ee212a60a434c12d5027ec83466c949d7a034",
 			data:      generateLargeData(512 * 1024), // 512KB
 			expectErr: false,
 		},
@@ -204,23 +293,15 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test PutSD
 			err := store.PutSD(tc.hash, tc.data)
-			if tc.expectErr && err == nil {
-				t.Fatal("Expected error but got none")
-			}
-			if !tc.expectErr && err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			// Skip Get test if PutSD failed as expected
 			if tc.expectErr {
+				require.Error(t, err, "Expected error but got none")
 				return
 			}
+			require.NoError(t, err, "Unexpected error")
 
 			// Test Get for SD blob
 			retrievedData, err := store.Get(tc.hash)
-			if err != nil {
-				t.Fatalf("Get failed for SD blob: %v", err)
-			}
+			require.NoError(t, err, "Get failed for SD blob")
 
 			if string(retrievedData) != string(tc.data) {
 				t.Error("Retrieved SD data doesn't match original data")
@@ -230,25 +311,19 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 }
 
 func TestDiskStore_Has(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
 	// Put a test blob first
-	testHash := "has123456"
+	testHash := "beb16f4ce7f9a4da1fb83a45c057ea4c2929c82603b9e20dd74487bd7bbb130d2d681ffe6fe1458a6cba2066ef9ef07e"
 	testData := []byte("test data for Has method")
 	err := store.Put(testHash, testData)
-	if err != nil {
-		t.Fatalf("Failed to put test blob: %v", err)
-	}
+	require.NoError(t, err, "Failed to put test blob")
 
 	// Put a test SD blob
-	testSDHash := "sdhas123456"
+	testSDHash := "dfe481fab5bead9258379952fcc0cee2d729a7e4e8e3e2e03a955d3453dbc7bf3d028ceb6ea94517522ca7f8561b01c3"
 	testSDData := []byte("test sd data for Has method")
 	err = store.PutSD(testSDHash, testSDData)
-	if err != nil {
-		t.Fatalf("Failed to put test SD blob: %v", err)
-	}
+	require.NoError(t, err, "Failed to put test SD blob")
 
 	testCases := []struct {
 		name     string
@@ -267,7 +342,7 @@ func TestDiskStore_Has(t *testing.T) {
 		},
 		{
 			name:     "NonExistingBlob",
-			hash:     "nonexistent",
+			hash:     "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
 			expected: false,
 		},
 		{
@@ -280,9 +355,7 @@ func TestDiskStore_Has(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			exists, err := store.Has(tc.hash)
-			if err != nil {
-				t.Fatalf("Has method failed: %v", err)
-			}
+			require.NoError(t, err, "Has method failed")
 
 			if exists != tc.expected {
 				t.Errorf("Expected Has to return %v for hash '%s', got %v", tc.expected, tc.hash, exists)
@@ -292,9 +365,7 @@ func TestDiskStore_Has(t *testing.T) {
 }
 
 func TestDiskStore_Name(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
 	expectedName := "disk"
 	actualName := store.Name()
@@ -305,57 +376,43 @@ func TestDiskStore_Name(t *testing.T) {
 }
 
 func TestDiskStore_DirectoryStructure(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
-	regularHash := "abcdef1234567890"
-	sdHash := "123456abcdef7890"
+	regularHash := "ad515821f92ded8d5f0c0930adee45200427c4c553e9870236cbda73c2d883a5772ff7e4cacdb31d3f9b2b53809075f9"
+	sdHash := "b9edcde802c93d2b1c61b45519e18556fff1a5cc8d7b83f289e6e0a6a00e0c903dfa0abd80989393d6e8e4e5b61b08b3"
 	data := []byte("test data")
 
 	// Test regular blob directory structure
 	err := store.Put(regularHash, data)
-	if err != nil {
-		t.Fatalf("Put failed: %v", err)
-	}
+	require.NoError(t, err, "Put failed")
 
-	expectedRegularPath := filepath.Join(tempDir, regularHash[:2], regularHash)
+	expectedRegularPath := filepath.Join(store.path, regularHash[:2], regularHash)
 	if _, err := os.Stat(expectedRegularPath); os.IsNotExist(err) {
 		t.Errorf("Regular blob was not stored in expected directory structure: %s", expectedRegularPath)
 	}
 
 	// Test SD blob directory structure
 	err = store.PutSD(sdHash, data)
-	if err != nil {
-		t.Fatalf("PutSD failed: %v", err)
-	}
+	require.NoError(t, err, "PutSD failed")
 
-	expectedSDPath := filepath.Join(tempDir, "sd", sdHash[:2], sdHash)
+	expectedSDPath := filepath.Join(store.path, "sd", sdHash[:2], sdHash)
 	if _, err := os.Stat(expectedSDPath); os.IsNotExist(err) {
 		t.Errorf("SD blob was not stored in expected directory structure: %s", expectedSDPath)
 	}
 }
 
 func TestDiskStore_GetNonExistentBlob(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
-	_, err := store.Get("nonexistentblob")
-	if err == nil {
-		t.Fatal("Expected error when getting non-existent blob, but got none")
-	}
+	_, err := store.Get("6e58057919edc5f4830ae6520d965979d25126f6dd0508c3c08742d936131813fe2876b589aafda8a5bf38130e5665e5")
+	require.Error(t, err, "Expected error when getting non-existent blob, but got none")
 }
 
 func TestDiskStore_HasNonExistentBlob(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	store := &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
 
-	exists, err := store.Has("nonexistentblob")
-	if err != nil {
-		t.Fatalf("Has failed: %v", err)
-	}
+	exists, err := store.Has("dae0fe98c8c3a773b6e68f1081350cbbc0fb6de799d13520148e1c6fe8dbc461cc6b6bbc1be51600cd71db5a50a91f1a")
+	require.NoError(t, err, "Has failed")
 
 	if exists {
 		t.Error("Has returned true for non-existent blob")
@@ -374,14 +431,136 @@ func generateLargeData(size int) []byte {
 
 // Test that the BlobStore interface is properly implemented
 func TestDiskStore_Interface(t *testing.T) {
-	tempDir := t.TempDir()
-	logger := zap.NewNop()
-	var _ liblbry.BlobStore = &DiskStore{path: tempDir, logger: logger}
+	store, _ := setupTestStore(t)
+	var _ liblbry.BlobStore = store
 }
 
 // Test that the StoreFactory interface is properly implemented
 func TestDiskStoreFactory_Interface(t *testing.T) {
-	logger := zap.NewNop()
-	var _ liblbry.StoreFactory = &DiskStoreFactory{logger: logger}
+	factory, _ := setupTestFactory(t)
+	var _ liblbry.StoreFactory = factory
+}
+
+// Test hash validation with various invalid formats
+func TestDiskStore_InvalidHashFormats(t *testing.T) {
+	store, _ := setupTestStore(t)
+	testInvalidHashes(t, store)
+}
+
+// Test path traversal attempts
+func TestDiskStore_PathTraversalAttempts(t *testing.T) {
+	store, _ := setupTestStore(t)
+	testPathTraversal(t, store)
+}
+
+// Test symlink attack prevention
+func TestDiskStore_SymlinkAttack(t *testing.T) {
+	store, _ := setupTestStore(t)
+
+	// Test symlink in regular blob path
+	validHash := "1f39f474898e1ea8d75937452396321e518822252f7de28f568db3c967bb81380b357594c0ca231efb0a9bb5e665a2df"
+	setupSymlinkAttack(t, store.path, validHash)
+
+	// Test that Put properly rejects symlinks in directory path
+	err := store.Put(validHash, []byte("test data"))
+	require.Error(t, err, "Expected error when trying to write to path with symlink directory")
+
+	// Test symlink in SD blob path
+	sdValidHash := "46d988f897d39bf56f9a158fd03ca524dc57ee9da5fb426f9e11bf61d737a895dd14710e42899dac96daf3863cbf8e15"
+
+	// Create SD directory structure with symlink
+	sdSubDir := filepath.Join(store.path, "sd", sdValidHash[:2])
+	err = os.MkdirAll(filepath.Join(store.path, "sd"), 0755)
+	require.NoError(t, err)
+
+	// Remove the subdirectory and replace it with a symlink
+	err = os.RemoveAll(filepath.Join(store.path, "sd", sdValidHash[:2]))
+	require.NoError(t, err)
+
+	symlinkTarget := filepath.Join(store.path, "..", "symlink_target")
+	err = os.MkdirAll(symlinkTarget, 0755)
+	require.NoError(t, err)
+
+	err = os.Symlink(symlinkTarget, sdSubDir)
+	require.NoError(t, err)
+
+	// Test that PutSD properly rejects symlinks in directory path
+	err = store.PutSD(sdValidHash, []byte("test data"))
+	require.Error(t, err, "Expected error when trying to write to SD path with symlink directory")
+}
+
+// Test edge cases for safeJoin function
+func TestDiskStore_SafeJoinEdgeCases(t *testing.T) {
+	_, tempDir := setupTestStore(t)
+
+	// Test with valid hash
+	expectedPath, err := safeJoin(tempDir, "3445b6abdb888a9b4bd4c0d91029a0d4ef6e0c2c2675fa07c0b7140d03b0bb3e48bd85b1d03a3da40dbf49e244a5eb06")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(tempDir, "34", "3445b6abdb888a9b4bd4c0d91029a0d4ef6e0c2c2675fa07c0b7140d03b0bb3e48bd85b1d03a3da40dbf49e244a5eb06"), expectedPath)
+
+	// Test with invalid hash format
+	_, err = safeJoin(tempDir, "invalid/hash")
+	require.Error(t, err)
+
+	_, err = safeJoin(tempDir, "../malicious")
+	require.Error(t, err)
+
+	_, err = safeJoin(tempDir, "..\\malicious")
+	require.Error(t, err)
+}
+
+// Test edge cases for safeJoinSD function
+func TestDiskStore_SafeJoinSDEdgeCases(t *testing.T) {
+	_, tempDir := setupTestStore(t)
+
+	// Test with valid hash
+	expectedPath, err := safeJoinSD(tempDir, "6e899d1ccbfc8fc3c3b5387bd052d26fbdacb1df98cd6b108644b2d3a3126609a3ea2891a254c46aebeb97a3f8c090e3")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(tempDir, "sd", "6e", "6e899d1ccbfc8fc3c3b5387bd052d26fbdacb1df98cd6b108644b2d3a3126609a3ea2891a254c46aebeb97a3f8c090e3"), expectedPath)
+
+	// Test with invalid hash format
+	_, err = safeJoinSD(tempDir, "invalid/hash")
+	require.Error(t, err)
+
+	_, err = safeJoinSD(tempDir, "../malicious")
+	require.Error(t, err)
+
+	_, err = safeJoinSD(tempDir, "..\\malicious")
+	require.Error(t, err)
+}
+
+// Test rejectSymlink function directly
+func TestDiskStore_RejectSymlink(t *testing.T) {
+	_, tempDir := setupTestStore(t)
+	
+	// Test that safeJoin properly rejects symlinks in directory path
+	validHash := "1f39f474898e1ea8d75937452396321e518822252f7de28f568db3c967bb81380b357594c0ca231efb0a9bb5e665a2df"
+	
+	setupSymlinkAttack(t, tempDir, validHash)
+
+	_, err := safeJoin(tempDir, validHash)
+	require.Error(t, err, "Expected error when trying to join path with symlink directory")
+
+	// Test that safeJoinSD properly rejects symlinks in directory path
+	sdValidHash := "10c5d5b7e3dfec03a7f123a4a34d3fc4a06cae9f5fe6f288fb2baadfa4eb979b6e1653336f39cd6135e62172e29426ec"
+	
+	sdLegitimateDir := filepath.Join(tempDir, "sd", sdValidHash[:2])
+	err = os.MkdirAll(filepath.Join(tempDir, "sd"), 0755)
+	require.NoError(t, err)
+
+	// Remove the subdirectory and replace it with a symlink
+	err = os.RemoveAll(filepath.Join(tempDir, "sd", sdValidHash[:2]))
+	require.NoError(t, err)
+
+	symlinkTarget := filepath.Join(tempDir, "..", "symlink_target")
+	err = os.MkdirAll(symlinkTarget, 0755)
+	require.NoError(t, err)
+
+	err = os.Symlink(symlinkTarget, sdLegitimateDir)
+	require.NoError(t, err)
+
+	// Test that safeJoinSD properly rejects symlinks in directory path
+	_, err = safeJoinSD(tempDir, sdValidHash)
+	require.Error(t, err, "Expected error when trying to join SD path with symlink directory")
 }
 
