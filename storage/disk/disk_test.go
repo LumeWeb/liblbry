@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/knadh/koanf/v2"
@@ -34,26 +35,30 @@ func setupTestFactory(t *testing.T) (*DiskStoreFactory, string) {
 func testInvalidHashes(t *testing.T, store *DiskStore) {
 	t.Helper()
 	
-	invalidHashes := []string{
-		"",              // empty hash
-		"a",             // too short (1 character)
-		"abc@",          // invalid character @
-		"abc#",          // invalid character #
-		"abc$",          // invalid character $
-		"abc%",          // invalid character %
-		"abc def",       // space character
-		"../abc123",     // path traversal
-		"..\\abc123",    // windows path traversal
-		"/abc123",       // absolute path
-		"\\abc123",      // windows absolute path
-		"abc123/def456", // path separator
-		"abc123\\def456", // windows path separator
-		"abc123\000def456", // null byte
-		"abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd12345", // too long (97 characters)
+	invalidHashes := []struct {
+		hash string
+		desc string
+	}{
+		{"", "empty hash"},
+		{"a", "too short (1 character)"},
+		{"abc@", "invalid character @"},
+		{"abc#", "invalid character #"},
+		{"abc$", "invalid character $"},
+		{"abc%", "invalid character %"},
+		{"abc def", "space character"},
+		{"../abc123", "path traversal"},
+		{"..\\abc123", "windows path traversal"},
+		{"/abc123", "absolute path"},
+		{"\\abc123", "windows absolute path"},
+		{"abc123/def456", "path separator"},
+		{"abc123\\def456", "windows path separator"},
+		{"abc123\000def456", "null byte"},
+		{"abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd12345", "too long (97 characters)"},
 	}
 
-	for _, hash := range invalidHashes {
-		t.Run("InvalidHash_"+hash, func(t *testing.T) {
+	for i, tc := range invalidHashes {
+		t.Run(fmt.Sprintf("InvalidHash_%d_%s", i, tc.desc), func(t *testing.T) {
+			hash := tc.hash
 			// Test Put with invalid hash
 			err := store.Put(hash, []byte("test"))
 			require.Error(t, err, "Expected error for invalid hash: %s", hash)
@@ -105,10 +110,34 @@ func testPathTraversal(t *testing.T, store *DiskStore) {
 // setupSymlinkAttack sets up a symlink attack scenario and returns the symlink target path
 func setupSymlinkAttack(t *testing.T, baseDir, hash string) string {
 	t.Helper()
-	
+
+	// Skip on Windows
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests skipped on Windows")
+	}
+
+	// Test if symlinks are supported
+	testLink := filepath.Join(baseDir, "testlink")
+	testTarget := filepath.Join(baseDir, "testtarget")
+	defer os.Remove(testLink)
+	defer os.Remove(testTarget)
+
+	err := os.MkdirAll(testTarget, 0755)
+	if err != nil {
+		t.Skipf("symlink test setup failed: %v", err)
+	}
+
+	err = os.Symlink(testTarget, testLink)
+	if err != nil {
+		if os.IsPermission(err) || err.Error() == "operation not supported" {
+			t.Skipf("symlinks not supported: %v", err)
+		}
+		t.Fatalf("symlink test failed: %v", err)
+	}
+
 	// Create a directory that will be replaced with a symlink
 	legitimateDir := filepath.Join(baseDir, hash[:2])
-	err := os.MkdirAll(legitimateDir, 0755)
+	err = os.MkdirAll(legitimateDir, 0755)
 	require.NoError(t, err)
 
 	// Remove the directory and replace it with a symlink pointing outside
@@ -459,7 +488,8 @@ func TestDiskStore_SymlinkAttack(t *testing.T) {
 
 	// Test symlink in regular blob path
 	validHash := "1f39f474898e1ea8d75937452396321e518822252f7de28f568db3c967bb81380b357594c0ca231efb0a9bb5e665a2df"
-	setupSymlinkAttack(t, store.path, validHash)
+	symlinkTarget := setupSymlinkAttack(t, store.path, validHash)
+	defer os.RemoveAll(symlinkTarget)
 
 	// Test that Put properly rejects symlinks in directory path
 	err := store.Put(validHash, []byte("test data"))
@@ -477,11 +507,12 @@ func TestDiskStore_SymlinkAttack(t *testing.T) {
 	err = os.RemoveAll(filepath.Join(store.path, "sd", sdValidHash[:2]))
 	require.NoError(t, err)
 
-	symlinkTarget := filepath.Join(store.path, "..", "symlink_target")
-	err = os.MkdirAll(symlinkTarget, 0755)
+	sdSymlinkTarget := filepath.Join(store.path, "..", "sd_symlink_target")
+	err = os.MkdirAll(sdSymlinkTarget, 0755)
 	require.NoError(t, err)
+	defer os.RemoveAll(sdSymlinkTarget)
 
-	err = os.Symlink(symlinkTarget, sdSubDir)
+	err = os.Symlink(sdSymlinkTarget, sdSubDir)
 	require.NoError(t, err)
 
 	// Test that PutSD properly rejects symlinks in directory path
@@ -532,11 +563,17 @@ func TestDiskStore_SafeJoinSDEdgeCases(t *testing.T) {
 // Test rejectSymlink function directly
 func TestDiskStore_RejectSymlink(t *testing.T) {
 	_, tempDir := setupTestStore(t)
-	
+
+	// Skip on Windows
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests skipped on Windows")
+	}
+
 	// Test that safeJoin properly rejects symlinks in directory path
 	validHash := "1f39f474898e1ea8d75937452396321e518822252f7de28f568db3c967bb81380b357594c0ca231efb0a9bb5e665a2df"
 	
-	setupSymlinkAttack(t, tempDir, validHash)
+	symlinkTarget := setupSymlinkAttack(t, tempDir, validHash)
+	defer os.RemoveAll(symlinkTarget)
 
 	_, err := safeJoin(tempDir, validHash)
 	require.Error(t, err, "Expected error when trying to join path with symlink directory")
@@ -552,11 +589,12 @@ func TestDiskStore_RejectSymlink(t *testing.T) {
 	err = os.RemoveAll(filepath.Join(tempDir, "sd", sdValidHash[:2]))
 	require.NoError(t, err)
 
-	symlinkTarget := filepath.Join(tempDir, "..", "symlink_target")
-	err = os.MkdirAll(symlinkTarget, 0755)
+	sdSymlinkTarget := filepath.Join(tempDir, "..", "sd_symlink_target")
+	err = os.MkdirAll(sdSymlinkTarget, 0755)
 	require.NoError(t, err)
+	defer os.RemoveAll(sdSymlinkTarget)
 
-	err = os.Symlink(symlinkTarget, sdLegitimateDir)
+	err = os.Symlink(sdSymlinkTarget, sdLegitimateDir)
 	require.NoError(t, err)
 
 	// Test that safeJoinSD properly rejects symlinks in directory path

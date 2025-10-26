@@ -1,8 +1,10 @@
 package liblbry
 
 import (
+	"fmt"
 	"github.com/knadh/koanf/v2"
 	"go.uber.org/zap"
+	"reflect"
 )
 
 // StoreFactory defines the interface for creating blob storage instances
@@ -56,16 +58,24 @@ func CreateStorageFactory[T StoreFactory](logger *zap.Logger) (T, error) {
 func CreateStorageFactoryWithOptions[T StoreFactory](opts ...StoreFactoryOption) (T, error) {
 	var factory T
 
+	// Check if T is a pointer type to avoid nil pointer issues
+	if reflect.ValueOf(factory).Kind() == reflect.Ptr {
+		return factory, fmt.Errorf("T must not be a pointer type - use concrete type instead")
+	}
+
+	// Get addressable value for proper method resolution
+	target := any(&factory)
+
 	for _, opt := range opts {
-		if err := opt.Apply(&factory); err != nil {
+		if err := opt.Apply(target); err != nil {
 			return factory, err
 		}
 	}
 
 	// Ensure predictable logger defaulting
-	if lg, ok := any(&factory).(LoggerGetter); ok {
+	if lg, ok := target.(LoggerGetter); ok {
 		if lg.GetLogger() == nil {
-			if ls, ok := any(&factory).(LoggerSetter); ok {
+			if ls, ok := target.(LoggerSetter); ok {
 				ls.SetLogger(defaultLogger)
 			}
 		}

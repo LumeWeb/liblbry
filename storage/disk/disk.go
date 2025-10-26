@@ -82,19 +82,55 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Perform atomic write using temporary file
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	// Create temporary file in the same directory as the final file
+	tmp, err := os.CreateTemp(dir, ".tmp-")
+	if err != nil {
+		logErrorIfLogger(logger, "failed to create temporary file for "+operation+" operation", err, zap.String("dir", dir))
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if tmp != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	// Write data to temporary file
+	if _, err := tmp.Write(data); err != nil {
 		logErrorIfLogger(logger, "failed to write temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
 		return fmt.Errorf("failed to write temporary file: %w", err)
 	}
 
+	// Sync file to disk
+	if err := tmp.Sync(); err != nil {
+		logErrorIfLogger(logger, "failed to sync temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
+		return fmt.Errorf("failed to sync temporary file: %w", err)
+	}
+
+	// Close file before rename (required on Windows)
+	if err := tmp.Close(); err != nil {
+		logErrorIfLogger(logger, "failed to close temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+	tmp = nil // Don't clean up in defer since we're about to rename
+
+	// Set restrictive permissions (owner read/write only)
+	if err := os.Chmod(tmpPath, 0600); err != nil {
+		logErrorIfLogger(logger, "failed to set permissions on temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
+		return fmt.Errorf("failed to set file permissions: %w", err)
+	}
+
 	// Rename temporary file to final path
 	if err := os.Rename(tmpPath, path); err != nil {
-		// Clean up temporary file if rename fails
-		_ = os.Remove(tmpPath)
 		logErrorIfLogger(logger, "failed to rename temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath), zap.String("path", path))
 		return fmt.Errorf("failed to rename temporary file: %w", err)
+	}
+
+	// Best-effort sync of parent directory to ensure rename is durable
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 
 	return nil
@@ -342,25 +378,31 @@ func (d *DiskStore) Has(hash string) (bool, error) {
 	// Check regular blob with safe path construction
 	blobPath, err := safeJoin(d.path, hash)
 	if err != nil {
-		logDebugIfLogger(d.logger, "unsafe path detected for Has operation", zap.String("hash", hash), zap.Error(err))
-		return false, nil
+		logErrorIfLogger(d.logger, "unsafe path detected for Has operation", err, zap.String("hash", hash))
+		return false, err
 	}
 
 	if _, err := os.Stat(blobPath); err == nil {
 		logDebugIfLogger(d.logger, "found regular blob", zap.String("hash", hash), zap.String("path", blobPath))
 		return true, nil
+	} else if !os.IsNotExist(err) {
+		logErrorIfLogger(d.logger, "failed to stat regular blob", err, zap.String("hash", hash), zap.String("path", blobPath))
+		return false, err
 	}
 
 	// Check SD blob with safe path construction
 	sdBlobPath, err := safeJoinSD(d.path, hash)
 	if err != nil {
-		logDebugIfLogger(d.logger, "unsafe path detected for Has operation (SD blob)", zap.String("hash", hash), zap.Error(err))
-		return false, nil
+		logErrorIfLogger(d.logger, "unsafe path detected for Has operation (SD blob)", err, zap.String("hash", hash))
+		return false, err
 	}
 
 	if _, err := os.Stat(sdBlobPath); err == nil {
 		logDebugIfLogger(d.logger, "found SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
 		return true, nil
+	} else if !os.IsNotExist(err) {
+		logErrorIfLogger(d.logger, "failed to stat SD blob", err, zap.String("hash", hash), zap.String("path", sdBlobPath))
+		return false, err
 	}
 
 	logDebugIfLogger(d.logger, "blob not found", zap.String("hash", hash))
