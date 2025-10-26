@@ -34,8 +34,13 @@ type ReflectorServer interface {
 
 // Protocol constants
 const (
-	DefaultReflectorTimeout = 5 * time.Second
+	DefaultReflectorTimeout = 30 * time.Second
 	MaxBlobSize             = blob.MaxBlobSize
+
+	// Timeout calculation constants
+	BaseTimeout   = 10 * time.Second // Base timeout for any operation
+	TimeoutPerMiB = 5 * time.Second  // Additional time per MiB of data
+	MiB           = 1024 * 1024      // Bytes in a MiB
 
 	// Protocol versions
 	ProtocolVersion1 = 0
@@ -53,6 +58,7 @@ var (
 	ErrInvalidHandshake   = errors.New("invalid handshake")
 	ErrInvalidBlobRequest = errors.New("invalid blob request")
 	ErrInvalidTransfer    = errors.New("invalid transfer response")
+	ErrNegativeBlobSize   = errors.New("negative blob size received")
 )
 
 // HandshakeRequestResponse represents the handshake message
@@ -217,7 +223,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 		if sendErr := r.sendTransferResponse(conn, false, isSdBlob); sendErr != nil {
 			r.logger.Error("Error sending transfer failure response", zap.Error(sendErr))
 		}
-		return fmt.Errorf("error reading blob %s: %w", blobHash[:8], err)
+		return fmt.Errorf("error reading blob %s: %w", safeHashPrefix(blobHash), err)
 	}
 
 	// Verify blob hash
@@ -230,7 +236,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 		return ErrHashMismatch
 	}
 
-	r.logger.Debug("Received blob", zap.String("hash", blobHash[:8]))
+	r.logger.Debug("Received blob", zap.String("hash", safeHashPrefix(blobHash)))
 
 	// Store blob
 	if isSdBlob {
@@ -239,7 +245,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 		err = r.store.Put(blobHash, blobData)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to store blob %s: %w", blobHash[:8], err)
+		return fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), err)
 	}
 
 	// Send transfer success response
@@ -268,11 +274,17 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Re
 	if blobHash == "" {
 		return blobSize, blobHash, isSdBlob, ErrBlobHashEmpty
 	}
+	if !ValidateBlobHash(blobHash) {
+		return blobSize, blobHash, isSdBlob, fmt.Errorf("%w: invalid blob hash", ErrInvalidBlobRequest)
+	}
 	if blobSize > MaxBlobSize {
 		return blobSize, blobHash, isSdBlob, ErrBlobTooBig
 	}
-	if blobSize == 0 {
-		return blobSize, blobHash, isSdBlob, ErrZeroByteBlob
+	if blobSize <= 0 {
+		if blobSize == 0 {
+			return blobSize, blobHash, isSdBlob, ErrZeroByteBlob
+		}
+		return blobSize, blobHash, isSdBlob, ErrNegativeBlobSize
 	}
 
 	return blobSize, blobHash, isSdBlob, nil
@@ -351,9 +363,29 @@ func (r *DefaultReflectorServer) sendTransferResponse(conn net.Conn, receivedBlo
 	return r.writeData(conn, response)
 }
 
+// calculateTimeout calculates a timeout based on blob size
+// Formula: base timeout + (blobSize / MiB) * timeout per MiB
+// Minimum timeout is BaseTimeout (10s), maximum is capped at 5 minutes
+func (r *DefaultReflectorServer) calculateTimeout(blobSize int) time.Duration {
+	// Calculate additional time needed for the blob size
+	additionalTime := time.Duration(blobSize/MiB) * TimeoutPerMiB
+
+	// Ensure minimum of base timeout
+	timeout := BaseTimeout + additionalTime
+
+	// Cap at reasonable maximum (5 minutes)
+	if timeout > 5*time.Minute {
+		timeout = 5 * time.Minute
+	}
+
+	return timeout
+}
+
 // readRawBlob reads raw blob data from the connection with timeout
+// The timeout is dynamically calculated based on blob size to accommodate
+// slower connections transferring larger blobs.
 func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, reader *bufio.Reader, blobSize int) ([]byte, error) {
-	if err := conn.SetReadDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(r.calculateTimeout(blobSize))); err != nil {
 		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
@@ -421,8 +453,16 @@ func applyReflectorOptions(server *DefaultReflectorServer, options []ReflectorSe
 	}
 }
 
+// safeHashPrefix returns a safe prefix of a hash string (up to 8 characters)
+func safeHashPrefix(hash string) string {
+	if len(hash) > 8 {
+		return hash[:8]
+	}
+	return hash
+}
+
 // sendError sends an error response
-func (r *DefaultReflectorServer) sendError(conn net.Conn, err error) {
+func (r *DefaultReflectorServer) sendError(_ net.Conn, err error) {
 	// Log the error
 	r.logger.Error("Reflector server error", zap.Error(err))
 

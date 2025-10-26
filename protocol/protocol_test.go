@@ -13,9 +13,8 @@ const (
 
 // IP address constants
 const (
-	testAllowedIP = "127.0.0.1"
-	testDeniedIP  = "192.168.1.1"
-	testLocalIP   = "127.0.0.1"
+	testLocalIP  = "127.0.0.1"
+	testDeniedIP = "192.168.1.1"
 )
 
 // Blob hash constants

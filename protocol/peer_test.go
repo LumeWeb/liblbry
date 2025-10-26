@@ -17,7 +17,6 @@ import (
 	protocolmocks "go.lumeweb.com/liblbry/protocol/mocks"
 )
 
-
 var blobs = map[string][]byte{
 	validBlobHash1: []byte("abcdefg"),
 	validBlobHash2: []byte("hijklmn"),
@@ -160,7 +159,7 @@ func getBlobKeys() []string {
 
 func handleRequestAndCompare(t *testing.T, server PeerServer, requestJSON, expectedJSON []byte) {
 	t.Helper()
-	handleRequestAndCompareWithIP(t, server, requestJSON, expectedJSON, testAllowedIP)
+	handleRequestAndCompareWithIP(t, server, requestJSON, expectedJSON, testLocalIP)
 }
 
 func handleRequestAndCompareWithIP(t *testing.T, server PeerServer, requestJSON, expectedJSON []byte, peerIP string) {
@@ -218,7 +217,7 @@ func unmarshalExpectedResponse(t *testing.T, expectedJSON []byte) CompositeRespo
 // Helper function to handle request with error handling
 func handleTestRequest(t *testing.T, server PeerServer, request CompositeRequest) (CompositeResponse, []byte) {
 	t.Helper()
-	response, blobData, err := server.(*DefaultPeerServer).handleRequest(request, testAllowedIP)
+	response, blobData, err := server.(*DefaultPeerServer).handleRequest(request, testLocalIP)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -253,7 +252,6 @@ func validateBlobData(t *testing.T, request CompositeRequest, response Composite
 		}
 	}
 }
-
 
 // Helper function to create a CompositeRequest for availability checking
 func createAvailabilityRequest(blobHashes []string) CompositeRequest {
@@ -456,12 +454,12 @@ func TestInvalidBlobHashes(t *testing.T) {
 func TestAccessControl(t *testing.T) {
 	// Create a mock access control that denies access to the first blob
 	mockAccessControl := mocks.NewMockAccessControl(t)
-	mockAccessControl.On("Allow", mock.AnythingOfType("string"), testAllowedIP).Return(true)
+	mockAccessControl.On("Allow", mock.AnythingOfType("string"), testLocalIP).Return(true)
 	// Deny access to the first blob in our blobs map
 	blobKeys := getBlobKeys()
 	if len(blobKeys) > 0 {
 		mockAccessControl.On("Allow", blobKeys[0], testDeniedIP).Return(false)
-		mockAccessControl.On("Allow", blobKeys[0], testAllowedIP).Return(true)
+		mockAccessControl.On("Allow", blobKeys[0], testLocalIP).Return(true)
 	}
 
 	s, _ := getServerWithAccessControl(t, true, mockAccessControl)

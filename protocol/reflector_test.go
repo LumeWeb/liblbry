@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -15,26 +16,19 @@ import (
 	"go.lumeweb.com/liblbry/mocks"
 )
 
-// Test constants
+// Reflector-specific test constants
 const (
-	reflectorTestStoreName    = "test"
-	reflectorTestHost         = "127.0.0.1:0"
-	reflectorTestTimeout      = 5 * time.Second
-	reflectorTestBufferSize   = 8192
-	reflectorShortTestTimeout = 10 * time.Millisecond
-)
-
-// Blob hash constants
-const (
-	reflectorValidBlobHash1 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	reflectorValidBlobHash2 = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-	reflectorValidBlobHash3 = "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
+	reflectorTestStoreName    = testStoreName
+	reflectorTestHost         = testHost
+	reflectorTestTimeout      = testTimeout
+	reflectorTestBufferSize   = testBufferSize
+	reflectorShortTestTimeout = shortTestTimeout
 )
 
 var reflectorTestBlobs = map[string][]byte{
-	reflectorValidBlobHash1: []byte("test blob data 1"),
-	reflectorValidBlobHash2: []byte("test blob data 2"),
-	reflectorValidBlobHash3: []byte("test blob data 3"),
+	validBlobHash1: []byte("test blob data 1"),
+	validBlobHash2: []byte("test blob data 2"),
+	validBlobHash3: []byte("test blob data 3"),
 }
 
 // MockConn implements net.Conn for testing
@@ -55,7 +49,21 @@ func (m *MockConn) Read(b []byte) (n int, err error) {
 	if m.closed {
 		return 0, errors.New("connection closed")
 	}
-	return m.readBuffer.Read(b)
+	
+	// If read buffer is empty, return EOF
+	if m.readBuffer.Len() == 0 {
+		return 0, io.EOF
+	}
+	
+	// Read from buffer
+	n, err = m.readBuffer.Read(b)
+	
+	// If we read some data but hit EOF, return the data first
+	if err == io.EOF && n > 0 {
+		err = nil
+	}
+	
+	return n, err
 }
 
 func (m *MockConn) Write(b []byte) (n int, err error) {
@@ -71,11 +79,11 @@ func (m *MockConn) Close() error {
 }
 
 func (m *MockConn) LocalAddr() net.Addr {
-	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5566}
+	return &net.TCPAddr{IP: net.ParseIP(testLocalIP), Port: 5566}
 }
 
 func (m *MockConn) RemoteAddr() net.Addr {
-	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+	return &net.TCPAddr{IP: net.ParseIP(testLocalIP), Port: 12345}
 }
 
 func (m *MockConn) SetDeadline(t time.Time) error {
@@ -235,7 +243,7 @@ func TestReadBlobRequest_RegularBlob(t *testing.T) {
 
 	// Write blob request
 	request := SendBlobRequest{
-		BlobHash: reflectorValidBlobHash1,
+		BlobHash: validBlobHash1,
 		BlobSize: 1024,
 	}
 	requestData, _ := json.Marshal(request)
@@ -258,7 +266,7 @@ func TestReadBlobRequest_SDBlob(t *testing.T) {
 
 	// Write SD blob request
 	request := SendBlobRequest{
-		SdBlobHash: reflectorValidBlobHash1,
+		SdBlobHash: validBlobHash1,
 		SdBlobSize: 512,
 	}
 	requestData, _ := json.Marshal(request)
@@ -321,9 +329,9 @@ func TestShouldAcceptBlob_NewBlob(t *testing.T) {
 	server := NewReflectorServer(store)
 
 	// Mock store methods
-	store.On("Has", reflectorValidBlobHash1).Return(false, nil)
+	store.On("Has", validBlobHash1).Return(false, nil)
 
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false, "127.0.0.1")
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new blob")
@@ -335,9 +343,9 @@ func TestShouldAcceptBlob_ExistingBlob(t *testing.T) {
 	server := NewReflectorServer(store)
 
 	// Mock store methods - blob already exists
-	store.On("Has", reflectorValidBlobHash1).Return(true, nil)
+	store.On("Has", validBlobHash1).Return(true, nil)
 
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(reflectorValidBlobHash1, false, "127.0.0.1")
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing blob")
@@ -437,7 +445,7 @@ func TestCalculateBlobHash(t *testing.T) {
 
 func TestValidateBlobHash(t *testing.T) {
 	// Valid hash
-	validHash := reflectorValidBlobHash1
+	validHash := validBlobHash1
 	assert.True(t, ValidateBlobHash(validHash), "Expected valid hash to pass validation")
 
 	// Invalid length
@@ -447,6 +455,49 @@ func TestValidateBlobHash(t *testing.T) {
 	// Invalid characters
 	invalidCharHash := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdeG"
 	assert.False(t, ValidateBlobHash(invalidCharHash), "Expected hash with invalid characters to fail validation")
+}
+
+func TestCalculateTimeout(t *testing.T) {
+	tests := []struct {
+		name     string
+		blobSize int
+		want     time.Duration
+	}{
+		{
+			name:     "small blob (<1MiB)",
+			blobSize: 500 * 1024, // 500 KiB
+			want:     BaseTimeout,
+		},
+		{
+			name:     "exactly 1MiB",
+			blobSize: MiB,
+			want:     BaseTimeout + TimeoutPerMiB,
+		},
+		{
+			name:     "2MiB blob",
+			blobSize: 2 * MiB,
+			want:     BaseTimeout + 2*TimeoutPerMiB,
+		},
+		{
+			name:     "very large blob (5min cap)",
+			blobSize: 100 * MiB, // Should hit the 5 minute cap
+			want:     5 * time.Minute,
+		},
+		{
+			name:     "zero size blob",
+			blobSize: 0,
+			want:     BaseTimeout,
+		},
+	}
+
+	server := &DefaultReflectorServer{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := server.calculateTimeout(tt.blobSize)
+			assert.Equal(t, tt.want, got, "calculateTimeout(%d) mismatch", tt.blobSize)
+		})
+	}
 }
 
 func TestReceiveBlob_Success(t *testing.T) {
@@ -477,7 +528,7 @@ func TestReceiveBlob_HashMismatch(t *testing.T) {
 
 	// Prepare blob data
 	blobData := []byte("test blob data")
-	wrongHash := reflectorValidBlobHash1
+	wrongHash := validBlobHash1
 	correctHash := server.(*DefaultReflectorServer).calculateBlobHash(blobData)
 
 	// Test hash mismatch detection
@@ -538,5 +589,64 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 
 	// Verify only Has was called, not Put
 	store.AssertCalled(t, "Has", blobHash)
+	store.AssertNotCalled(t, "Put", mock.Anything, mock.Anything)
+}
+
+func TestReceiveBlob_Integration(t *testing.T) {
+	store := mocks.NewMockBlobStore(t)
+	server := NewReflectorServer(store)
+	conn := NewMockConn()
+
+	// Test data
+	blobData := []byte("test blob data")
+	blobHash := server.(*DefaultReflectorServer).calculateBlobHash(blobData)
+
+	// Mock store expectations - we only test Has since we're not testing full blob storage
+	store.On("Has", blobHash).Return(false, nil)
+
+	// Test shouldAcceptBlob first - this is called by receiveBlob
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(blobHash, false, testLocalIP)
+	assert.NoError(t, err)
+	assert.True(t, shouldSend)
+	assert.Empty(t, neededBlobs)
+
+	// Test sendBlobResponse - this is called by receiveBlob
+	err = server.(*DefaultReflectorServer).sendBlobResponse(conn, true, false, nil)
+	assert.NoError(t, err)
+	assert.Contains(t, string(conn.GetWrittenData()), `"send_blob":true`)
+
+	// Test sendTransferResponse - this is called by receiveBlob
+	conn.ClearWrittenData()
+	err = server.(*DefaultReflectorServer).sendTransferResponse(conn, true, false)
+	assert.NoError(t, err)
+	assert.Contains(t, string(conn.GetWrittenData()), `"received_blob":true`)
+
+	// Verify only Has was called, not Put since we're not testing full blob storage
+	store.AssertCalled(t, "Has", blobHash)
+	store.AssertNotCalled(t, "Put", mock.Anything, mock.Anything)
+}
+
+func TestReceiveBlob_NegativeSize(t *testing.T) {
+	store := mocks.NewMockBlobStore(t)
+	server := NewReflectorServer(store)
+	conn := NewMockConn()
+
+	// Write blob request with negative size
+	request := SendBlobRequest{
+		BlobHash: validBlobHash1,
+		BlobSize: -1,
+	}
+	requestData, _ := json.Marshal(request)
+	conn.WriteToReadBuffer(requestData)
+
+	// Receive blob
+	reader := bufio.NewReader(conn)
+	err := server.(*DefaultReflectorServer).receiveBlob(conn, reader)
+
+	assert.Error(t, err, "Expected receiveBlob to fail with negative size")
+	assert.True(t, errors.Is(err, ErrNegativeBlobSize), "Expected ErrNegativeBlobSize")
+
+	// Verify no store interactions
+	store.AssertNotCalled(t, "Has", mock.Anything)
 	store.AssertNotCalled(t, "Put", mock.Anything, mock.Anything)
 }
