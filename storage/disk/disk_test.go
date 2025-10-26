@@ -23,11 +23,10 @@ func setupTestStore(t *testing.T) (*DiskStore, string) {
 }
 
 // setupTestFactory creates a disk store factory for testing
-func setupTestFactory(t *testing.T) (*DiskStoreFactory, string) {
-	tempDir := t.TempDir()
+func setupTestFactory(t *testing.T) *DiskStoreFactory {
 	logger := zap.NewNop()
 	factory := &DiskStoreFactory{logger: logger}
-	return factory, tempDir
+	return factory
 }
 
 
@@ -179,7 +178,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with missing path config
 	t.Run("MissingPathConfig", func(t *testing.T) {
-		factory, _ := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		config := koanf.New(".")
 
 		store, err := factory.CreateStore(config)
@@ -192,7 +191,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with nil config
 	t.Run("NilConfig", func(t *testing.T) {
-		factory, _ := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		var config *koanf.Koanf
 
 		store, err := factory.CreateStore(config)
@@ -205,7 +204,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 
 	// Test Name method
 	t.Run("NameMethod", func(t *testing.T) {
-		factory, _ := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		expectedName := "disk"
 		actualName := factory.Name()
 
@@ -371,7 +370,7 @@ func TestDiskStore_Has(t *testing.T) {
 		},
 		{
 			name:     "NonExistingBlob",
-			hash:     "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+			hash:     "84eaddedccac7c406994a857e6c821f5ab3f0e700a81d716afd2570d11d5ef0e963152e95459ddc3637b4011ba3b38c2",
 			expected: false,
 		},
 		{
@@ -466,7 +465,7 @@ func TestDiskStore_Interface(t *testing.T) {
 
 // Test that the StoreFactory interface is properly implemented
 func TestDiskStoreFactory_Interface(t *testing.T) {
-	factory, _ := setupTestFactory(t)
+	factory := setupTestFactory(t)
 	var _ liblbry.StoreFactory = factory
 }
 

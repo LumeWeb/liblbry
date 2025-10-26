@@ -40,7 +40,7 @@ func TestLoggerIntegration(t *testing.T) {
 	logger = zap.NewNop()
 	
 	configWithLogger := koanf.New(".")
-	require.NoError(t, configWithLogger.Set("path", tempDir+"_with_logger"))
+	require.NoError(t, configWithLogger.Set("path", t.TempDir()))
 	require.NoError(t, configWithLogger.Set("logger", logger))
 	
 	storeWithLogger, err := factory.CreateStore(configWithLogger)
@@ -63,9 +63,9 @@ func TestLoggerIntegration(t *testing.T) {
 func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 	// Test with valid config including logger
 	t.Run("WithLoggerConfig", func(t *testing.T) {
-		factory, tempDir := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		k := koanf.New(".")
-		require.NoError(t, k.Set("path", tempDir))
+		require.NoError(t, k.Set("path", t.TempDir()))
 		require.NoError(t, k.Set("logger", factory.logger))
 		config := k
 
@@ -83,9 +83,9 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with config without logger
 	t.Run("WithoutLoggerConfig", func(t *testing.T) {
-		factory, tempDir := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		k := koanf.New(".")
-		require.NoError(t, k.Set("path", tempDir))
+		require.NoError(t, k.Set("path", t.TempDir()))
 		config := k
 
 		store, err := factory.CreateStore(config)
@@ -102,7 +102,7 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test with nil config
 	t.Run("NilConfig", func(t *testing.T) {
-		factory, _ := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		var config *koanf.Koanf
 
 		store, err := factory.CreateStore(config)
@@ -115,7 +115,7 @@ func TestLoggerStoreFactory_CreateStore(t *testing.T) {
 
 	// Test Name method
 	t.Run("NameMethod", func(t *testing.T) {
-		factory, _ := setupTestFactory(t)
+		factory := setupTestFactory(t)
 		expectedName := "disk"
 		actualName := factory.Name()
 
@@ -133,6 +133,6 @@ func TestLoggerStore_Interface(t *testing.T) {
 
 // Test that the StoreFactory interface is properly implemented
 func TestLoggerStoreFactory_Interface(t *testing.T) {
-	factory, _ := setupTestFactory(t)
+	factory := setupTestFactory(t)
 	var _ liblbry.StoreFactory = factory
 }
