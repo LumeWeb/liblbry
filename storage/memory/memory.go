@@ -9,7 +9,11 @@ import (
 	"go.lumeweb.com/liblbry/stream"
 )
 
-// MemoryStore implements the BlobStore interface using in-memory storage
+// MemoryStore implements the BlobStore interface using in-memory storage.
+// It provides copy-in/copy-out semantics: all data passed to Put/PutSD is copied
+// before storage, and all data returned from Get is copied before return.
+// This ensures that returned slices are safe to use and mutate by callers
+// without affecting the stored data or causing race conditions.
 type MemoryStore struct {
 	blobs   map[string][]byte
 	sdBlobs map[string][]byte
@@ -24,7 +28,27 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-// Has checks if a blob exists in the store
+// validate performs common validation for hash format and blob data
+func (m *MemoryStore) validate(hash string, data []byte, kind string) error {
+	if !stream.ValidateHash(hash) {
+		return liblbryerrors.Err("invalid hash format")
+	}
+	b := blob.Blob(data)
+	if err := b.ValidForSend(); err != nil {
+		if kind != "" {
+			return liblbryerrors.Err("invalid %s blob data: %w", kind, err)
+		}
+		return liblbryerrors.Err("invalid blob data: %w", err)
+	}
+	return nil
+}
+
+// Has checks if a blob exists in the store.
+//
+// It checks for regular blobs first, then SD blobs. If the same hash exists in both
+// maps, this method returns true (indicating the blob exists) regardless of which
+// type contains it. This behavior is consistent with the Get method's priority
+// system where regular blobs are prioritized over SD blobs.
 func (m *MemoryStore) Has(hash string) (bool, error) {
 	// Validate hash format
 	if !stream.ValidateHash(hash) {
@@ -45,7 +69,12 @@ func (m *MemoryStore) Has(hash string) (bool, error) {
 	return false, nil
 }
 
-// Get retrieves a blob from the store
+// Get retrieves a blob from the store.
+//
+// It prioritizes regular blobs over SD blobs when both exist with the same hash.
+// This priority system ensures that regular content takes precedence over metadata
+// (SD blobs) in hash collision scenarios. The returned data is a defensive copy
+// to prevent callers from mutating the stored data.
 func (m *MemoryStore) Get(hash string) ([]byte, error) {
 	// Validate hash format
 	if !stream.ValidateHash(hash) {
@@ -55,14 +84,18 @@ func (m *MemoryStore) Get(hash string) ([]byte, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	// Check in regular blobs first
+	// Check in regular blobs first (priority over SD blobs)
 	if data, exists := m.blobs[hash]; exists {
-		return data, nil
+		dst := make([]byte, len(data))
+		copy(dst, data)
+		return dst, nil
 	}
 
-	// Check in SD blobs
+	// Check in SD blobs (lower priority)
 	if data, exists := m.sdBlobs[hash]; exists {
-		return data, nil
+		dst := make([]byte, len(data))
+		copy(dst, data)
+		return dst, nil
 	}
 
 	// Blob not found
@@ -71,41 +104,35 @@ func (m *MemoryStore) Get(hash string) ([]byte, error) {
 
 // Put stores a regular blob in the store
 func (m *MemoryStore) Put(hash string, data []byte) error {
-	// Validate hash format
-	if !stream.ValidateHash(hash) {
-		return liblbryerrors.Err("invalid hash format")
+	if err := m.validate(hash, data, ""); err != nil {
+		return err
 	}
 
-	// Validate blob data
-	b := blob.Blob(data)
-	if err := b.ValidForSend(); err != nil {
-		return liblbryerrors.Err("invalid blob data: %w", err)
-	}
+	// Create defensive copy of the data
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.blobs[hash] = data
+	m.blobs[hash] = dataCopy
 	return nil
 }
 
 // PutSD stores an SD blob in the store
 func (m *MemoryStore) PutSD(hash string, data []byte) error {
-	// Validate hash format
-	if !stream.ValidateHash(hash) {
-		return liblbryerrors.Err("invalid hash format")
+	if err := m.validate(hash, data, "SD"); err != nil {
+		return err
 	}
 
-	// Validate blob data
-	b := blob.Blob(data)
-	if err := b.ValidForSend(); err != nil {
-		return liblbryerrors.Err("invalid SD blob data: %w", err)
-	}
+	// Create defensive copy of the data
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.sdBlobs[hash] = data
+	m.sdBlobs[hash] = dataCopy
 	return nil
 }
 

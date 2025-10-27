@@ -230,6 +230,67 @@ func TestMemoryStore(t *testing.T) {
 		assert.Equal(t, sdData, data)
 	})
 
+	// Test hash collision behavior between regular and SD blobs
+	t.Run("HashCollisionBehavior", func(t *testing.T) {
+		store := NewMemoryStore()
+
+		collisionHash := "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e61"
+		regularData := []byte("regular blob data")
+		sdData := []byte("sd blob data")
+
+		// Test case 1: Regular blob stored first, then SD blob with same hash
+		err := store.Put(collisionHash, regularData)
+		require.NoError(t, err)
+
+		err = store.PutSD(collisionHash, sdData)
+		require.NoError(t, err)
+
+		// Has should return true (blob exists)
+		exists, err := store.Has(collisionHash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Get should return regular blob data (priority over SD)
+		data, err := store.Get(collisionHash)
+		require.NoError(t, err)
+		assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob")
+
+		// Test case 2: SD blob stored first, then regular blob with same hash
+		store = NewMemoryStore() // Fresh store
+
+		err = store.PutSD(collisionHash, sdData)
+		require.NoError(t, err)
+
+		err = store.Put(collisionHash, regularData)
+		require.NoError(t, err)
+
+		// Has should return true (blob exists)
+		exists, err = store.Has(collisionHash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Get should still return regular blob data (priority over SD)
+		data, err = store.Get(collisionHash)
+		require.NoError(t, err)
+		assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob regardless of storage order")
+
+		// Test case 3: Only SD blob exists
+		store = NewMemoryStore() // Fresh store
+
+		err = store.PutSD(collisionHash, sdData)
+		require.NoError(t, err)
+
+		// Has should return true
+		exists, err = store.Has(collisionHash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Get should return SD blob data (no regular blob to prioritize)
+		data, err = store.Get(collisionHash)
+		require.NoError(t, err)
+		assert.Equal(t, sdData, data, "Get should return SD blob when no regular blob exists")
+	})
+
 	// Test concurrent access
 	t.Run("ConcurrentAccess", func(t *testing.T) {
 		store := NewMemoryStore()
