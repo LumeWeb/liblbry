@@ -175,6 +175,8 @@ func (w *managedDHTNode) ID() bits.Bitmap {
 
 // Address returns the node's listening address
 func (w *managedDHTNode) Address() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.config.Address
 }
 
