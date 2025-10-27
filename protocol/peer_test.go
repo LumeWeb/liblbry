@@ -141,11 +141,11 @@ func getServer(t *testing.T, withBlobs bool) (PeerServer, *mocks.MockBlobStore) 
 }
 
 func getServerWithAccessControl(t *testing.T, withBlobs bool, accessControl liblbry.AccessControl) (PeerServer, *mocks.MockBlobStore) {
-	return getServerWithOptions(t, withBlobs, WithAccessControl(accessControl))
+	return getServerWithOptions(t, withBlobs, WithPeerAccessControl(accessControl))
 }
 
 func getServerWithProtector(t *testing.T, withBlobs bool, protector Protector) (PeerServer, *mocks.MockBlobStore) {
-	return getServerWithOptions(t, withBlobs, WithProtector(protector))
+	return getServerWithOptions(t, withBlobs, WithPeerProtector(protector))
 }
 
 func getBlobKeys() []string {
@@ -520,7 +520,7 @@ func TestRequestFromConnection(t *testing.T) {
 		}
 	}()
 
-	s := NewPeerServer(mockStore, WithTimeout(10*time.Second))
+	s := NewPeerServer(mockStore, WithPeerTimeout(10*time.Second))
 	startTestServer(listener, s)
 
 	// Test each request
@@ -537,7 +537,7 @@ func TestTimeoutHandling(t *testing.T) {
 		}
 	}()
 
-	s := NewPeerServer(mockStore, WithTimeout(shortTestTimeout))
+	s := NewPeerServer(mockStore, WithPeerTimeout(shortTestTimeout))
 
 	startTestServer(listener, s)
 

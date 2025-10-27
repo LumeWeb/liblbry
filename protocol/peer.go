@@ -141,29 +141,29 @@ func NewPeerServer(store liblbry.BlobStore, options ...ServerOption) PeerServer 
 	return server
 }
 
-// WithProtector sets the protector for content protection
-func WithProtector(protector Protector) ServerOption {
+// WithPeerProtector sets the content protector for the peer server
+func WithPeerProtector(protector Protector) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.protector = protector
 	}
 }
 
-// WithAccessControl sets the access control for peer connections
-func WithAccessControl(accessControl liblbry.AccessControl) ServerOption {
+// WithPeerAccessControl sets the access control policy for peer connections
+func WithPeerAccessControl(accessControl liblbry.AccessControl) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.accessControl = accessControl
 	}
 }
 
-// WithTimeout sets the connection timeout
-func WithTimeout(timeout time.Duration) ServerOption {
+// WithPeerTimeout sets the connection timeout for peer server operations
+func WithPeerTimeout(timeout time.Duration) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.connectionTimeout = timeout
 	}
 }
 
-// WithLogger sets the zap logger for the server
-func WithLogger(logger *zap.Logger) ServerOption {
+// WithPeerLogger sets the zap logger specifically for the peer server
+func WithPeerLogger(logger *zap.Logger) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.logger = logger
 	}
