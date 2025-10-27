@@ -8,11 +8,13 @@ import (
 
 	"github.com/lbryio/lbry.go/v2/dht"
 	"github.com/lbryio/lbry.go/v2/dht/bits"
+	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/protocol/mocks"
 )
 
 func TestNewDHTConfig(t *testing.T) {
-	config := NewDHTConfig()
+	config, err := NewDHTConfig()
+	require.NoError(t, err, "Failed to create DHT config")
 
 	if config.Address != "0.0.0.0:4444" {
 		t.Errorf("Expected default address '0.0.0.0:4444', got '%s'", config.Address)
@@ -28,7 +30,8 @@ func TestNewDHTConfig(t *testing.T) {
 }
 
 func TestDHTOptions(t *testing.T) {
-	config := NewDHTConfig()
+	config, err := NewDHTConfig()
+	require.NoError(t, err, "Failed to create DHT config")
 
 	// Test WithDHTAddress
 	WithDHTAddress("127.0.0.1:5555")(config)
@@ -70,9 +73,7 @@ func TestNewDHTNodeWithMock(t *testing.T) {
 
 	// Test creating DHT node with mock
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	if node == nil {
 		t.Fatal("Expected non-nil node")
@@ -112,9 +113,7 @@ func TestNewDHTNodeWithOptions(t *testing.T) {
 	}
 
 	node, err := NewDHTNode(mockDHT, options...)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node with options: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node with options")
 
 	if node.Address() != "127.0.0.1:6666" {
 		t.Errorf("Expected address '127.0.0.1:6666', got '%s'", node.Address())
@@ -126,9 +125,7 @@ func TestNewDHTNodeWithDefaults(t *testing.T) {
 	node, err := NewDHTNodeWithDefaults(
 		WithDHTAddress("127.0.0.1:8888"),
 	)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node with defaults: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node with defaults")
 
 	if node.Address() != "127.0.0.1:8888" {
 		t.Errorf("Expected address '127.0.0.1:8888', got '%s'", node.Address())
@@ -161,9 +158,7 @@ func TestParseHashFromString(t *testing.T) {
 func TestHashToString(t *testing.T) {
 	// Create a test hash
 	hash, err := ParseHashFromString("1234567890abcdef1234567890abcdef12345678")
-	if err != nil {
-		t.Fatalf("Failed to parse test hash: %v", err)
-	}
+	require.NoError(t, err, "Failed to parse test hash")
 
 	str := HashToString(hash)
 	if str == "" {
@@ -190,9 +185,7 @@ func TestDHTNodeLifecycle(t *testing.T) {
 		WithDHTAddress("127.0.0.1:14444"),
 		WithDHTSeedNodes([]string{}),
 	)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	// Test initial state
 	if node.IsJoined() {
@@ -238,9 +231,7 @@ func TestDHTNodeGetRoutingTableInfo(t *testing.T) {
 	mockDHT.EXPECT().ID().Return(testID)
 
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	info := node.GetRoutingTableInfo()
 	if info == "" {
@@ -270,15 +261,11 @@ func TestDHTNodeStart(t *testing.T) {
 	mockDHT.EXPECT().Shutdown().Maybe()        // Called in cleanup
 
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	// Test start
 	err = node.Start()
-	if err != nil {
-		t.Fatalf("Expected no error on start, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error on start")
 
 	// Wait for join to complete
 	node.WaitUntilJoined()
@@ -300,9 +287,7 @@ func TestDHTNodeStartError(t *testing.T) {
 	mockDHT.EXPECT().Shutdown().Maybe() // Will be called in cleanup
 
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	// Test start error
 	err = node.Start()
@@ -323,9 +308,7 @@ func TestDHTNodePing(t *testing.T) {
 	mockDHT.EXPECT().Ping("127.0.0.1:4444").Return(nil)
 
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	// Test ping
 	err = node.Ping("127.0.0.1:4444")
@@ -352,9 +335,7 @@ func TestDHTNodeGet(t *testing.T) {
 	mockDHT.EXPECT().Get(testHash).Return(testContacts, nil)
 
 	node, err := NewDHTNode(mockDHT)
-	if err != nil {
-		t.Fatalf("Failed to create DHT node: %v", err)
-	}
+	require.NoError(t, err, "Failed to create DHT node")
 
 	// Test get
 	contacts, err := node.Get(testHash)
@@ -403,6 +384,84 @@ type testErrorType struct{}
 
 func (e *testErrorType) Error() string {
 	return "test error"
+}
+
+func TestDHTNodeRestart(t *testing.T) {
+	// Create a mock DHT and set up ALL expectations upfront
+	mockDHT := mocks.NewMockDHT(t)
+	testID := bits.Rand()
+
+	// Initial expectations during node creation and first GetRoutingTableInfo
+	mockDHT.EXPECT().ID().Return(testID).Maybe() // Called during creation and GetRoutingTableInfo
+
+	// Expectations for initial start sequence
+	mockDHT.EXPECT().Start().Return(nil).Once()
+	mockDHT.EXPECT().WaitUntilJoined().Maybe()
+	mockDHT.EXPECT().Shutdown().Once() // First shutdown
+
+	// Expectations for restart sequence
+	mockDHT.EXPECT().Start().Return(nil).Once() // Restart start
+	mockDHT.EXPECT().WaitUntilJoined().Maybe()
+	mockDHT.EXPECT().Start().Return(nil).Once() // Post-restart start
+	mockDHT.EXPECT().WaitUntilJoined().Maybe()
+
+	// Final cleanup expectations
+	mockDHT.EXPECT().Shutdown().Once() // Final shutdown
+
+	// Create node with mock
+	node, err := NewDHTNode(mockDHT)
+	if err != nil {
+		t.Fatalf("Failed to create DHT node: %v", err)
+	}
+
+	// 1. Initial start
+	err = node.Start()
+	if err != nil {
+		t.Fatalf("Failed to start node: %v", err)
+	}
+
+	// Wait for join to complete
+	node.WaitUntilJoined()
+	if !node.IsJoined() {
+		t.Error("Expected node to be joined after start")
+	}
+
+	// 2. Shutdown the node
+	node.Shutdown()
+	node.Wait()
+
+	// 3. Verify stopped state
+	if node.IsJoined() {
+		t.Error("Expected node to not be joined after shutdown")
+	}
+
+	// 4. Restart the node
+	err = node.Restart()
+	if err != nil {
+		t.Fatalf("Failed to restart node: %v", err)
+	}
+
+	// 5. Verify node can be started again
+	err = node.Start()
+	if err != nil {
+		t.Errorf("Expected no error starting after restart, got %v", err)
+	}
+
+	// Wait for join to complete
+	node.WaitUntilJoined()
+	if !node.IsJoined() {
+		t.Error("Expected node to be joined after restart")
+	}
+
+	// 6. Test error case - restart while running
+	err = node.Restart()
+	if err == nil {
+		t.Error("Expected error when restarting running node")
+	}
+
+	// Cleanup
+	node.Shutdown()
+	node.Wait()
 }
 
 func TestDHTNodeGoroutineCleanup(t *testing.T) {

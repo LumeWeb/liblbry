@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"time"
 
 	"github.com/lbryio/lbry.go/v2/dht"
@@ -64,6 +65,9 @@ type DHTNode interface {
 	// State Management
 	IsJoined() bool
 	GetRoutingTableInfo() string
+	
+	// Restart restarts a stopped DHT node
+	Restart() error
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -89,21 +93,53 @@ type DHTConfig struct {
 // DHTOption configures DHT peer instances
 type DHTOption func(*DHTConfig)
 
+// validateDHTConfig checks configuration values are valid
+func validateDHTConfig(c *DHTConfig) error {
+	if c.Address == "" {
+		return errors.New("DHT address cannot be empty")
+	}
+
+	if c.PeerProtocolPort < 1 || c.PeerProtocolPort > 65535 {
+		return errors.New("peer protocol port must be between 1 and 65535")
+	}
+
+	if c.RPCPort < 0 || c.RPCPort > 65535 {
+		return errors.New("RPC port must be between 0 and 65535 (0 to disable)")
+	}
+
+	if c.ReannounceTime <= 0 {
+		return errors.New("reannounce time must be positive")
+	}
+
+	if c.AnnounceRate <= 0 {
+		return errors.New("announce rate must be positive")
+	}
+
+	return nil
+}
+
 // NewDHTConfig creates a default DHT configuration
-func NewDHTConfig() *DHTConfig {
-	return &DHTConfig{
+func NewDHTConfig() (*DHTConfig, error) {
+	cfg := &DHTConfig{
 		Address:          "0.0.0.0:4444",
 		SeedNodes:        []string{"lbrynet1.lbry.com:4444", "lbrynet2.lbry.com:4444", "lbrynet3.lbry.com:4444", "lbrynet4.lbry.com:4444"},
 		PeerProtocolPort: 3333,
 		ReannounceTime:   50 * time.Minute,
 		AnnounceRate:     10,
 	}
+	if err := validateDHTConfig(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // WithDHTAddress sets the DHT listening address
 func WithDHTAddress(addr string) DHTOption {
 	return func(c *DHTConfig) {
 		c.Address = addr
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
 	}
 }
 
@@ -125,6 +161,9 @@ func WithDHTNodeID(id string) DHTOption {
 func WithDHTPeerProtocolPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.PeerProtocolPort = port
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
 	}
 }
 
@@ -132,6 +171,9 @@ func WithDHTPeerProtocolPort(port int) DHTOption {
 func WithDHTRPCPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.RPCPort = port
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
 	}
 }
 
@@ -139,6 +181,9 @@ func WithDHTRPCPort(port int) DHTOption {
 func WithDHTReannounceTime(interval time.Duration) DHTOption {
 	return func(c *DHTConfig) {
 		c.ReannounceTime = interval
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
 	}
 }
 
@@ -146,6 +191,9 @@ func WithDHTReannounceTime(interval time.Duration) DHTOption {
 func WithDHTAnnounceRate(rate int) DHTOption {
 	return func(c *DHTConfig) {
 		c.AnnounceRate = rate
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
 	}
 }
 

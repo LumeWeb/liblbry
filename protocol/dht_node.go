@@ -29,7 +29,7 @@ func (w *managedDHTNode) isActive() bool {
 
 // NewDHTNode creates a new DHT node instance. If dhtImpl is nil, it creates a new DHT instance.
 func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
-	config := NewDHTConfig()
+	config, _ := NewDHTConfig()
 
 	// Apply options
 	for _, option := range options {
@@ -266,6 +266,55 @@ func (w *managedDHTNode) GetRoutingTableInfo() string {
 // Wait blocks until all goroutines have finished
 func (w *managedDHTNode) Wait() {
 	w.wg.Wait()
+}
+
+// Restart restarts a stopped DHT node
+func (w *managedDHTNode) Restart() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if !w.stopped {
+		return fmt.Errorf("DHT node must be stopped before restarting")
+	}
+
+	// Reset state
+	w.stopped = false
+	w.joined = false
+	w.ctx, w.cancel = context.WithCancel(context.Background())
+
+	// Start fresh wait group
+	w.wg = sync.WaitGroup{}
+
+	// Start the DHT
+	err := w.dht.Start()
+	if err != nil {
+		return fmt.Errorf("failed to restart DHT node: %w", err)
+	}
+
+	// Track and manage the join goroutine
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+
+		done := make(chan struct{})
+		go func() {
+			w.dht.WaitUntilJoined()
+			close(done)
+		}()
+
+		select {
+		case <-w.ctx.Done():
+			return
+		case <-done:
+			w.mu.Lock()
+			if !w.stopped {
+				w.joined = true
+			}
+			w.mu.Unlock()
+		}
+	}()
+
+	return nil
 }
 
 // PrintState prints the current state of the DHT (for debugging)
