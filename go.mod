@@ -3,6 +3,8 @@ module go.lumeweb.com/liblbry
 go 1.24.3
 
 require (
+	github.com/gammazero/deque v0.2.0
+	github.com/gammazero/workerpool v1.1.3
 	github.com/go-errors/errors v1.5.1
 	github.com/ipfs/go-cid v0.5.0
 	github.com/knadh/koanf/v2 v2.3.0
