@@ -68,6 +68,11 @@ func NewPeerClient(options ...ClientOption) PeerClient {
 		option(client)
 	}
 
+	// Rebind dialFunc to use updated client.timeout
+	client.dialFunc = func(network, address string) (net.Conn, error) {
+		return net.DialTimeout(network, address, client.timeout)
+	}
+
 	return client
 }
 
@@ -101,20 +106,26 @@ func (c *DefaultPeerClient) Connect(ctx context.Context, address string) error {
 		return liblbryerrors.Err("already connected")
 	}
 
-	var conn net.Conn
 	conn, err := c.dialFunc("tcp", address)
 	if err != nil {
 		return liblbryerrors.Err(err)
 	}
 
+	// Assign connection and reader before applying context deadline
+	c.conn = conn
+	c.reader = bufio.NewReader(conn)
+
 	// Apply context to connection
 	if err := c.applyContextDeadline(ctx); err != nil {
-		conn.Close()
+		// If applying context deadline fails, close connection and clear state
+		if closeErr := c.conn.Close(); closeErr != nil {
+			c.logger.Error("failed to close connection", zap.Error(closeErr))
+		}
+		c.conn = nil
+		c.reader = nil
 		return liblbryerrors.Err(err)
 	}
 
-	c.conn = conn
-	c.reader = bufio.NewReader(conn)
 	c.connected = true
 	return nil
 }
@@ -257,29 +268,33 @@ func (c *DefaultPeerClient) GetStream(ctx context.Context, sdHash string) (strea
 	}
 
 	// Parse SD blob
-	var sdBlob stream.SDBlob
-	if err := json.Unmarshal(sdBlobData, &sdBlob); err != nil {
-		return nil, liblbryerrors.Err(err)
-	}
+var sdBlob stream.SDBlob
+if err := json.Unmarshal(sdBlobData, &sdBlob); err != nil {
+	return nil, liblbryerrors.Err(err)
+}
 
-	// Create stream with SD blob as first element (excluding last null blob)
-	resultStream := make(stream.Stream, 1, len(sdBlob.BlobInfos)+1-1)
+	// Create stream with SD blob as first element
+	resultStream := make(stream.Stream, 1, 1+len(sdBlob.BlobInfos))
 	resultStream[0] = sdBlobData
 
-	// Get all content blobs (excluding last null blob)
-	for _, blobInfo := range sdBlob.BlobInfos[:len(sdBlob.BlobInfos)-1] {
-		// Check for context cancellation before fetching each blob
-		if ctx.Err() != nil {
-			return nil, liblbryerrors.Err(ctx.Err())
-		}
-		
-		blobHash := hex.EncodeToString(blobInfo.BlobHash)
+	// Get all content blobs (excluding last null blob) only if we have content blobs
+	end := len(sdBlob.BlobInfos) - 1
+	if end > 0 {
+		// Get all content blobs (excluding last null blob)
+		for _, blobInfo := range sdBlob.BlobInfos[:end] {
+			// Check for context cancellation before fetching each blob
+			if ctx.Err() != nil {
+				return nil, liblbryerrors.Err(ctx.Err())
+			}
+			
+			blobHash := hex.EncodeToString(blobInfo.BlobHash)
 
-		blobData, err := c.GetBlob(ctx, blobHash)
-		if err != nil {
-			return nil, liblbryerrors.Err(err)
+			blobData, err := c.GetBlob(ctx, blobHash)
+			if err != nil {
+				return nil, liblbryerrors.Err(err)
+			}
+			resultStream = append(resultStream, blobData)
 		}
-		resultStream = append(resultStream, blobData)
 	}
 
 	return resultStream, nil

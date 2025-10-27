@@ -107,7 +107,6 @@ func (m *MockConnWrapper) SetDeadline(t time.Time) error {
 // RemoteAddr overrides the mock to provide a test address
 func (m *MockConnWrapper) RemoteAddr() net.Addr {
 	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
-	return nil
 }
 
 // setupReflectorMockStore sets up a mock blob store with test data

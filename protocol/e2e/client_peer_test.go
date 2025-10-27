@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	reflectorAddr   = "s1.lbry.network:5567"
+	peerAddr        = "s1.lbry.network:5567"
 	knownSDHash     = "acc6adf8b4f10dcddffc5c2ca87dbd9cb3a2664564695ac7aaab038193ff14a280cc3d4ebae55c71d0b885a7316d0137"
 	invalidHash     = "invalidhash"
 	nonExistentHash = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
@@ -114,9 +114,9 @@ func createConnectedClient(t *testing.T, timeout time.Duration) protocol.PeerCli
 // connectToReflector connects a client to the public reflector server
 func connectToReflector(t *testing.T, client protocol.PeerClient) {
 	t.Helper()
-	t.Logf("Connecting to reflector server at %s", reflectorAddr)
+	t.Logf("Connecting to reflector server at %s", peerAddr)
 	ctx := context.Background()
-	err := client.Connect(ctx, reflectorAddr)
+	err := client.Connect(ctx, peerAddr)
 	require.NoError(t, err, "Failed to connect to reflector server")
 }
 
@@ -135,7 +135,7 @@ func assertBlobNotFoundError(t *testing.T, err error, msg string) {
 }
 func TestPeerClientIntegration(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test 1: Fetch known SD blob
 	t.Run("FetchKnownBlob", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
@@ -207,7 +207,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 4: Stream operations with real data validation
 	t.Run("StreamOperations", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test stream fetching and validation
 		t.Run("FetchAndValidateStream", func(t *testing.T) {
 			streamBlobs, err := client.GetStream(ctx, knownSDHash)
@@ -263,7 +263,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 13: Context cancellation handling
 	t.Run("ContextCancellation", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test with context timeout
 		t.Run("ContextTimeout", func(t *testing.T) {
 			// Create a context with a very short timeout
@@ -290,7 +290,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 9: Large blob handling tests
 	t.Run("LargeBlobHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test fetching known SD blob (which can be large)
 		has, err := client.HasBlob(ctx, knownSDHash)
 		require.NoError(t, err)
@@ -309,7 +309,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 10: Malformed request handling tests
 	t.Run("MalformedRequestHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test with empty hash
 		t.Run("EmptyHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, emptyHash)
@@ -334,7 +334,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 11: Blob verification tests
 	t.Run("BlobVerification", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test that we can fetch and verify the known SD blob
 		blobData, err := client.GetBlob(ctx, knownSDHash)
 		require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestPeerClientIntegration(t *testing.T) {
 	// Test 12: Empty hash handling tests
 	t.Run("EmptyHashHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
-		
+
 		// Test with empty string as hash
 		has, err := client.HasBlob(ctx, emptyHash)
 		assertInvalidRequestError(t, err, "Should return error for empty hash")
