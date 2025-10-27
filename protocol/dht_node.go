@@ -78,12 +78,8 @@ func (w *managedDHTNode) Start() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if !w.isActive() {
+	if w.stopped {
 		return fmt.Errorf("DHT node is stopped")
-	}
-
-	if w.joined {
-		return nil
 	}
 
 	err := w.dht.Start()
@@ -96,13 +92,20 @@ func (w *managedDHTNode) Start() error {
 	go func() {
 		defer w.wg.Done()
 
+		done := make(chan struct{})
+		go func() {
+			w.dht.WaitUntilJoined()
+			close(done)
+		}()
+
 		select {
 		case <-w.ctx.Done():
 			return
-		default:
-			w.dht.WaitUntilJoined()
+		case <-done:
 			w.mu.Lock()
-			w.joined = true
+			if !w.stopped {
+				w.joined = true
+			}
 			w.mu.Unlock()
 		}
 	}()
@@ -112,27 +115,39 @@ func (w *managedDHTNode) Start() error {
 
 // Shutdown gracefully shuts down the DHT peer
 func (w *managedDHTNode) Shutdown() {
+	// First, acquire lock to check state and set flags
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	if !w.isActive() {
+		w.mu.Unlock()
 		return
 	}
 
+	// Set stopped flag to prevent new operations
 	w.stopped = true
-	w.joined = false
+
+	// Capture needed state before releasing lock
+	dhtInstance := w.dht
+	cancelFunc := w.cancel
+
+	// Release lock before calling operations that might block
+	w.mu.Unlock()
 
 	// Cancel context to signal goroutines to stop
-	w.cancel()
+	cancelFunc()
 
 	// Shutdown the DHT
-	w.dht.Shutdown()
+	dhtInstance.Shutdown()
 
-	// Wait for all goroutines to finish
+	// Wait for all goroutines to finish (this is where deadlock occurred before)
 	w.wg.Wait()
+
+	// Re-acquire lock briefly to finalize state changes
+	w.mu.Lock()
+	w.joined = false
+	w.mu.Unlock()
 }
 
-// WaitUntilJoined blocks until the node joins the network
+// WaitUntilJoined blocks until the node joins the network or context is cancelled
 func (w *managedDHTNode) WaitUntilJoined() {
 	w.mu.RLock()
 	if !w.isActive() {
@@ -141,11 +156,22 @@ func (w *managedDHTNode) WaitUntilJoined() {
 	}
 	w.mu.RUnlock()
 
-	w.dht.WaitUntilJoined()
+	done := make(chan struct{})
+	go func() {
+		w.dht.WaitUntilJoined()
+		close(done)
+	}()
 
-	w.mu.Lock()
-	w.joined = true
-	w.mu.Unlock()
+	select {
+	case <-w.ctx.Done():
+		return
+	case <-done:
+		w.mu.Lock()
+		if !w.stopped {
+			w.joined = true
+		}
+		w.mu.Unlock()
+	}
 }
 
 // ID returns the node's ID
@@ -259,7 +285,6 @@ func (w *managedDHTNode) PrintState() {
 func (w *managedDHTNode) GetDHTInstance() DHT {
 	return w.dht
 }
-
 
 // ParseHashFromString parses a hex string into a bits.Bitmap
 func ParseHashFromString(hashStr string) (bits.Bitmap, error) {

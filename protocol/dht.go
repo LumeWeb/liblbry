@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/lbryio/lbry.go/v2/dht"
-	"github.com/sirupsen/logrus"
 	"github.com/lbryio/lbry.go/v2/dht/bits"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
 
@@ -13,28 +13,28 @@ import (
 type DHT interface {
 	// Start begins listening for DHT connections
 	Start() error
-	
+
 	// Shutdown gracefully stops the DHT
 	Shutdown()
-	
+
 	// WaitUntilJoined blocks until the node joins the network
 	WaitUntilJoined()
-	
+
 	// ID returns the node's ID
 	ID() bits.Bitmap
-	
+
 	// Ping tests connectivity to another DHT node
 	Ping(addr string) error
-	
+
 	// Get returns contacts that have the given hash
 	Get(hash bits.Bitmap) ([]dht.Contact, error)
-	
+
 	// Add announces a hash to the DHT
 	Add(hash bits.Bitmap)
-	
+
 	// Remove stops announcing a hash
 	Remove(hash bits.Bitmap)
-	
+
 	// PrintState outputs debug information about the DHT state
 	PrintState()
 }
@@ -65,7 +65,6 @@ type DHTNode interface {
 	IsJoined() bool
 	GetRoutingTableInfo() string
 }
-
 
 // DHTConfig holds configuration for DHT peer operations
 type DHTConfig struct {
@@ -153,6 +152,10 @@ func WithDHTAnnounceRate(rate int) DHTOption {
 // WithDHTLogger sets the DHT-specific logger (converts zap.Logger to logrus.Logger for DHT compatibility)
 func WithDHTLogger(logger *zap.Logger) DHTOption {
 	return func(c *DHTConfig) {
-		c.Logger = NewZapToLogrusAdapter(logger)
+		if logger == nil {
+			c.Logger = nil
+		} else {
+			c.Logger = NewZapToLogrusAdapter(logger)
+		}
 	}
 }

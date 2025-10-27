@@ -4,6 +4,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"io"
 )
 
 // ZapToLogrusAdapter adapts a zap logger to implement the logrus logger interface
@@ -14,42 +15,75 @@ type ZapToLogrusAdapter struct {
 
 // NewZapToLogrusAdapter creates a new adapter that wraps a zap logger
 func NewZapToLogrusAdapter(zapLogger *zap.Logger) *logrus.Logger {
-	// Create a logrus logger that will delegate to the zap logger
 	logrusLogger := logrus.New()
-
-	// Replace the output to use our custom writer
-	logrusLogger.SetOutput(&zapWriter{zapLogger: zapLogger})
-
-	// Set the level to match zap logger's level
-	// Note: This is a basic approximation - zap has more granular levels
-	logrusLogger.SetLevel(convertZapToLogrusLevel(zapLogger.Core().Enabled(zapcore.DebugLevel)))
-
+	if zapLogger == nil {
+		// Default to discarding output if no zap provided
+		logrusLogger.SetOutput(io.Discard)
+		return logrusLogger
+	}
+	// Send everything through the zap hook; disable logrus formatter output.
+	logrusLogger.SetOutput(io.Discard)
+	logrusLogger.AddHook(&zapHook{zapLogger: zapLogger})
+	logrusLogger.SetLevel(mapZapMinLevelToLogrus(zapLogger))
 	return logrusLogger
 }
 
-// zapWriter implements io.Writer to redirect logrus output to zap logger
-type zapWriter struct {
+// zapHook forwards logrus entries to zap with proper levels and structured fields
+type zapHook struct {
 	zapLogger *zap.Logger
 }
 
-// Write implements io.Writer interface
-func (w *zapWriter) Write(p []byte) (n int, err error) {
-	// Parse the logrus output and redirect to zap
-	// This is a simplified approach - in practice, logrus formats messages
-	// For now, we'll treat the entire byte slice as a message
-	message := string(p)
+func (h *zapHook) Levels() []logrus.Level { return logrus.AllLevels }
 
-	// Log at info level (logrus doesn't expose the level in Write)
-	w.zapLogger.Info(message)
-
-	return len(p), nil
-}
-
-// convertZapToLogrusLevel converts zap level to logrus level
-func convertZapToLogrusLevel(enabled bool) logrus.Level {
-	if enabled {
-		return logrus.DebugLevel
+func (h *zapHook) Fire(e *logrus.Entry) error {
+	if h.zapLogger == nil {
+		return nil
 	}
-	return logrus.InfoLevel
+	// transfer structured fields
+	fields := make([]zap.Field, 0, len(e.Data))
+	for k, v := range e.Data {
+		fields = append(fields, zap.Any(k, v))
+	}
+	l := h.zapLogger.With(fields...)
+	switch e.Level {
+	case logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel:
+		l.Error(e.Message)
+	case logrus.WarnLevel:
+		l.Warn(e.Message)
+	case logrus.InfoLevel:
+		l.Info(e.Message)
+	case logrus.TraceLevel, logrus.DebugLevel:
+		l.Debug(e.Message)
+	default:
+		l.Info(e.Message)
+	}
+	return nil
 }
 
+// mapZapMinLevelToLogrus inspects zap's enabled levels to derive a logrus Level.
+func mapZapMinLevelToLogrus(z *zap.Logger) logrus.Level {
+	if z == nil {
+		return logrus.InfoLevel
+	}
+	levels := []zapcore.Level{
+		zapcore.DebugLevel, zapcore.InfoLevel, zapcore.WarnLevel,
+		zapcore.ErrorLevel, zapcore.DPanicLevel, zapcore.PanicLevel, zapcore.FatalLevel,
+	}
+	min := zapcore.InfoLevel
+	for _, lv := range levels {
+		if z.Core().Enabled(lv) {
+			min = lv
+			break
+		}
+	}
+	switch min {
+	case zapcore.DebugLevel:
+		return logrus.DebugLevel
+	case zapcore.InfoLevel:
+		return logrus.InfoLevel
+	case zapcore.WarnLevel:
+		return logrus.WarnLevel
+	default:
+		return logrus.ErrorLevel
+	}
+}

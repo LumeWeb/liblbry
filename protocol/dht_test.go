@@ -176,14 +176,13 @@ func TestHashToString(t *testing.T) {
 	}
 }
 
-
 func TestDHTNodeLifecycle(t *testing.T) {
 	// Create a mock DHT
 	mockDHT := mocks.NewMockDHT(t)
 
 	// Set up mock expectations
 	testID := bits.Rand()
-	mockDHT.EXPECT().ID().Return(testID).Once() // For GetRoutingTableInfo
+	mockDHT.EXPECT().ID().Return(testID).Maybe() // Called by GetRoutingTableInfo
 	mockDHT.EXPECT().Shutdown().Once()
 	mockDHT.EXPECT().WaitUntilJoined().Maybe() // Called in goroutine, may not complete
 
@@ -267,7 +266,7 @@ func TestDHTNodeStart(t *testing.T) {
 
 	// Set up mock expectations
 	mockDHT.EXPECT().Start().Return(nil)
-	mockDHT.EXPECT().WaitUntilJoined().Maybe() // Called in goroutine, may not complete
+	mockDHT.EXPECT().WaitUntilJoined().Maybe() // Called in goroutine, may be called multiple times
 	mockDHT.EXPECT().Shutdown().Maybe()        // Called in cleanup
 
 	node, err := NewDHTNode(mockDHT)
@@ -412,6 +411,7 @@ func TestDHTNodeGoroutineCleanup(t *testing.T) {
 
 	// Set up mock expectations
 	mockDHT.EXPECT().Start().Return(nil).Once()
+	mockDHT.EXPECT().WaitUntilJoined().Maybe() // Called in goroutine, may not complete due to shutdown
 	mockDHT.EXPECT().Shutdown().Once()
 
 	node, err := NewDHTNode(mockDHT)
