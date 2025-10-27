@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -31,14 +32,22 @@ func TestZapToLogrusAdapter(t *testing.T) {
 	// Create our adapter
 	logrusLogger := NewZapToLogrusAdapter(zapLogger)
 
-	// Test logging
-	logrusLogger.Info("test message", "key1", "value1", "key2", 42)
+	// Test structured logging
+	logrusLogger.WithFields(logrus.Fields{
+		"key1": "value1",
+		"key2": 42,
+	}).Info("test message")
 
-	// Check that something was written
+	// Parse the JSON output
 	output := buffer.String()
-	assert.Contains(t, output, "test message")
-	assert.Contains(t, output, "value1")
-	assert.Contains(t, output, "42")
+	var logEntry map[string]interface{}
+	err := json.Unmarshal([]byte(output), &logEntry)
+	assert.NoError(t, err, "Failed to parse log output as JSON")
+
+	// Verify structured fields
+	assert.Equal(t, "test message", logEntry["msg"])
+	assert.Equal(t, "value1", logEntry["key1"])
+	assert.Equal(t, float64(42), logEntry["key2"]) // JSON numbers are float64
 }
 
 func TestZapHook(t *testing.T) {

@@ -29,7 +29,10 @@ func (w *managedDHTNode) isActive() bool {
 
 // NewDHTNode creates a new DHT node instance. If dhtImpl is nil, it creates a new DHT instance.
 func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
-	config, _ := NewDHTConfig()
+	config, err := NewDHTConfig()
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply options
 	for _, option := range options {
@@ -51,6 +54,10 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 
 		dhtImpl = dht.New(dhtConfig)
 		if config.Logger != nil {
+			// Note: dht.UseLogger() sets a package-level global logger that affects all DHT instances.
+			// All nodes created after this call will use the same logger. If you need different logging
+			// behavior for different nodes, set the logger once during application startup before any
+			// dht.New() calls, or manage logging at a higher level.
 			dht.UseLogger(config.Logger)
 		}
 	}
