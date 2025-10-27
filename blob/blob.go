@@ -32,6 +32,11 @@ func (b Blob) Size() int {
 	return len(b)
 }
 
+// ToBytes returns the underlying byte slice of the blob
+func (b Blob) ToBytes() []byte {
+	return []byte(b)
+}
+
 // Hash returns a hash of the blob data
 func (b Blob) Hash() []byte {
 	if b.Size() == 0 {

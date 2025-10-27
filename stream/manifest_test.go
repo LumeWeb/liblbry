@@ -37,7 +37,7 @@ func TestDefaultManifestCreator_CreateManifest(t *testing.T) {
 	assert.NotEmpty(t, sd.StreamHash)
 
 	// StreamType should be set to lbryfile
-	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
 
 	// Verify blob infos exist and have at least the terminating blob
 	assert.NotEmpty(t, sd.BlobInfos)
@@ -91,7 +91,7 @@ func TestDefaultManifestCreator_CreateManifestFromPath(t *testing.T) {
 	assert.NotEmpty(t, sd.StreamHash)
 
 	// StreamType should be set to lbryfile
-	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
 
 	// Verify blob infos exist and have at least the terminating blob
 	assert.NotEmpty(t, sd.BlobInfos)
@@ -130,7 +130,7 @@ func TestDefaultManifestCreator_ParseManifest(t *testing.T) {
 	assert.NotEmpty(t, sd.BlobInfos)
 
 	// StreamType should be lbryfile
-	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
 
 	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
@@ -186,7 +186,7 @@ func TestDefaultManifestCreator_CreateManifest_EmptyData(t *testing.T) {
 	// Verify other fields are properly set
 	assert.Empty(t, sd.StreamName)
 	assert.Empty(t, sd.SuggestedFileName)
-	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
 	assert.NotEmpty(t, sd.Key)
 	assert.NotEmpty(t, sd.StreamHash)
 }
@@ -223,7 +223,7 @@ func TestDefaultManifestCreator_CreateManifest_LargeData(t *testing.T) {
 	// Verify SD blob structure
 	assert.Empty(t, sd.StreamName)
 	assert.Empty(t, sd.SuggestedFileName)
-	assert.Equal(t, streamTypeLBRYFile, sd.StreamType)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
 	assert.NotEmpty(t, sd.Key)
 	assert.Len(t, sd.Key, lbrycrypto.KeySize)
 	assert.NotEmpty(t, sd.StreamHash)

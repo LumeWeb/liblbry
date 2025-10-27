@@ -76,7 +76,7 @@ func TestSDBlobMarshalJSON(t *testing.T) {
 	sd := SDBlob{
 		StreamName:        streamName,
 		BlobInfos:         []BlobInfo{},
-		StreamType:        streamTypeLBRYFile,
+		StreamType:        StreamTypeLBRYFile,
 		Key:               key,
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,
@@ -235,7 +235,7 @@ func TestSDBlobEdgeCases(t *testing.T) {
 	sd := SDBlob{
 		StreamName:        "",
 		BlobInfos:         []BlobInfo{},
-		StreamType:        streamTypeLBRYFile,
+		StreamType:        StreamTypeLBRYFile,
 		Key:               nil,
 		SuggestedFileName: "",
 		StreamHash:        nil,
@@ -363,7 +363,7 @@ func TestSDBlobToJson(t *testing.T) {
 	sd := SDBlob{
 		StreamName:        streamName,
 		BlobInfos:         []BlobInfo{},
-		StreamType:        streamTypeLBRYFile,
+		StreamType:        StreamTypeLBRYFile,
 		Key:               key,
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,

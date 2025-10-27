@@ -57,8 +57,6 @@ func getPeerIP(conn net.Conn) string {
 const (
 	DefaultTimeout = 1 * time.Minute
 	MaxRequestSize = 64 * 1024 // 64KB max request size
-	LbrycrdAddress = "127.0.0.1:50001"
-
 	// Response constants
 	PaymentRateAccepted = "RATE_ACCEPTED"
 	PaymentRateTooLow   = "RATE_TOO_LOW"
@@ -81,7 +79,6 @@ var (
 
 // CompositeRequest represents a composite protocol message
 type CompositeRequest struct {
-	LBRYcrdAddress      bool     `json:"lbrycrd_address,omitempty"`
 	RequestedBlobs      []string `json:"requested_blobs,omitempty"`
 	BlobDataPaymentRate *float64 `json:"blob_data_payment_rate,omitempty"`
 	RequestedBlob       string   `json:"requested_blob,omitempty"`
@@ -89,7 +86,6 @@ type CompositeRequest struct {
 
 // CompositeResponse represents a composite protocol response
 type CompositeResponse struct {
-	LbrycrdAddress      string        `json:"lbrycrd_address,omitempty"`
 	AvailableBlobs      []string      `json:"available_blobs"`
 	BlobDataPaymentRate string        `json:"blob_data_payment_rate,omitempty"`
 	IncomingBlob        *IncomingBlob `json:"incoming_blob,omitempty"`
@@ -340,13 +336,6 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP strin
 		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
 	}
 
-	// Handle LBRYcrd address request
-	if request.LBRYcrdAddress {
-		response.LbrycrdAddress = LbrycrdAddress
-
-		// Also handle availability if requested_blobs is present
-		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
-	}
 
 	// Handle blob availability request
 	if len(request.RequestedBlobs) > 0 {

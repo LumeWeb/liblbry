@@ -43,17 +43,6 @@ var availabilityRequests = []pair{
 	},
 }
 
-var lbrycrdAddressRequests = []pair{
-	{
-		request:  []byte(`{"lbrycrd_address":true}`),
-		response: []byte(fmt.Sprintf(`{"lbrycrd_address":"%s","available_blobs":[]}`, LbrycrdAddress)),
-	},
-	{
-		request:  []byte(fmt.Sprintf(`{"lbrycrd_address":true,"requested_blobs":["%s"]}`, validBlobHash1)),
-		response: []byte(fmt.Sprintf(`{"lbrycrd_address":"%s","available_blobs":["%s"]}`, LbrycrdAddress, validBlobHash1)),
-	},
-}
-
 var blobDataRequests = []pair{
 	{
 		request:  []byte(fmt.Sprintf(`{"requested_blob":"%s"}`, validBlobHash1)),
@@ -184,7 +173,6 @@ func handleRequestAndCompareWithIP(t *testing.T, server PeerServer, requestJSON,
 		return
 	}
 
-	assert.Equal(t, expectedResponse.LbrycrdAddress, response.LbrycrdAddress)
 	assert.Equal(t, expectedResponse.AvailableBlobs, response.AvailableBlobs)
 	assert.Equal(t, expectedResponse.BlobDataPaymentRate, response.BlobDataPaymentRate)
 	assert.Equal(t, expectedResponse.IncomingBlob, response.IncomingBlob)
@@ -260,17 +248,6 @@ func createAvailabilityRequest(blobHashes []string) CompositeRequest {
 	}
 }
 
-// Helper function to create a CompositeRequest for LBRYcrd address
-func createLbrycrdAddressRequest(withBlobs bool, blobHashes []string) CompositeRequest {
-	req := CompositeRequest{
-		LBRYcrdAddress: true,
-	}
-	if withBlobs {
-		req.RequestedBlobs = blobHashes
-	}
-	return req
-}
-
 // Helper function to create a CompositeRequest for blob data
 func createBlobDataRequest(blobHash string) CompositeRequest {
 	return CompositeRequest{
@@ -289,14 +266,6 @@ func createPaymentRateRequest(paymentRate float64, blobHashes []string) Composit
 // Helper function to create a CompositeResponse with available blobs
 func createAvailableBlobsResponse(blobHashes []string) CompositeResponse {
 	return CompositeResponse{
-		AvailableBlobs: blobHashes,
-	}
-}
-
-// Helper function to create a CompositeResponse with LBRYcrd address
-func createLbrycrdAddressResponse(address string, blobHashes []string) CompositeResponse {
-	return CompositeResponse{
-		LbrycrdAddress: address,
 		AvailableBlobs: blobHashes,
 	}
 }
@@ -336,7 +305,6 @@ func testRequestAndCompare(t *testing.T, server PeerServer, request CompositeReq
 	t.Helper()
 	response, blobData := handleTestRequest(t, server, request)
 
-	assert.Equal(t, expectedResponse.LbrycrdAddress, response.LbrycrdAddress)
 	assert.Equal(t, expectedResponse.AvailableBlobs, response.AvailableBlobs)
 	assert.Equal(t, expectedResponse.BlobDataPaymentRate, response.BlobDataPaymentRate)
 	assert.Equal(t, expectedResponse.IncomingBlob, response.IncomingBlob)
@@ -408,14 +376,6 @@ func TestAvailabilityRequest_NoBlobs(t *testing.T) {
 	for _, p := range availabilityRequests {
 		req := unmarshalRequest(t, p.request)
 		testRequestAndCompare(t, s, req, expectedResponse)
-	}
-}
-
-func TestLbrycrdAddressRequest(t *testing.T) {
-	s, _ := getServer(t, true)
-
-	for _, p := range lbrycrdAddressRequests {
-		handleRequestAndCompare(t, s, p.request, p.response)
 	}
 }
 
