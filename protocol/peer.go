@@ -114,12 +114,12 @@ type DefaultPeerServer struct {
 // ServerOption configures the peer server
 type ServerOption func(*DefaultPeerServer)
 
-// applyOptions applies all ServerOption functions to the server instance
+// applyPeerOptions applies all ServerOption functions to the server instance
 // This helper function centralizes the option application logic,
 // making it easier to maintain and extend. It follows the functional
 // options pattern which provides a clean and flexible way to configure
 // a server instance during construction.
-func applyOptions(server *DefaultPeerServer, options []ServerOption) {
+func applyPeerOptions(server *DefaultPeerServer, options []ServerOption) {
 	for _, option := range options {
 		option(server)
 	}
@@ -136,7 +136,7 @@ func NewPeerServer(store liblbry.BlobStore, options ...ServerOption) PeerServer 
 	}
 
 	// Apply options using helper function
-	applyOptions(server, options)
+	applyPeerOptions(server, options)
 
 	return server
 }
