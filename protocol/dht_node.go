@@ -94,28 +94,8 @@ func (w *managedDHTNode) Start() error {
 		return fmt.Errorf("failed to start DHT node: %w", err)
 	}
 
-	// Track and manage the join goroutine
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
-
-		done := make(chan struct{})
-		go func() {
-			w.dht.WaitUntilJoined()
-			close(done)
-		}()
-
-		select {
-		case <-w.ctx.Done():
-			return
-		case <-done:
-			w.mu.Lock()
-			if !w.stopped {
-				w.joined = true
-			}
-			w.mu.Unlock()
-		}
-	}()
+	// Start the join monitoring goroutine
+	w.startJoinGoroutine()
 
 	return nil
 }
@@ -292,13 +272,22 @@ func (w *managedDHTNode) Restart() error {
 	// Start fresh wait group
 	w.wg = sync.WaitGroup{}
 
-	// Start the DHT
+	// Release lock before potentially blocking operation
+	w.mu.Unlock()
 	err := w.dht.Start()
+	w.mu.Lock()
 	if err != nil {
 		return fmt.Errorf("failed to restart DHT node: %w", err)
 	}
 
-	// Track and manage the join goroutine
+	// Start the join monitoring goroutine
+	w.startJoinGoroutine()
+
+	return nil
+}
+
+// startJoinGoroutine starts a goroutine to monitor DHT join status
+func (w *managedDHTNode) startJoinGoroutine() {
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
@@ -320,8 +309,6 @@ func (w *managedDHTNode) Restart() error {
 			w.mu.Unlock()
 		}
 	}()
-
-	return nil
 }
 
 // PrintState prints the current state of the DHT (for debugging)
@@ -339,6 +326,8 @@ func (w *managedDHTNode) PrintState() {
 // GetDHTInstance returns the underlying DHT instance for advanced operations
 // This should be used carefully as it exposes the internal implementation
 func (w *managedDHTNode) GetDHTInstance() DHT {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.dht
 }
 
