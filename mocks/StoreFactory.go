@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	"github.com/knadh/koanf/v2"
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/liblbry"
 )
@@ -37,7 +38,7 @@ func (_m *MockStoreFactory) EXPECT() *MockStoreFactory_Expecter {
 }
 
 // CreateStore provides a mock function for the type MockStoreFactory
-func (_mock *MockStoreFactory) CreateStore(config map[string]any) (liblbry.BlobStore, error) {
+func (_mock *MockStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, error) {
 	ret := _mock.Called(config)
 
 	if len(ret) == 0 {
@@ -46,17 +47,17 @@ func (_mock *MockStoreFactory) CreateStore(config map[string]any) (liblbry.BlobS
 
 	var r0 liblbry.BlobStore
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(map[string]any) (liblbry.BlobStore, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) (liblbry.BlobStore, error)); ok {
 		return returnFunc(config)
 	}
-	if returnFunc, ok := ret.Get(0).(func(map[string]any) liblbry.BlobStore); ok {
+	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) liblbry.BlobStore); ok {
 		r0 = returnFunc(config)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(liblbry.BlobStore)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(map[string]any) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(*koanf.Koanf) error); ok {
 		r1 = returnFunc(config)
 	} else {
 		r1 = ret.Error(1)
@@ -70,16 +71,16 @@ type MockStoreFactory_CreateStore_Call struct {
 }
 
 // CreateStore is a helper method to define mock.On call
-//   - config map[string]any
+//   - config *koanf.Koanf
 func (_e *MockStoreFactory_Expecter) CreateStore(config interface{}) *MockStoreFactory_CreateStore_Call {
 	return &MockStoreFactory_CreateStore_Call{Call: _e.mock.On("CreateStore", config)}
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) Run(run func(config map[string]any)) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) Run(run func(config *koanf.Koanf)) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 map[string]any
+		var arg0 *koanf.Koanf
 		if args[0] != nil {
-			arg0 = args[0].(map[string]any)
+			arg0 = args[0].(*koanf.Koanf)
 		}
 		run(
 			arg0,
@@ -93,7 +94,7 @@ func (_c *MockStoreFactory_CreateStore_Call) Return(blobStore liblbry.BlobStore,
 	return _c
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config map[string]any) (liblbry.BlobStore, error)) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config *koanf.Koanf) (liblbry.BlobStore, error)) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Return(run)
 	return _c
 }
