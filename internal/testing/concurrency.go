@@ -49,6 +49,12 @@ type StoreOperations interface {
 //	}
 //	RunConcurrentTasks(t, 5, tasks)
 func RunConcurrentTasks(t assert.TestingT, maxWorkers int, tasks []func() error) {
+	if maxWorkers <= 0 {
+		maxWorkers = 1
+	}
+	if len(tasks) == 0 {
+		return
+	}
 	wp := workerpool.New(maxWorkers)
 	defer wp.StopWait()
 
@@ -182,6 +188,35 @@ func TestConcurrentPut(t assert.TestingT, store StoreOperations, hashGen func(in
 			}
 			if !assert.Equal(t, data, storedData) {
 				return fmt.Errorf("data mismatch for hash %s", hash)
+			}
+			return nil
+		}
+	}
+	RunConcurrentTasks(t, maxWorkers, concurrentTasks)
+}
+
+// TestConcurrentHasMultiple verifies concurrent Has operations using multiple store instances.
+// This function creates multiple store instances via the factory function and performs
+// concurrent Has operations on each instance to test thread safety across independent stores.
+//
+// Parameters:
+//   - t: TestingT interface for assertions
+//   - storeFactory: Function that creates and returns a new StoreOperations instance
+//   - hash: Blob hash to check for existence
+//   - expectedExists: Expected result of Has operation
+//   - tasks: Number of concurrent Has operations to perform
+//   - maxWorkers: Maximum number of concurrent workers
+func TestConcurrentHasMultiple(t assert.TestingT, storeFactory func() StoreOperations, hash string, expectedExists bool, tasks int, maxWorkers int) {
+	concurrentTasks := make([]func() error, tasks)
+	for i := 0; i < tasks; i++ {
+		concurrentTasks[i] = func() error {
+			store := storeFactory()
+			exists, err := store.Has(hash)
+			if err != nil {
+				return fmt.Errorf("Has error: %v", err)
+			}
+			if exists != expectedExists {
+				return fmt.Errorf("expected exists=%v, got %v", expectedExists, exists)
 			}
 			return nil
 		}

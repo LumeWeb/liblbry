@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/hex"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	peerAddr        = "s1.lbry.network:5567"
+	defaultPeerAddr = "s1.lbry.network:5567"
 	knownSDHash     = "acc6adf8b4f10dcddffc5c2ca87dbd9cb3a2664564695ac7aaab038193ff14a280cc3d4ebae55c71d0b885a7316d0137"
 	invalidHash     = "invalidhash"
 	nonExistentHash = "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
@@ -49,8 +50,8 @@ func isBlobNotFoundError(err error) bool {
 		"not found",
 		"i/o timeout",
 		"EOF",
-		"invalid hash length",
-		"invalid blob hash length",
+		liblbryerrors.ErrInvalidHashLen.Error(),
+		liblbryerrors.ErrBlobNotFound.Error(),
 	}
 
 	return errorContains(err, notFoundIndicators)
@@ -66,7 +67,7 @@ func isNetworkError(err error) bool {
 		"network is unreachable",
 		"no route to host",
 		"not connected",
-		"invalid hash length",
+		liblbryerrors.ErrInvalidHashLen.Error(),
 		"no such host",
 	}
 
@@ -76,7 +77,7 @@ func isNetworkError(err error) bool {
 // isInvalidRequestError checks if an error is due to an invalid request
 func isInvalidRequestError(err error) bool {
 	invalidRequestIndicators := []string{
-		"invalid hash length",
+		liblbryerrors.ErrInvalidHashLen.Error(),
 		"invalid request",
 		"malformed",
 	}
@@ -114,9 +115,13 @@ func createConnectedClient(t *testing.T, timeout time.Duration) protocol.PeerCli
 // connectToReflector connects a client to the public reflector server
 func connectToReflector(t *testing.T, client protocol.PeerClient) {
 	t.Helper()
-	t.Logf("Connecting to reflector server at %s", peerAddr)
+	addr := defaultPeerAddr
+	if v := strings.TrimSpace(os.Getenv("LIBLBRY_E2E_PEER_ADDR")); v != "" {
+		addr = v
+	}
+	t.Logf("Connecting to reflector server at %s", addr)
 	ctx := context.Background()
-	err := client.Connect(ctx, peerAddr)
+	err := client.Connect(ctx, addr)
 	require.NoError(t, err, "Failed to connect to reflector server")
 }
 
@@ -252,12 +257,14 @@ func TestPeerClientIntegration(t *testing.T) {
 
 	// Test 8: Concurrent access tests
 	t.Run("ConcurrentAccess", func(t *testing.T) {
-		client := createConnectedClient(t, 30*time.Second)
-		// Create adapter for PeerClient to implement StoreOperations interface
-		adapter := &PeerClientAdapter{client: client}
+		// Create multiple independent client instances to exercise true parallel IO
+		createAdapter := func() internaltesting.StoreOperations {
+			client := createConnectedClient(t, 30*time.Second)
+			return &PeerClientAdapter{client: client}
+		}
 
-		// Test concurrent Has operations using the testing helper
-		internaltesting.TestConcurrentHas(t, adapter, knownSDHash, true, 10, 5)
+		// Test concurrent Has operations using multiple client instances
+		internaltesting.TestConcurrentHasMultiple(t, createAdapter, knownSDHash, true, 10, 5)
 	})
 
 	// Test 13: Context cancellation handling

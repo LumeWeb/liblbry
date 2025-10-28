@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/mocks"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	protocolmocks "go.lumeweb.com/liblbry/protocol/mocks"
 )
 
@@ -50,7 +51,7 @@ var blobDataRequests = []pair{
 	},
 	{
 		request:  []byte(fmt.Sprintf(`{"requested_blob":"%s"}`, invalidBlobHash)),
-		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"%s","length":0},"available_blobs":[]}`, ErrBlobNotFound, invalidBlobHash)),
+		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"%s","length":0},"available_blobs":[]}`, liblbryerrors.ErrBlobNotFound, invalidBlobHash)),
 	},
 }
 
@@ -87,11 +88,11 @@ var invalidBlobHashRequests = []pair{
 	},
 	{
 		request:  []byte(`{"requested_blob":"invalid"}`),
-		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"invalid","length":0},"available_blobs":[]}`, ErrInvalidHashLen)),
+		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"invalid","length":0},"available_blobs":[]}`, liblbryerrors.ErrInvalidHashLen)),
 	},
 	{
 		request:  []byte(fmt.Sprintf(`{"requested_blob":"%s"}`, shortBlobHash)),
-		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"%s","length":0},"available_blobs":[]}`, ErrInvalidHashLen, shortBlobHash)),
+		response: []byte(fmt.Sprintf(`{"incoming_blob":{"error":"%s","blob_hash":"%s","length":0},"available_blobs":[]}`, liblbryerrors.ErrInvalidHashLen, shortBlobHash)),
 	},
 }
 
@@ -461,7 +462,7 @@ func TestProtector(t *testing.T) {
 
 		// Test payment rate request with protected blob
 		requestData = []byte(fmt.Sprintf(`{"blob_data_payment_rate":0.0,"requested_blobs":["%s"]}`, blobKeys[0]))
-		expectedResponse := []byte(fmt.Sprintf(`{"available_blobs":[],"blob_data_payment_rate":"%s"}`, ErrBlobProtected))
+		expectedResponse := []byte(fmt.Sprintf(`{"available_blobs":[],"blob_data_payment_rate":"%s"}`, liblbryerrors.ErrBlobProtected))
 		handleRequestAndCompare(t, s, requestData, expectedResponse)
 	}
 

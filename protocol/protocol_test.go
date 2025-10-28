@@ -1,6 +1,12 @@
 package protocol
 
-import "time"
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry/blob"
+)
 
 // Common test constants
 const (
@@ -31,3 +37,12 @@ const (
 const (
 	emptyAvailableBlobsResponse = `{"available_blobs":[]}`
 )
+
+// TestBlobHashLengths verifies that our test fixture hashes have the correct lengths
+func TestBlobHashLengths(t *testing.T) {
+	require.Equal(t, blob.BlobHashHexLength, len(validBlobHash1))
+	require.Equal(t, blob.BlobHashHexLength, len(validBlobHash2))
+	require.Equal(t, blob.BlobHashHexLength, len(validBlobHash3))
+	require.Equal(t, blob.BlobHashHexLength, len(invalidBlobHash))
+	require.Less(t, len(shortBlobHash), blob.BlobHashHexLength)
+}

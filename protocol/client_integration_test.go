@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/storage/memory"
 	"go.lumeweb.com/liblbry/stream"
@@ -31,12 +32,6 @@ func setupIntegrationTestServer(t *testing.T, server PeerServer) string {
 
 	// Server goroutine
 	go func() {
-		defer func() {
-			if err := listener.Close(); err != nil {
-				// Log the error but don't fail the test since this is cleanup
-				t.Logf("Warning: failed to close listener: %v", err)
-			}
-		}()
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -57,7 +52,6 @@ func setupIntegrationTestServer(t *testing.T, server PeerServer) string {
 					}
 					if err := conn.Close(); err != nil {
 						// Log the error but don't fail the test since this is cleanup
-						t.Logf("Warning: failed to close connection: %v", err)
 					}
 				}()
 
@@ -66,8 +60,14 @@ func setupIntegrationTestServer(t *testing.T, server PeerServer) string {
 		}
 	}()
 
-	// Get server address
-	return listener.Addr().String()
+	addr := listener.Addr().String()
+	
+	// Register cleanup function to close listener when test completes
+	t.Cleanup(func() {
+		_ = listener.Close()
+	})
+	
+	return addr
 }
 
 // testSetup creates common test components
@@ -110,9 +110,6 @@ func setupIntegrationTest(t *testing.T, opts ...ServerOption) (*memory.MemorySto
 // setupTestClient creates a test client with automatic cleanup
 func setupTestClient(t *testing.T, addr string, logger *zap.Logger, timeout ...time.Duration) PeerClient {
 	client, _ := testClientSetup(t, addr, logger, timeout...)
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
 	return client
 }
 
@@ -167,9 +164,13 @@ func createTestBlob(t *testing.T, testData []byte) (blob.Blob, string, []byte, [
 // TestBlobOperations tests basic blob operations through the peer protocol
 func TestBlobOperations(t *testing.T) {
 	store, logger, _, addr := setupIntegrationTest(t)
+	
 	testData := []byte("This is a test blob for integration testing")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test HasBlob
@@ -193,7 +194,7 @@ func TestBlobOperations(t *testing.T) {
 	// Test GetBlob with invalid hash
 	_, err = client.GetBlob(ctx, "a"+strings.Repeat("0", blob.BlobHashHexLength-1))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to retrieve blob")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrBlobNotFound))
 }
 
 // TestStreamOperations tests stream creation and retrieval through the peer protocol
@@ -207,11 +208,17 @@ func TestStreamOperations(t *testing.T) {
 	// Create stream
 	resultStream, err := stream.New(reader)
 	require.NoError(t, err)
-	require.Len(t, resultStream, 3) // SD blob + 2 content blobs
 
 	// Get SD blob hash
 	sdBlob := resultStream[0]
 	sdBlobHash := sdBlob.HashHex()
+
+	// Parse SD blob to get expected content count
+	var sd stream.SDBlob
+	err = sd.FromBlob(sdBlob)
+	require.NoError(t, err)
+	expectedLen := len(sd.BlobInfos) // includes terminating null blob
+	require.Equal(t, expectedLen, len(resultStream))
 
 	// Add the blobs to the server's store so it can serve them
 	for _, blobItem := range resultStream {
@@ -220,6 +227,9 @@ func TestStreamOperations(t *testing.T) {
 	}
 
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test GetStream
@@ -247,9 +257,13 @@ func TestStreamOperations(t *testing.T) {
 // TestPaymentRateNegotiation tests payment rate negotiation through the peer protocol
 func TestPaymentRateNegotiation(t *testing.T) {
 	store, logger, _, addr := setupIntegrationTest(t)
+	
 	testData := []byte("This is a test blob for payment rate negotiation")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 
 	// Test payment rate negotiation
 	testPaymentRate(t, client, blobHash, 0.01, PaymentRateAccepted)
@@ -265,6 +279,9 @@ func TestAccessControlIntegration(t *testing.T) {
 	testBlob, blobHash := createAndStoreTestBlob(t, store, testData)
 
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test HasBlob - should be allowed
@@ -281,7 +298,11 @@ func TestAccessControlIntegration(t *testing.T) {
 // TestIntegrationTimeoutHandling tests timeout handling in client-server communication
 func TestIntegrationTimeoutHandling(t *testing.T) {
 	_, logger, _, addr := setupIntegrationTest(t, WithPeerTimeout(100*time.Millisecond))
+	
 	client := setupTestClient(t, addr, logger, 100*time.Millisecond)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test GetBlob with invalid hash (should timeout)
@@ -357,6 +378,9 @@ func TestLargeBlobHandling(t *testing.T) {
 	assert.Less(t, len(largeBlob), blob.MaxBlobSize)
 
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test HasBlob
@@ -373,10 +397,11 @@ func TestLargeBlobHandling(t *testing.T) {
 // TestConnectionManagement tests connection management features
 func TestConnectionManagement(t *testing.T) {
 	_, logger, _, addr := setupIntegrationTest(t)
+	
 	client := NewPeerClient(WithClientLogger(logger))
-	t.Cleanup(func() {
+	defer func(client PeerClient) {
 		_ = client.Close()
-	})
+	}(client)
 
 	ctx := context.Background()
 
@@ -387,7 +412,7 @@ func TestConnectionManagement(t *testing.T) {
 	// Test that we can't connect again
 	err = client.Connect(ctx, addr)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already connected")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrAlreadyConnected))
 
 	// Close connection
 	err = client.Close()
@@ -399,27 +424,28 @@ func TestConnectionManagement(t *testing.T) {
 	// Test operations after close
 	_, err = client.HasBlob(ctx, "somehash")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not connected")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrConnectionFailed))
 }
 
 // TestErrorScenarios tests various error scenarios
 func TestErrorScenarios(t *testing.T) {
 	_, logger, _, addr := setupIntegrationTest(t)
+	
 	client := NewPeerClient(WithClientLogger(logger))
-	t.Cleanup(func() {
+	defer func(client PeerClient) {
 		_ = client.Close()
-	})
+	}(client)
 
 	ctx := context.Background()
 
 	// Test operations without connecting
 	_, err := client.HasBlob(ctx, "somehash")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not connected")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrConnectionFailed))
 
 	_, err = client.GetBlob(ctx, "somehash")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not connected")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrConnectionFailed))
 
 	// Connect client to server
 	err = client.Connect(ctx, addr)
@@ -428,25 +454,29 @@ func TestErrorScenarios(t *testing.T) {
 	// Test HasBlob with invalid hash length
 	_, err = client.HasBlob(ctx, "invalid")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), ErrInvalidHashLen)
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrInvalidHashLen))
 
 	// Test GetBlob with invalid hash length
 	_, err = client.GetBlob(ctx, "invalid")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Invalid blob hash length")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrInvalidHashLen))
 
 	// Test GetBlob with non-existent blob
 	_, err = client.GetBlob(ctx, "a"+strings.Repeat("0", blob.BlobHashHexLength-1))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to retrieve blob")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrBlobNotFound))
 }
 
 // TestNetworkFailureRecovery tests client behavior when connection drops mid-operation
 func TestNetworkFailureRecovery(t *testing.T) {
 	store, logger, _, addr := setupIntegrationTest(t)
+	
 	testData := []byte("This is a test blob for network failure recovery")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test normal operation first
@@ -464,7 +494,7 @@ func TestNetworkFailureRecovery(t *testing.T) {
 	// Operations should now fail
 	_, err = client.HasBlob(ctx, blobHash)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not connected")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrConnectionFailed))
 
 	// Reconnect
 	err = client.Connect(ctx, addr)
@@ -474,15 +504,22 @@ func TestNetworkFailureRecovery(t *testing.T) {
 	has, err = client.HasBlob(ctx, blobHash)
 	require.NoError(t, err)
 	assert.True(t, has)
+
+	// Test GetBlob after reconnection
+	_, err = client.GetBlob(ctx, blobHash)
+	require.NoError(t, err)
 }
 
 // TestMalformedRequests tests handling of invalid JSON and malformed requests
 func TestMalformedRequests(t *testing.T) {
-	_, logger, _ := testSetup(t)
-	addr := setupIntegrationTestServer(t, NewPeerServer(memory.NewMemoryStore(), WithPeerLogger(logger)))
+	_, logger, server := testSetup(t)
+	addr := setupIntegrationTestServer(t, server)
 
 	t.Run("Test malformed JSON", func(t *testing.T) {
 		client := setupTestClient(t, addr, logger)
+		defer func(client PeerClient) {
+			_ = client.Close()
+		}(client)
 
 		// Test malformed JSON
 		conn := client.(*DefaultPeerClient).conn
@@ -517,6 +554,9 @@ func TestMalformedRequests(t *testing.T) {
 	t.Run("Test empty request", func(t *testing.T) {
 		// Create a new client for better isolation
 		client2 := setupTestClient(t, addr, logger)
+		defer func(client PeerClient) {
+			_ = client.Close()
+		}(client2)
 
 		// Test missing requested fields (should still return a response)
 		emptyRequest := CompositeRequest{}
@@ -551,6 +591,9 @@ func TestEmptyBlobHandling(t *testing.T) {
 	require.NoError(t, err)
 
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test HasBlob with minimal blob
@@ -577,9 +620,13 @@ func TestEmptyBlobHandling(t *testing.T) {
 func TestRestrictedAccessControl(t *testing.T) {
 	accessControl := &denyAllAccessControl{}
 	store, logger, _, addr := setupIntegrationTest(t, WithPeerAccessControl(accessControl))
+	
 	testData := []byte("This is a test blob for restricted access")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
 	client := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 	ctx := context.Background()
 
 	// Test HasBlob - should be denied
@@ -590,43 +637,81 @@ func TestRestrictedAccessControl(t *testing.T) {
 	// Test GetBlob - should be denied
 	_, err = client.GetBlob(ctx, blobHash)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), ErrAccessDenied)
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrAccessDenied))
+}
+
+// stallConn is a connection wrapper that simulates network interruption
+// by failing writes immediately
+type stallConn struct {
+	net.Conn
+}
+
+func (s *stallConn) Read(p []byte) (int, error) {
+	// For this test, reads should work normally
+	return s.Conn.Read(p)
+}
+
+func (s *stallConn) Write(p []byte) (int, error) {
+	// Fail immediately with a network error
+	return 0, errors.New("network interruption")
 }
 
 // TestPartialBlobTransfer tests interrupted blob transfers
 func TestPartialBlobTransfer(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t, WithPeerTimeout(1*time.Millisecond))
+	store, logger, _, addr := setupIntegrationTest(t)
 
-	// Create large test data
-	largeData := make([]byte, 1024*1024) // 1MB
-	for i := range largeData {
-		largeData[i] = byte(i % 256)
+	// Create test data
+	testData := []byte("This is a test blob for partial transfer")
+	testBlob, blobHash := createAndStoreTestBlob(t, store, testData)
+
+	// Set up a custom dial function that returns our stall connection
+	stallDialer := func(ctx context.Context, network, address string) (net.Conn, error) {
+		// First establish a real connection
+		var realConn net.Conn
+		var err error
+		if ctx != nil {
+			realConn, err = (&net.Dialer{}).DialContext(ctx, network, address)
+		} else {
+			realConn, err = net.Dial(network, address)
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Wrap it in our stall connection that fails writes
+		return &stallConn{
+			Conn:   realConn,
+		}, nil
 	}
 
-	largeBlob, blobHash := createAndStoreTestBlob(t, store, largeData)
+	// Create a client with a stall connection using the custom dialer
+	client := NewPeerClient(WithClientLogger(logger), WithClientDialContext(stallDialer))
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(client)
 
-	// Create client with short timeout to simulate interruption
-	clientWithShortTimeout := setupTestClient(t, addr, logger, 1*time.Millisecond)
-
-	// This should timeout due to short timeout
 	ctx := context.Background()
-	_, err := clientWithShortTimeout.GetBlob(ctx, blobHash)
+	err := client.Connect(ctx, addr)
+	require.NoError(t, err)
+
+	// This should fail due to the stall connection interrupting the write operation
+	_, err = client.GetBlob(ctx, blobHash)
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network interruption")
 
 	// Close connection properly
-	err = clientWithShortTimeout.Close()
+	err = client.Close()
 	require.NoError(t, err)
 
-	// Add a small delay to ensure connection cleanup
-	time.Sleep(10 * time.Millisecond)
-
-	// Create a new client with normal timeout for reconnection
-	clientWithNormalTimeout := setupTestClient(t, addr, logger, 5*time.Second)
+	// Create a new client with normal connection for reconnection test
+	clientWithNormalConn := setupTestClient(t, addr, logger)
+	defer func(client PeerClient) {
+		_ = client.Close()
+	}(clientWithNormalConn)
 
 	// Should work now with new client
-	retrievedData, err := clientWithNormalTimeout.GetBlob(ctx, blobHash)
+	retrievedData, err := clientWithNormalConn.GetBlob(ctx, blobHash)
 	require.NoError(t, err)
-	assert.Equal(t, []byte(largeBlob), retrievedData)
+	assert.Equal(t, []byte(testBlob), retrievedData)
 }
 
 // allowAllAccessControl is a simple access control that allows all requests

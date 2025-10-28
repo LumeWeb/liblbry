@@ -70,16 +70,21 @@ func Unwrap(err error) error {
 	return err
 }
 
-// Is compares two wrapped errors to determine if the underlying errors are the same
-// It also interops with errors from pkg/errors
-func Is(e error, original error) bool {
+// Is reports whether any error in e's chain matches target.
+// It first tries to unwrap our custom errors to get the underlying cause,
+// then uses errors.Is() to check against the target error.
+// This function works with both our wrapped errors and standard library errors.
+func Is(e error, target error) bool {
+	// First try to unwrap our custom errors
 	if c, ok := e.(causer); ok {
 		e = c.Cause()
 	}
-	if c, ok := original.(causer); ok {
-		original = c.Cause()
+	if c, ok := target.(causer); ok {
+		target = c.Cause()
 	}
-	return errors.Is(e, original)
+	
+	// Use standard library errors.Is for the comparison
+	return errors.Is(e, target)
 }
 
 // Prefix prefixes the message of the error with the given string

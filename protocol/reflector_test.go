@@ -37,6 +37,9 @@ type MockConnWrapper struct {
 	*protocolMocks.MockConn
 	readBuffer  *bytes.Buffer
 	writeBuffer *bytes.Buffer
+	lastReadDeadline  time.Time
+	lastWriteDeadline time.Time
+	lastDeadline      time.Time
 }
 
 func NewMockConn(t *testing.T) *MockConnWrapper {
@@ -91,16 +94,19 @@ func (m *MockConnWrapper) Write(b []byte) (n int, err error) {
 	return m.writeBuffer.Write(b)
 }
 func (m *MockConnWrapper) SetReadDeadline(t time.Time) error {
+	m.lastReadDeadline = t
 	return nil
 }
 
 // SetWriteDeadline overrides the mock to handle deadline setting
 func (m *MockConnWrapper) SetWriteDeadline(t time.Time) error {
+	m.lastWriteDeadline = t
 	return nil
 }
 
 // SetDeadline overrides the mock to handle deadline setting
 func (m *MockConnWrapper) SetDeadline(t time.Time) error {
+	m.lastDeadline = t
 	return nil
 }
 
