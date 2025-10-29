@@ -149,17 +149,3 @@ func assertNetworkError(t *testing.T, err error, msg string) {
 	require.Error(t, err, msg)
 	require.True(t, isNetworkError(err), "Expected network error, got: %v", err)
 }
-
-// assertUploadValidationError checks that an error is a validation error
-func assertUploadValidationError(t *testing.T, err error, msg string) {
-	t.Helper()
-	require.Error(t, err, msg)
-	require.True(t, isValidationError(err), "Expected validation error, got: %v", err)
-}
-
-// assertUploadNetworkError checks that an error is a network-related error
-func assertUploadNetworkError(t *testing.T, err error, msg string) {
-	t.Helper()
-	require.Error(t, err, msg)
-	require.True(t, isNetworkError(err), "Expected network error, got: %v", err)
-}

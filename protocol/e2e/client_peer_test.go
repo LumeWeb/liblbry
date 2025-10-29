@@ -110,7 +110,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test HasBlob with invalid hash
 		t.Run("HasBlobInvalidHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, invalidDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for invalid hash")
+			assertValidationError(t, err, "Should return validation error for invalid hash")
 			require.False(t, has, "Invalid hash should not be found")
 		})
 
@@ -124,7 +124,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test GetBlob error handling with invalid hash
 		t.Run("GetBlobInvalidHash", func(t *testing.T) {
 			_, err := client.GetBlob(ctx, invalidDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for invalid hash")
+			assertValidationError(t, err, "Should return validation error for invalid hash")
 		})
 
 		// Test GetBlob error handling with non-existent hash
@@ -252,21 +252,21 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test with empty hash
 		t.Run("EmptyHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, emptyDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for empty hash")
+			assertValidationError(t, err, "Should return validation error for empty hash")
 			require.False(t, has, "Empty hash should not be found")
 
 			_, err = client.GetBlob(ctx, emptyDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for empty hash")
+			assertValidationError(t, err, "Should return validation error for empty hash")
 		})
 
 		// Test with malformed hex hash
 		t.Run("MalformedHexHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, malformedDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for malformed hex hash")
+			assertValidationError(t, err, "Should return validation error for malformed hex hash")
 			require.False(t, has, "Malformed hex hash should not be found")
 
 			_, err = client.GetBlob(ctx, malformedDownloadHash)
-			assertUploadValidationError(t, err, "Should return validation error for malformed hex hash")
+			assertValidationError(t, err, "Should return validation error for malformed hex hash")
 		})
 	})
 
@@ -296,12 +296,12 @@ func TestPeerClientIntegration(t *testing.T) {
 
 		// Test with empty string as hash
 		has, err := client.HasBlob(ctx, emptyDownloadHash)
-		assertUploadValidationError(t, err, "Should return validation error for empty hash")
+		assertValidationError(t, err, "Should return validation error for empty hash")
 		require.False(t, has, "Empty hash should not be found")
 
 		// Test fetching empty hash
 		_, err = client.GetBlob(ctx, emptyDownloadHash)
-		assertUploadValidationError(t, err, "Should return validation error for empty hash")
+		assertValidationError(t, err, "Should return validation error for empty hash")
 	})
 }
 

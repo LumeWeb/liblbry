@@ -2,10 +2,10 @@ package e2e
 
 import (
 	"crypto/rand"
-	"errors"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,7 +120,6 @@ func TestReflectorClientUpload(t *testing.T) {
 	})
 }
 
-
 // TestReflectorClientConnectionManagement tests connection management features
 func TestReflectorClientConnectionManagement(t *testing.T) {
 	if testing.Short() {
@@ -207,11 +206,11 @@ func TestReflectorClientErrorHandling(t *testing.T) {
 
 		// Test with empty hash
 		err := client.SendBlob(emptyUploadHash, []byte("data"))
-		assertUploadValidationError(t, err, "Should return validation error for empty hash")
+		assertValidationError(t, err, "Should return validation error for empty hash")
 
 		// Test with malformed hex hash
 		err = client.SendBlob(malformedUploadHash, []byte("data"))
-		assertUploadValidationError(t, err, "Should return validation error for malformed hex hash")
+		assertValidationError(t, err, "Should return validation error for malformed hex hash")
 	})
 }
 
@@ -238,10 +237,13 @@ func TestReflectorClientConcurrentUploads(t *testing.T) {
 	}
 
 	// Upload blobs concurrently
+	var wg sync.WaitGroup
+	wg.Add(len(clients))
 	for i, client := range clients {
 		i := i // Capture loop variable
 		client := client
 		go func() {
+			defer wg.Done()
 			err := client.SendBlob(blobHashes[i], testBlobs[i].ToBytes())
 			if err != nil {
 				// Expected to get blob exists errors for some
@@ -252,8 +254,7 @@ func TestReflectorClientConcurrentUploads(t *testing.T) {
 		}()
 	}
 
-	// Give uploads time to complete
-	time.Sleep(2 * time.Second)
+	wg.Wait()
 }
 
 // TestReflectorClientLargeBlobHandling tests handling of large blobs
@@ -264,7 +265,7 @@ func TestReflectorClientLargeBlobHandling(t *testing.T) {
 
 	client := createConnectedReflectorClient(t, 30*time.Second)
 
-	// Create large test data (接近2MB限制)
+	// Create large test data (close to 2MB limit)
 	largeData := make([]byte, blob.MaxBlobSize-1000)
 	for i := range largeData {
 		largeData[i] = byte(i % 256)
@@ -290,26 +291,4 @@ func getReflectorAddr() string {
 		return defaultReflectorAddr
 	}
 	return addr
-}
-
-// ReflectorClientAdapter implements the StoreOperations interface for ReflectorClient
-// Note: Get and Has methods are not supported by ReflectorClient for upload tests and will return an error
-type ReflectorClientAdapter struct {
-	client protocol.ReflectorClient
-}
-
-// ErrGetHasNotSupported is returned when attempting to use Get or Has operations
-// which are not supported by ReflectorClient in this test context
-var ErrGetHasNotSupported = errors.New("Get/Has operations not supported by ReflectorClient adapter")
-
-func (a *ReflectorClientAdapter) Has(hash string) (bool, error) {
-	return false, ErrGetHasNotSupported
-}
-
-func (a *ReflectorClientAdapter) Get(hash string) ([]byte, error) {
-	return nil, ErrGetHasNotSupported
-}
-
-func (a *ReflectorClientAdapter) Put(hash string, data []byte) error {
-	return a.client.SendBlob(hash, data)
 }
