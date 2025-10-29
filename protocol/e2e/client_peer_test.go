@@ -84,7 +84,8 @@ func isNetworkError(err error) bool {
 	}
 
 	// Check for wrapped network errors
-	if _, ok := err.(net.Error); ok {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		return true
 	}
 
