@@ -24,6 +24,7 @@ import (
 
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 )
@@ -57,31 +58,21 @@ func getPeerIP(conn net.Conn) string {
 const (
 	DefaultTimeout = 1 * time.Minute
 	MaxRequestSize = 64 * 1024 // 64KB max request size
-	LbrycrdAddress = "127.0.0.1:50001"
-
 	// Response constants
 	PaymentRateAccepted = "RATE_ACCEPTED"
 	PaymentRateTooLow   = "RATE_TOO_LOW"
-
-	// Error constants
-	ErrRequestTooLarge = "request is too large"
-	ErrInvalidData     = "Invalid data"
-	ErrBlobNotFound    = "blob not found"
-	ErrAccessDenied    = "access denied"
-	ErrInvalidHash     = "invalid hash"
-	ErrInvalidHashLen  = "Invalid blob hash length"
-	ErrBlobProtected   = "requested blob is protected"
 )
 
 // Protocol errors
 var (
-	errRequestTooLarge = fmt.Errorf(ErrRequestTooLarge)
-	errInvalidData     = fmt.Errorf(ErrInvalidData)
+	ErrBlobNotFound   = liblbryerrors.ErrBlobNotFound
+	ErrInvalidHashLen = liblbryerrors.ErrInvalidHashLen
+	ErrBlobProtected  = liblbryerrors.ErrBlobProtected
+	ErrAccessDenied   = liblbryerrors.ErrAccessDenied
 )
 
 // CompositeRequest represents a composite protocol message
 type CompositeRequest struct {
-	LBRYcrdAddress      bool     `json:"lbrycrd_address,omitempty"`
 	RequestedBlobs      []string `json:"requested_blobs,omitempty"`
 	BlobDataPaymentRate *float64 `json:"blob_data_payment_rate,omitempty"`
 	RequestedBlob       string   `json:"requested_blob,omitempty"`
@@ -89,7 +80,6 @@ type CompositeRequest struct {
 
 // CompositeResponse represents a composite protocol response
 type CompositeResponse struct {
-	LbrycrdAddress      string        `json:"lbrycrd_address,omitempty"`
 	AvailableBlobs      []string      `json:"available_blobs"`
 	BlobDataPaymentRate string        `json:"blob_data_payment_rate,omitempty"`
 	IncomingBlob        *IncomingBlob `json:"incoming_blob,omitempty"`
@@ -132,11 +122,18 @@ func NewPeerServer(store liblbry.BlobStore, options ...ServerOption) PeerServer 
 		protector:         nil, // Default to no protection
 		accessControl:     nil, // Default to no access control
 		connectionTimeout: DefaultTimeout,
-		logger:            zap.NewNop(), // Default to no-op logger
+		logger:            nil, // Will be set to a named logger
 	}
 
 	// Apply options using helper function
 	applyPeerOptions(server, options)
+
+	// Create a named logger for the server if none was provided
+	if server.logger == nil {
+		server.logger = zap.NewNop().Named("peer-server")
+	} else {
+		server.logger = server.logger.Named("peer-server")
+	}
 
 	return server
 }
@@ -200,14 +197,14 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 
 		// Check request size
 		if len(message) > MaxRequestSize {
-			p.sendError(conn, ErrRequestTooLarge)
+			p.sendError(conn, liblbryerrors.ErrRequestTooLarge.Error())
 			continue
 		}
 
 		// Parse request
 		request, err := p.parseRequest(message)
 		if err != nil {
-			p.sendError(conn, ErrInvalidData)
+			p.sendError(conn, liblbryerrors.ErrInvalidData.Error())
 			continue
 		}
 
@@ -264,7 +261,7 @@ func (p *DefaultPeerServer) readNextMessage(reader *bufio.Reader) ([]byte, error
 		if firstByte != ' ' && firstByte != '\t' && firstByte != '\r' && firstByte != '\n' {
 			// Found non-whitespace byte, check if it's '{'
 			if firstByte != '{' {
-				return nil, errInvalidData
+				return nil, liblbryerrors.ErrInvalidData
 			}
 
 			// Create buffer with first byte
@@ -274,7 +271,7 @@ func (p *DefaultPeerServer) readNextMessage(reader *bufio.Reader) ([]byte, error
 			for {
 				// Check if we've exceeded max request size
 				if len(buffer) > MaxRequestSize {
-					return nil, errRequestTooLarge
+					return nil, liblbryerrors.ErrRequestTooLarge
 				}
 
 				// Read until we find a closing brace
@@ -335,14 +332,6 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP strin
 		}
 
 		response.BlobDataPaymentRate = paymentRateResponse
-
-		// Also handle availability if requested_blobs is present
-		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
-	}
-
-	// Handle LBRYcrd address request
-	if request.LBRYcrdAddress {
-		response.LbrycrdAddress = LbrycrdAddress
 
 		// Also handle availability if requested_blobs is present
 		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
@@ -416,22 +405,22 @@ func (p *DefaultPeerServer) isProtected(hash string) bool {
 func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string) (*IncomingBlob, []byte, error) {
 	// Validate hash length
 	if len(blobHash) != blob.BlobHashHexLength {
-		return p.createIncomingBlobError(blobHash, ErrInvalidHashLen), nil, nil
+		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrInvalidHashLen.Error()), nil, nil
 	}
 
 	// Validate hash format
 	if !stream.ValidateHash(blobHash) {
-		return p.createIncomingBlobError(blobHash, ErrInvalidHash), nil, nil
+		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrInvalidHash.Error()), nil, nil
 	}
 
 	// Check if blob is protected
 	if p.isProtected(blobHash) {
-		return p.createIncomingBlobError(blobHash, ErrBlobProtected), nil, nil
+		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrBlobProtected.Error()), nil, nil
 	}
 
 	// Check access control
 	if p.accessControl != nil && !p.accessControl.Allow(blobHash, peerIP) {
-		return p.createIncomingBlobError(blobHash, ErrAccessDenied), nil, nil
+		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrAccessDenied.Error()), nil, nil
 	}
 
 	// Get blob data
@@ -439,12 +428,16 @@ func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string
 	if err != nil {
 		// Log detailed error server-side
 		p.logger.Error("Failed to retrieve blob", zap.String("blobHash", blobHash), zap.Error(err))
-		// Return generic error to client
+		// Check if this is a "not found" error and return the appropriate error message
+		if err.Error() == liblbryerrors.ErrBlobNotFound.Error() || strings.Contains(err.Error(), "blob not found") {
+			return p.createIncomingBlobError(blobHash, liblbryerrors.ErrBlobNotFound.Error()), nil, nil
+		}
+		// Return generic error to client for other errors
 		return p.createIncomingBlobError(blobHash, "failed to retrieve blob"), nil, nil
 	}
 
 	if data == nil {
-		return p.createIncomingBlobError(blobHash, ErrBlobNotFound), nil, nil
+		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrBlobNotFound.Error()), nil, nil
 	}
 
 	incomingBlob := &IncomingBlob{
@@ -481,7 +474,7 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, pa
 
 	// Check if blob is protected
 	if p.isProtected(blobHash) {
-		return ErrBlobProtected, nil
+		return liblbryerrors.ErrBlobProtected.Error(), nil
 	}
 
 	// Check access control
@@ -505,18 +498,15 @@ func (p *DefaultPeerServer) sendResponse(conn net.Conn, response CompositeRespon
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	// Send JSON response
+	// If blob data is provided, send JSON response and blob data in a single atomic write
+	if blobData != nil {
+		data = append(data, blobData...)
+	}
+
+	// Send response (and blob data if provided)
 	_, err = conn.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write response: %w", err)
-	}
-
-	// If blob data is provided, send it after the JSON response
-	if blobData != nil {
-		_, err = conn.Write(blobData)
-		if err != nil {
-			return fmt.Errorf("failed to write blob data: %w", err)
-		}
 	}
 
 	return nil

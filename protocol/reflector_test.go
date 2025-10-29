@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/mocks"
+	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
 )
 
 // Reflector-specific test constants
@@ -31,91 +32,87 @@ var reflectorTestBlobs = map[string][]byte{
 	validBlobHash3: []byte("test blob data 3"),
 }
 
-// MockConn implements net.Conn for testing
-type MockConn struct {
+// MockConnWrapper wraps the mockery MockConn and provides testing helper methods
+type MockConnWrapper struct {
+	*protocolMocks.MockConn
 	readBuffer  *bytes.Buffer
 	writeBuffer *bytes.Buffer
-	closed      bool
+	lastReadDeadline  time.Time
+	lastWriteDeadline time.Time
+	lastDeadline      time.Time
 }
 
-func NewMockConn() *MockConn {
-	return &MockConn{
+func NewMockConn(t *testing.T) *MockConnWrapper {
+	mockConn := protocolMocks.NewMockConn(t)
+	return &MockConnWrapper{
+		MockConn:    mockConn,
 		readBuffer:  &bytes.Buffer{},
 		writeBuffer: &bytes.Buffer{},
 	}
 }
 
-func (m *MockConn) Read(b []byte) (n int, err error) {
-	if m.closed {
-		return 0, errors.New("connection closed")
-	}
-	
-	// If read buffer is empty, return EOF
-	if m.readBuffer.Len() == 0 {
-		return 0, io.EOF
-	}
-	
-	// Read from buffer
-	n, err = m.readBuffer.Read(b)
-	
-	// If we read some data but hit EOF, return the data first
-	if err == io.EOF && n > 0 {
-		err = nil
-	}
-	
-	return n, err
-}
-
-func (m *MockConn) Write(b []byte) (n int, err error) {
-	if m.closed {
-		return 0, errors.New("connection closed")
-	}
-	return m.writeBuffer.Write(b)
-}
-
-func (m *MockConn) Close() error {
-	m.closed = true
-	return nil
-}
-
-func (m *MockConn) LocalAddr() net.Addr {
-	return &net.TCPAddr{IP: net.ParseIP(testLocalIP), Port: 5566}
-}
-
-func (m *MockConn) RemoteAddr() net.Addr {
-	return &net.TCPAddr{IP: net.ParseIP(testLocalIP), Port: 12345}
-}
-
-func (m *MockConn) SetDeadline(t time.Time) error {
-	return nil
-}
-
-func (m *MockConn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-func (m *MockConn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
 // WriteToReadBuffer writes data to the read buffer (simulating incoming data)
-func (m *MockConn) WriteToReadBuffer(data []byte) {
+func (m *MockConnWrapper) WriteToReadBuffer(data []byte) {
 	m.readBuffer.Write(data)
 }
 
 // GetWrittenData returns data written to the connection
-func (m *MockConn) GetWrittenData() []byte {
+func (m *MockConnWrapper) GetWrittenData() []byte {
 	return m.writeBuffer.Bytes()
 }
 
 // ClearWrittenData clears the write buffer
-func (m *MockConn) ClearWrittenData() {
+func (m *MockConnWrapper) ClearWrittenData() {
 	m.writeBuffer.Reset()
 }
 
 // ReadBuffer returns the read buffer for direct manipulation
-func (m *MockConn) ReadBuffer() *bytes.Buffer {
+func (m *MockConnWrapper) ReadBuffer() *bytes.Buffer {
 	return m.readBuffer
+}
+
+// Read overrides the mock to read from our buffer
+func (m *MockConnWrapper) Read(b []byte) (n int, err error) {
+	// If read buffer is empty, return EOF
+	if m.readBuffer.Len() == 0 {
+		return 0, io.EOF
+	}
+
+	// Read from buffer
+	n, err = m.readBuffer.Read(b)
+
+	// If we read some data but hit EOF, return the data first
+	if err == io.EOF && n > 0 {
+		err = nil
+	}
+
+	return n, err
+}
+
+// Write overrides the mock to write to our buffer
+func (m *MockConnWrapper) Write(b []byte) (n int, err error) {
+	return m.writeBuffer.Write(b)
+}
+func (m *MockConnWrapper) SetReadDeadline(t time.Time) error {
+	m.lastReadDeadline = t
+	return nil
+}
+
+// SetWriteDeadline overrides the mock to handle deadline setting
+func (m *MockConnWrapper) SetWriteDeadline(t time.Time) error {
+	m.lastWriteDeadline = t
+	return nil
+}
+
+// SetDeadline overrides the mock to handle deadline setting
+func (m *MockConnWrapper) SetDeadline(t time.Time) error {
+	m.lastDeadline = t
+	return nil
+}
+
+// RemoteAddr overrides the mock to provide a test address
+func (m *MockConnWrapper) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
 }
 
 // setupReflectorMockStore sets up a mock blob store with test data
@@ -175,7 +172,7 @@ func TestNewReflectorServerWithOptions(t *testing.T) {
 func TestDoHandshake_Success(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write handshake request
 	version := ProtocolVersion1
@@ -202,7 +199,7 @@ func TestDoHandshake_Success(t *testing.T) {
 func TestDoHandshake_InvalidVersion(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write handshake with invalid version
 	version := 999
@@ -221,7 +218,7 @@ func TestDoHandshake_InvalidVersion(t *testing.T) {
 func TestDoHandshake_MissingVersion(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write handshake without version
 	handshake := HandshakeRequestResponse{}
@@ -239,7 +236,7 @@ func TestDoHandshake_MissingVersion(t *testing.T) {
 func TestReadBlobRequest_RegularBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write blob request
 	request := SendBlobRequest{
@@ -262,7 +259,7 @@ func TestReadBlobRequest_RegularBlob(t *testing.T) {
 func TestReadBlobRequest_SDBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write SD blob request
 	request := SendBlobRequest{
@@ -285,7 +282,7 @@ func TestReadBlobRequest_SDBlob(t *testing.T) {
 func TestReadBlobRequest_EmptyHash(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write blob request with empty hash
 	request := SendBlobRequest{
@@ -306,7 +303,7 @@ func TestReadBlobRequest_EmptyHash(t *testing.T) {
 func TestReadBlobRequest_BlobTooBig(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write blob request with size too large
 	request := SendBlobRequest{
@@ -355,7 +352,7 @@ func TestShouldAcceptBlob_ExistingBlob(t *testing.T) {
 func TestSendBlobResponse_RegularBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	err := server.(*DefaultReflectorServer).sendBlobResponse(conn, true, false, []string{})
 
@@ -373,7 +370,7 @@ func TestSendBlobResponse_RegularBlob(t *testing.T) {
 func TestSendBlobResponse_SDBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	neededBlobs := []string{"blob1", "blob2"}
 	err := server.(*DefaultReflectorServer).sendBlobResponse(conn, true, true, neededBlobs)
@@ -393,7 +390,7 @@ func TestSendBlobResponse_SDBlob(t *testing.T) {
 func TestSendTransferResponse_RegularBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	err := server.(*DefaultReflectorServer).sendTransferResponse(conn, true, false)
 
@@ -411,7 +408,7 @@ func TestSendTransferResponse_RegularBlob(t *testing.T) {
 func TestSendTransferResponse_SDBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	err := server.(*DefaultReflectorServer).sendTransferResponse(conn, false, true)
 
@@ -564,7 +561,7 @@ func TestReceiveBlob_SDBlob(t *testing.T) {
 func TestReceiveBlob_ExistingBlob(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Prepare blob data
 	blobData := []byte("test blob data")
@@ -595,7 +592,7 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 func TestReceiveBlob_Integration(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Test data
 	blobData := []byte("test blob data")
@@ -629,7 +626,7 @@ func TestReceiveBlob_Integration(t *testing.T) {
 func TestReceiveBlob_NegativeSize(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
-	conn := NewMockConn()
+	conn := NewMockConn(t)
 
 	// Write blob request with negative size
 	request := SendBlobRequest{

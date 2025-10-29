@@ -114,7 +114,7 @@ func NewEncoder(src io.Reader) *Encoder {
 
 		buf: make([]byte, maxBlobDataSize),
 		sd: &SDBlob{
-			StreamType: streamTypeLBRYFile,
+			StreamType: StreamTypeLBRYFile,
 			Key: func() []byte {
 				iv, err := randIV()
 				if err != nil {

@@ -1,6 +1,10 @@
 package errors
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Common errors
 var (
@@ -14,7 +18,58 @@ var (
 	ErrConnectionFailed = errors.New("connection failed")
 	ErrTimeout          = errors.New("operation timeout")
 	ErrInvalidConfig    = errors.New("invalid configuration")
+	ErrRequestTooLarge  = errors.New("request is too large")
+	ErrInvalidData      = errors.New("Invalid data")
+	ErrInvalidHashLen   = errors.New("Invalid blob hash length")
+	ErrBlobProtected    = errors.New("requested blob is protected")
+	ErrNoBlobData       = errors.New("no blob data received")
+	ErrAlreadyConnected = errors.New("already connected")
 )
+
+// IsBlobNotFoundError checks if an error represents a blob not found condition
+// It checks both for the exact error object and string containment
+func IsBlobNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return err == ErrBlobNotFound || errStr == ErrBlobNotFound.Error() || strings.Contains(errStr, "blob not found")
+}
+
+// IsKnownErrorType checks if an error is a known protocol error that shouldn't be wrapped
+func IsKnownErrorType(err error) bool {
+	return err == ErrBlobNotFound ||
+		err == ErrInvalidHash ||
+		err == ErrInvalidSize ||
+		err == ErrStreamCorrupted ||
+		err == ErrAccessDenied ||
+		err == ErrInvalidManifest ||
+		err == ErrHashMismatch ||
+		err == ErrConnectionFailed ||
+		err == ErrTimeout ||
+		err == ErrInvalidConfig ||
+		err == ErrNoBlobData ||
+		err == ErrAlreadyConnected
+}
+
+// DetectErrorType detects specific error types by string matching since errors come from different process
+func DetectErrorType(errorMsg string) error {
+	switch errorMsg {
+	case ErrBlobNotFound.Error():
+		return ErrBlobNotFound
+	case ErrAccessDenied.Error():
+		return ErrAccessDenied
+	case ErrInvalidHash.Error():
+		return ErrInvalidHash
+	case ErrInvalidHashLen.Error():
+		return ErrInvalidHashLen
+	case ErrBlobProtected.Error():
+		return ErrBlobProtected
+	default:
+		// For unknown errors, create a generic error
+		return fmt.Errorf("%s", errorMsg)
+	}
+}
 
 // Stream-specific errors (added from lbry.go)
 var (

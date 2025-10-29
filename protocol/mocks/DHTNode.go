@@ -408,6 +408,50 @@ func (_c *MockDHTNode_Remove_Call) RunAndReturn(run func(hash bits.Bitmap)) *Moc
 	return _c
 }
 
+// Restart provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) Restart() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Restart")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDHTNode_Restart_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Restart'
+type MockDHTNode_Restart_Call struct {
+	*mock.Call
+}
+
+// Restart is a helper method to define mock.On call
+func (_e *MockDHTNode_Expecter) Restart() *MockDHTNode_Restart_Call {
+	return &MockDHTNode_Restart_Call{Call: _e.mock.On("Restart")}
+}
+
+func (_c *MockDHTNode_Restart_Call) Run(run func()) *MockDHTNode_Restart_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_Restart_Call) Return(err error) *MockDHTNode_Restart_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDHTNode_Restart_Call) RunAndReturn(run func() error) *MockDHTNode_Restart_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Shutdown provides a mock function for the type MockDHTNode
 func (_mock *MockDHTNode) Shutdown() {
 	_mock.Called()

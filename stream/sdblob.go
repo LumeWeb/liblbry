@@ -24,7 +24,7 @@ import (
 )
 
 // Adapted from https://github.com/lbryio/lbry.go
-const streamTypeLBRYFile = "lbryfile"
+const StreamTypeLBRYFile = "lbryfile"
 
 // BlobInfo contains information about a content blob
 type BlobInfo struct {
@@ -114,7 +114,6 @@ func (bi BlobInfo) Hash() []byte {
 }
 
 // --- JSON serialization for SDBlob ---
-
 
 type JSONSDBlob struct {
 	StreamName        string     `json:"stream_name"`
@@ -248,7 +247,6 @@ func streamHash(hexStreamName, hexKey, hexSuggestedFileName string, blobInfos []
 	sum.Write(blobSum.Sum(nil))
 	return sum.Sum(nil)
 }
-
 
 // NullIV returns a null initialization vector
 func NullIV() []byte {
