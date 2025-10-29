@@ -71,26 +71,6 @@ var (
 	ErrAccessDenied   = liblbryerrors.ErrAccessDenied
 )
 
-// CompositeRequest represents a composite protocol message
-type CompositeRequest struct {
-	RequestedBlobs      []string `json:"requested_blobs,omitempty"`
-	BlobDataPaymentRate *float64 `json:"blob_data_payment_rate,omitempty"`
-	RequestedBlob       string   `json:"requested_blob,omitempty"`
-}
-
-// CompositeResponse represents a composite protocol response
-type CompositeResponse struct {
-	AvailableBlobs      []string      `json:"available_blobs"`
-	BlobDataPaymentRate string        `json:"blob_data_payment_rate,omitempty"`
-	IncomingBlob        *IncomingBlob `json:"incoming_blob,omitempty"`
-}
-
-// IncomingBlob represents blob data being transferred
-type IncomingBlob struct {
-	Error    string `json:"error,omitempty"`
-	BlobHash string `json:"blob_hash"`
-	Length   int    `json:"length"`
-}
 
 // DefaultPeerServer implements the PeerServer interface
 type DefaultPeerServer struct {
