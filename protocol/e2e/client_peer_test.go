@@ -3,12 +3,12 @@ package e2e
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"errors"
 
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob"
@@ -46,12 +46,19 @@ func errorContains(err error, indicators []string) bool {
 
 // isBlobNotFoundError checks if an error indicates a blob was not found
 func isBlobNotFoundError(err error) bool {
+	// First check if it's a context/timeout error - those aren't "not found" errors
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+
 	notFoundIndicators := []string{
 		"not found",
-		"i/o timeout",
-		"EOF",
-		liblbryerrors.ErrInvalidHashLen.Error(),
 		liblbryerrors.ErrBlobNotFound.Error(),
+	}
+
+	// Check if it's a wrapped liblbry not found error
+	if liblbryerrors.Is(err, liblbryerrors.ErrBlobNotFound) {
+		return true
 	}
 
 	return errorContains(err, notFoundIndicators)
@@ -59,30 +66,40 @@ func isBlobNotFoundError(err error) bool {
 
 // isNetworkError checks if an error is a network-related error
 func isNetworkError(err error) bool {
+	// Check for context/timeout errors first
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
 	networkErrorIndicators := []string{
 		"i/o timeout",
-		"EOF",
-		"connection refused",
+		"connection refused", 
 		"connection reset",
 		"network is unreachable",
 		"no route to host",
 		"not connected",
-		liblbryerrors.ErrInvalidHashLen.Error(),
 		"no such host",
+		"timeout",
+		"deadline exceeded",
+	}
+
+	// Check for wrapped network errors
+	if _, ok := err.(net.Error); ok {
+		return true
 	}
 
 	return errorContains(err, networkErrorIndicators)
 }
 
-// isInvalidRequestError checks if an error is due to an invalid request
-func isInvalidRequestError(err error) bool {
-	invalidRequestIndicators := []string{
+// isValidationError checks if an error is due to invalid input validation
+func isValidationError(err error) bool {
+	validationIndicators := []string{
 		liblbryerrors.ErrInvalidHashLen.Error(),
 		"invalid request",
 		"malformed",
 	}
 
-	return errorContains(err, invalidRequestIndicators)
+	return errorContains(err, validationIndicators)
 }
 
 // containsIgnoreCase checks if a string contains a substring ignoring case
@@ -125,18 +142,25 @@ func connectToReflector(t *testing.T, client protocol.PeerClient) {
 	require.NoError(t, err, "Failed to connect to reflector server")
 }
 
-// assertInvalidRequestError checks that an error is an invalid request, network, or blob not found error
-func assertInvalidRequestError(t *testing.T, err error, msg string) {
+// assertValidationError checks that an error is a validation error
+func assertValidationError(t *testing.T, err error, msg string) {
 	t.Helper()
 	require.Error(t, err, msg)
-	require.True(t, isInvalidRequestError(err) || isNetworkError(err) || isBlobNotFoundError(err), "Error should be an invalid request, network, or blob not found error")
+	require.True(t, isValidationError(err), "Expected validation error, got: %v", err)
 }
 
 // assertBlobNotFoundError checks that an error indicates a blob was not found
 func assertBlobNotFoundError(t *testing.T, err error, msg string) {
 	t.Helper()
 	require.Error(t, err, msg)
-	require.True(t, isBlobNotFoundError(err), "Error should indicate blob not found or timeout")
+	require.True(t, isBlobNotFoundError(err), "Expected blob not found error, got: %v", err)
+}
+
+// assertNetworkError checks that an error is a network-related error
+func assertNetworkError(t *testing.T, err error, msg string) {
+	t.Helper()
+	require.Error(t, err, msg)
+	require.True(t, isNetworkError(err), "Expected network error, got: %v", err)
 }
 func TestPeerClientIntegration(t *testing.T) {
 	ctx := context.Background()
@@ -185,7 +209,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test HasBlob with invalid hash
 		t.Run("HasBlobInvalidHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, invalidHash)
-			assertInvalidRequestError(t, err, "Should return error for invalid hash")
+			assertValidationError(t, err, "Should return validation error for invalid hash")
 			require.False(t, has, "Invalid hash should not be found")
 		})
 
@@ -199,13 +223,16 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test GetBlob error handling with invalid hash
 		t.Run("GetBlobInvalidHash", func(t *testing.T) {
 			_, err := client.GetBlob(ctx, invalidHash)
-			assertInvalidRequestError(t, err, "Should return error for invalid hash")
+			assertValidationError(t, err, "Should return validation error for invalid hash")
 		})
 
 		// Test GetBlob error handling with non-existent hash
 		t.Run("GetBlobNonExistent", func(t *testing.T) {
 			_, err := client.GetBlob(ctx, nonExistentHash)
-			assertBlobNotFoundError(t, err, "Should return error for non-existent hash")
+			// Either blob not found or network timeout is valid when blob doesn't exist
+			if !isBlobNotFoundError(err) && !isNetworkError(err) {
+				t.Errorf("Expected blob not found or network error, got: %v", err)
+			}
 		})
 	})
 
@@ -280,16 +307,19 @@ func TestPeerClientIntegration(t *testing.T) {
 			// Try to fetch a blob - should timeout
 			_, err := client.GetBlob(ctx, knownSDHash)
 			require.Error(t, err, "Should return error when context times out")
+			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
 			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
 
 			// Try to check blob availability - should timeout
 			_, err = client.HasBlob(ctx, knownSDHash)
 			require.Error(t, err, "Should return error when context times out")
+			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
 			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
 
 			// Try to fetch a stream - should timeout
 			_, err = client.GetStream(ctx, knownSDHash)
 			require.Error(t, err, "Should return error when context times out")
+			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
 			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
 		})
 	})
@@ -320,21 +350,21 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test with empty hash
 		t.Run("EmptyHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, emptyHash)
-			assertInvalidRequestError(t, err, "Should return error for empty hash")
+			assertValidationError(t, err, "Should return validation error for empty hash")
 			require.False(t, has, "Empty hash should not be found")
 
 			_, err = client.GetBlob(ctx, emptyHash)
-			assertInvalidRequestError(t, err, "Should return error for empty hash")
+			assertValidationError(t, err, "Should return validation error for empty hash")
 		})
 
 		// Test with malformed hex hash
 		t.Run("MalformedHexHash", func(t *testing.T) {
 			has, err := client.HasBlob(ctx, malformedHash)
-			assertInvalidRequestError(t, err, "Should return error for malformed hex hash")
+			assertValidationError(t, err, "Should return validation error for malformed hex hash")
 			require.False(t, has, "Malformed hex hash should not be found")
 
 			_, err = client.GetBlob(ctx, malformedHash)
-			assertInvalidRequestError(t, err, "Should return error for malformed hex hash")
+			assertValidationError(t, err, "Should return validation error for malformed hex hash")
 		})
 	})
 
@@ -364,12 +394,12 @@ func TestPeerClientIntegration(t *testing.T) {
 
 		// Test with empty string as hash
 		has, err := client.HasBlob(ctx, emptyHash)
-		assertInvalidRequestError(t, err, "Should return error for empty hash")
+		assertValidationError(t, err, "Should return validation error for empty hash")
 		require.False(t, has, "Empty hash should not be found")
 
 		// Test fetching empty hash
 		_, err = client.GetBlob(ctx, emptyHash)
-		assertInvalidRequestError(t, err, "Should return error for empty hash")
+		assertValidationError(t, err, "Should return validation error for empty hash")
 	})
 }
 
