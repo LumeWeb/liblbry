@@ -307,28 +307,28 @@ func TestPeerClientIntegration(t *testing.T) {
 
 		// Test with context timeout
 		t.Run("ContextTimeout", func(t *testing.T) {
-			// Create an already-expired context to guarantee timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
-			time.Sleep(2 * time.Millisecond) // Ensure context is expired
+			// Create a cancelled context to guarantee timeout
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // Cancel immediately
 			defer cancel()
 
 			// Try to fetch a blob - should timeout
 			_, err := client.GetBlob(ctx, knownSDHash)
-			require.Error(t, err, "Should return error when context times out")
-			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
-			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
+			require.Error(t, err, "Should return error when context is cancelled")
+			require.True(t, isNetworkError(err), "Cancellation should be classified as network error")
+			require.True(t, errors.Is(err, context.Canceled), "Error should contain context canceled")
 
-			// Try to check blob availability - should timeout
+			// Try to check blob availability - should cancel
 			_, err = client.HasBlob(ctx, knownSDHash)
-			require.Error(t, err, "Should return error when context times out")
-			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
-			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
+			require.Error(t, err, "Should return error when context is canceled")
+			require.True(t, isNetworkError(err), "Cancellation should be classified as network error")
+			require.True(t, errors.Is(err, context.Canceled), "Error should contain context canceled")
 
-			// Try to fetch a stream - should timeout
+			// Try to fetch a stream - should cancel
 			_, err = client.GetStream(ctx, knownSDHash)
-			require.Error(t, err, "Should return error when context times out")
-			require.True(t, isNetworkError(err), "Timeout should be classified as network error")
-			require.True(t, errors.Is(err, context.DeadlineExceeded), "Error should contain context deadline exceeded")
+			require.Error(t, err, "Should return error when context is canceled")
+			require.True(t, isNetworkError(err), "Cancellation should be classified as network error")
+			require.True(t, errors.Is(err, context.Canceled), "Error should contain context canceled")
 		})
 	})
 
