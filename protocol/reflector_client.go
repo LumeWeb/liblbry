@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -306,8 +305,4 @@ func (c *DefaultReflectorClient) readJSON(v interface{}) error {
 
 	dec := json.NewDecoder(c.conn)
 	return dec.Decode(v)
-}
-// containsIgnoreCase checks if a string contains a substring ignoring case
-func containsIgnoreCase(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

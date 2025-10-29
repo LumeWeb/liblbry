@@ -101,6 +101,27 @@ func isBlobNotFoundError(err error) bool {
 	return errorContains(err, notFoundIndicators)
 }
 
+// isBlobExistsError checks if an error indicates a blob already exists
+func isBlobExistsError(err error) bool {
+	// First check if it's a context/timeout error - those aren't "blob exists" errors
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	blobExistsIndicators := []string{
+		"blob already exists",
+		"duplicate blob",
+		liblbryerrors.ErrBlobExists.Error(),
+	}
+
+	// Check if it's a wrapped liblbry blob exists error
+	if liblbryerrors.Is(err, liblbryerrors.ErrBlobExists) {
+		return true
+	}
+
+	return errorContains(err, blobExistsIndicators)
+}
+
 // assertValidationError checks that an error is a validation error
 func assertValidationError(t *testing.T, err error, msg string) {
 	t.Helper()
@@ -113,6 +134,13 @@ func assertBlobNotFoundError(t *testing.T, err error, msg string) {
 	t.Helper()
 	require.Error(t, err, msg)
 	require.True(t, isBlobNotFoundError(err), "Expected blob not found error, got: %v", err)
+}
+
+// assertBlobExistsError checks that an error indicates a blob already exists
+func assertBlobExistsError(t *testing.T, err error, msg string) {
+	t.Helper()
+	require.Error(t, err, msg)
+	require.True(t, isBlobExistsError(err), "Expected blob exists error, got: %v", err)
 }
 
 // assertNetworkError checks that an error is a network-related error

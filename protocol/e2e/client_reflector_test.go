@@ -94,11 +94,7 @@ func TestReflectorClientUpload(t *testing.T) {
 		// since we're using a public reflector
 		err := client.SendBlob(blobHash, testBlob.ToBytes())
 		if err != nil {
-			// If we get an error, it should be a blob exists error or nil (success)
-			if !strings.Contains(err.Error(), "blob already exists") &&
-				!strings.Contains(err.Error(), "duplicate blob") {
-				t.Logf("SendBlob failed with unexpected error: %v", err)
-			}
+			assertBlobExistsError(t, err, "SendBlob should return blob exists error or succeed")
 		} else {
 			// Upload succeeded
 			t.Logf("Successfully uploaded blob %s", blobHash)
@@ -116,11 +112,7 @@ func TestReflectorClientUpload(t *testing.T) {
 		// Test SendSDBlob
 		err := client.SendSDBlob(sdBlobHash, sdBlob.ToBytes())
 		if err != nil {
-			// If we get an error, it should be a blob exists error
-			if !strings.Contains(err.Error(), "blob already exists") &&
-				!strings.Contains(err.Error(), "duplicate blob") {
-				t.Errorf("SendSDBlob failed with unexpected error: %v", err)
-			}
+			assertBlobExistsError(t, err, "SendSDBlob should return blob exists error or succeed")
 		} else {
 			// Upload succeeded
 			t.Logf("Successfully uploaded SD blob %s", sdBlobHash)
@@ -171,8 +163,9 @@ func TestReflectorClientTimeoutHandling(t *testing.T) {
 		// Expected to timeout
 		assertNetworkError(t, err, "Expected network timeout error")
 	} else {
-		// If it connected, close it
+		// If it connected, this is a test failure - we expected a timeout
 		_ = client.Close()
+		t.Fatalf("expected timeout but connected")
 	}
 }
 
@@ -252,10 +245,7 @@ func TestReflectorClientConcurrentUploads(t *testing.T) {
 			err := client.SendBlob(blobHashes[i], testBlobs[i].ToBytes())
 			if err != nil {
 				// Expected to get blob exists errors for some
-				if !strings.Contains(err.Error(), "blob already exists") &&
-					!strings.Contains(err.Error(), "duplicate blob") {
-					t.Errorf("Concurrent upload failed with unexpected error: %v", err)
-				}
+				assertBlobExistsError(t, err, "Concurrent upload should return blob exists error or succeed")
 			} else {
 				t.Logf("Successfully uploaded blob %s concurrently", blobHashes[i])
 			}
@@ -286,10 +276,7 @@ func TestReflectorClientLargeBlobHandling(t *testing.T) {
 	err := client.SendBlob(blobHash, largeBlob.ToBytes())
 	if err != nil {
 		// If we get an error, it should be a blob exists error
-		if !strings.Contains(err.Error(), "blob already exists") &&
-			!strings.Contains(err.Error(), "duplicate blob") {
-			t.Errorf("Large blob upload failed with unexpected error: %v", err)
-		}
+		assertBlobExistsError(t, err, "Large blob upload should return blob exists error or succeed")
 	} else {
 		// Upload succeeded
 		t.Logf("Successfully uploaded large blob %s", blobHash)
