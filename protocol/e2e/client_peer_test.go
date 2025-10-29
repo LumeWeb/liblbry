@@ -73,7 +73,7 @@ func isNetworkError(err error) bool {
 
 	networkErrorIndicators := []string{
 		"i/o timeout",
-		"connection refused", 
+		"connection refused",
 		"connection reset",
 		"network is unreachable",
 		"no route to host",
@@ -93,8 +93,12 @@ func isNetworkError(err error) bool {
 
 // isValidationError checks if an error is due to invalid input validation
 func isValidationError(err error) bool {
+	// Check for wrapped validation errors
+	if liblbryerrors.Is(err, liblbryerrors.ErrInvalidHashLen) {
+		return true
+	}
+
 	validationIndicators := []string{
-		liblbryerrors.ErrInvalidHashLen.Error(),
 		"invalid request",
 		"malformed",
 	}
@@ -129,7 +133,10 @@ func createConnectedClient(t *testing.T, timeout time.Duration) protocol.PeerCli
 	return client
 }
 
-// connectToReflector connects a client to the public reflector server
+// connectToReflector connects a client to the public reflector server.
+// These are end-to-end integration tests that require network access to
+// s1.lbry.network:5567 (configurable via LIBLBRY_E2E_PEER_ADDR env var).
+// Tests may fail if the reflector service is unavailable.
 func connectToReflector(t *testing.T, client protocol.PeerClient) {
 	t.Helper()
 	addr := defaultPeerAddr
@@ -165,7 +172,7 @@ func assertNetworkError(t *testing.T, err error, msg string) {
 func TestPeerClientIntegration(t *testing.T) {
 	ctx := context.Background()
 
-	// Test 1: Fetch known SD blob
+	// Fetch known SD blob
 	t.Run("FetchKnownBlob", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 		t.Logf("Testing fetch of known SD blob: %s", knownSDHash)
@@ -186,7 +193,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		require.Equal(t, knownSDHash, hex.EncodeToString(hashBytes), "Blob hash mismatch")
 	})
 
-	// Test 2: Fetch stream
+	// Fetch stream
 	t.Run("FetchStream", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 		t.Logf("Testing fetch of stream with SD blob: %s", knownSDHash)
@@ -202,7 +209,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		require.Equal(t, knownSDHash, hex.EncodeToString(hashBytes), "First blob should be the SD blob")
 	})
 
-	// Test 3: Enhanced blob operations
+	// Enhanced blob operations
 	t.Run("EnhancedBlobOperations", func(t *testing.T) {
 		client := createConnectedClient(t, 5*time.Second)
 
@@ -229,14 +236,14 @@ func TestPeerClientIntegration(t *testing.T) {
 		// Test GetBlob error handling with non-existent hash
 		t.Run("GetBlobNonExistent", func(t *testing.T) {
 			_, err := client.GetBlob(ctx, nonExistentHash)
-			// Either blob not found or network timeout is valid when blob doesn't exist
-			if !isBlobNotFoundError(err) && !isNetworkError(err) {
-				t.Errorf("Expected blob not found or network error, got: %v", err)
+			if isNetworkError(err) {
+				t.Skipf("Skipping test due to network error (likely timeout): %v", err)
 			}
+			assertBlobNotFoundError(t, err, "Expected blob not found error for non-existent hash")
 		})
 	})
 
-	// Test 4: Stream operations with real data validation
+	// Stream operations with real data validation
 	t.Run("StreamOperations", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
@@ -265,12 +272,12 @@ func TestPeerClientIntegration(t *testing.T) {
 				// Verify we can fetch the blob
 				fetchedBlob, err := client.GetBlob(ctx, hex.EncodeToString(hashBytes))
 				require.NoError(t, err)
-				require.Equal(t, []byte(blobData), fetchedBlob, "Fetched blob %d should match original", i)
+				require.Equal(t, blobData.ToBytes(), fetchedBlob, "Fetched blob %d should match original", i)
 			}
 		})
 	})
 
-	// Test 5: Error handling and network failure tests
+	// Error handling and network failure tests
 	t.Run("ErrorHandling", func(t *testing.T) {
 		// Test connection to invalid address
 		t.Run("InvalidAddressConnection", func(t *testing.T) {
@@ -282,7 +289,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		})
 	})
 
-	// Test 8: Concurrent access tests
+	// Concurrent access tests
 	t.Run("ConcurrentAccess", func(t *testing.T) {
 		// Create multiple independent client instances to exercise true parallel IO
 		createAdapter := func() internaltesting.StoreOperations {
@@ -294,14 +301,15 @@ func TestPeerClientIntegration(t *testing.T) {
 		internaltesting.TestConcurrentHasMultiple(t, createAdapter, knownSDHash, true, 10, 5)
 	})
 
-	// Test 13: Context cancellation handling
+	// Context cancellation handling
 	t.Run("ContextCancellation", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
 		// Test with context timeout
 		t.Run("ContextTimeout", func(t *testing.T) {
-			// Create a context with a very short timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+			// Create an already-expired context to guarantee timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+			time.Sleep(2 * time.Millisecond) // Ensure context is expired
 			defer cancel()
 
 			// Try to fetch a blob - should timeout
@@ -324,7 +332,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		})
 	})
 
-	// Test 9: Large blob handling tests
+	// Large blob handling tests
 	t.Run("LargeBlobHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
@@ -343,7 +351,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		require.Equal(t, knownSDHash, hex.EncodeToString(hashBytes), "Large blob hash should match")
 	})
 
-	// Test 10: Malformed request handling tests
+	// Malformed request handling tests
 	t.Run("MalformedRequestHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
@@ -368,7 +376,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		})
 	})
 
-	// Test 11: Blob verification tests
+	// Blob verification tests
 	t.Run("BlobVerification", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
@@ -388,7 +396,7 @@ func TestPeerClientIntegration(t *testing.T) {
 		require.True(t, has, "Known blob should exist")
 	})
 
-	// Test 12: Empty hash handling tests
+	// Empty hash handling tests
 	t.Run("EmptyHashHandling", func(t *testing.T) {
 		client := createConnectedClient(t, 30*time.Second)
 
@@ -409,6 +417,10 @@ type PeerClientAdapter struct {
 	client protocol.PeerClient
 }
 
+// ErrPutNotSupported is returned when attempting to use Put operation
+// which is not supported by PeerClient
+var ErrPutNotSupported = errors.New("Put operation not supported by PeerClient")
+
 func (a *PeerClientAdapter) Has(hash string) (bool, error) {
 	ctx := context.Background()
 	return a.client.HasBlob(ctx, hash)
@@ -420,6 +432,5 @@ func (a *PeerClientAdapter) Get(hash string) ([]byte, error) {
 }
 
 func (a *PeerClientAdapter) Put(_ string, _ []byte) error {
-	// PeerClient doesn't support putting blobs, so return an error
-	return liblbryerrors.Err("Put operation not supported by PeerClient")
+	return ErrPutNotSupported
 }
