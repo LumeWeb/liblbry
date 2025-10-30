@@ -490,7 +490,7 @@ func TestRequestFromConnection(t *testing.T) {
 	}
 }
 
-func TestTimeoutHandling(t *testing.T) {
+func TestPeerServerTimeoutHandling(t *testing.T) {
 	mockStore, listener := setupTestListener(t, false)
 	defer func() {
 		if err := listener.Close(); err != nil {

@@ -190,12 +190,12 @@ func (c *DefaultPeerClient) Close() error {
 	c.connected = false
 	c.conn = nil
 	c.reader = nil
-	
+
 	if err != nil {
 		c.logger.Debug("error closing peer connection", zap.Error(err))
 		return liblbryerrors.Err(err)
 	}
-	
+
 	c.logger.Debug("peer connection closed successfully")
 	return nil
 }
@@ -345,7 +345,7 @@ func (c *DefaultPeerClient) HasBlob(ctx context.Context, hash string) (bool, err
 // GetStream retrieves and reconstructs a stream from the peer server
 func (c *DefaultPeerClient) GetStream(ctx context.Context, sdHash string) (stream.Stream, error) {
 	c.logger.Debug("retrieving stream", zap.String("sd_hash", sdHash))
-	
+
 	// Validate SD blob hash length
 	if len(sdHash) != blob.BlobHashHexLength {
 		c.logger.Debug("invalid SD blob hash length", zap.String("sd_hash", sdHash), zap.Int("length", len(sdHash)))
@@ -512,7 +512,7 @@ func (c *DefaultPeerClient) sendRequest(ctx context.Context, request CompositeRe
 func (c *DefaultPeerClient) readResponse(ctx context.Context) (CompositeResponse, []byte, error) {
 	// Set read deadline to the minimum of context deadline and timeout
 	deadline := c.minDeadline(ctx, c.timeout)
-	
+
 	if err := c.conn.SetReadDeadline(deadline); err != nil {
 		return CompositeResponse{}, nil, c.wrapContextError(err)
 	}
@@ -525,7 +525,7 @@ func (c *DefaultPeerClient) readResponse(ctx context.Context) (CompositeResponse
 
 	// Parse response
 	var response CompositeResponse
-	
+
 	if err := json.Unmarshal(message, &response); err != nil {
 		return CompositeResponse{}, nil, c.wrapContextError(err)
 	}

@@ -9,6 +9,7 @@ import (
 // Common errors
 var (
 	ErrBlobNotFound     = errors.New("blob not found")
+	ErrBlobExists       = errors.New("blob already exists on server")
 	ErrInvalidHash      = errors.New("invalid hash")
 	ErrInvalidSize      = errors.New("invalid size")
 	ErrStreamCorrupted  = errors.New("stream corrupted")
@@ -24,6 +25,7 @@ var (
 	ErrBlobProtected    = errors.New("requested blob is protected")
 	ErrNoBlobData       = errors.New("no blob data received")
 	ErrAlreadyConnected = errors.New("already connected")
+	ErrServerValidation = errors.New("server validation error")
 )
 
 // IsBlobNotFoundError checks if an error represents a blob not found condition
@@ -39,6 +41,7 @@ func IsBlobNotFoundError(err error) bool {
 // IsKnownErrorType checks if an error is a known protocol error that shouldn't be wrapped
 func IsKnownErrorType(err error) bool {
 	return err == ErrBlobNotFound ||
+		err == ErrBlobExists ||
 		err == ErrInvalidHash ||
 		err == ErrInvalidSize ||
 		err == ErrStreamCorrupted ||
@@ -57,6 +60,8 @@ func DetectErrorType(errorMsg string) error {
 	switch errorMsg {
 	case ErrBlobNotFound.Error():
 		return ErrBlobNotFound
+	case ErrBlobExists.Error():
+		return ErrBlobExists
 	case ErrAccessDenied.Error():
 		return ErrAccessDenied
 	case ErrInvalidHash.Error():

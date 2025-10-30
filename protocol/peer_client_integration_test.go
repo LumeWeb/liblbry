@@ -24,8 +24,8 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-// setupIntegrationTestServer starts a peer server on a random port and returns the address
-func setupIntegrationTestServer(t *testing.T, server PeerServer) string {
+// setupPeerIntegrationTestServer starts a peer server on a random port and returns the address
+func setupPeerIntegrationTestServer(t *testing.T, server PeerServer) string {
 	// Start server on random port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -61,25 +61,25 @@ func setupIntegrationTestServer(t *testing.T, server PeerServer) string {
 	}()
 
 	addr := listener.Addr().String()
-	
+
 	// Register cleanup function to close listener when test completes
 	t.Cleanup(func() {
 		_ = listener.Close()
 	})
-	
+
 	return addr
 }
 
-// testSetup creates common test components
-func testSetup(t *testing.T) (*memory.MemoryStore, *zap.Logger, PeerServer) {
+// testPeerSetup creates common test components
+func testPeerSetup(t *testing.T) (*memory.MemoryStore, *zap.Logger, PeerServer) {
 	store := memory.NewMemoryStore()
 	logger := zaptest.NewLogger(t)
 	server := NewPeerServer(store, WithPeerLogger(logger))
 	return store, logger, server
 }
 
-// testClientSetup creates a test client and connects it to the server
-func testClientSetup(t *testing.T, addr string, logger *zap.Logger, timeout ...time.Duration) (PeerClient, context.Context) {
+// testPeerClientSetup creates a test client and connects it to the server
+func testPeerClientSetup(t *testing.T, addr string, logger *zap.Logger, timeout ...time.Duration) (PeerClient, context.Context) {
 	var client PeerClient
 	if len(timeout) > 0 {
 		client = NewPeerClient(WithClientLogger(logger), WithClientTimeout(timeout[0]))
@@ -94,28 +94,28 @@ func testClientSetup(t *testing.T, addr string, logger *zap.Logger, timeout ...t
 	return client, ctx
 }
 
-// setupIntegrationTest creates a complete integration test setup
-func setupIntegrationTest(t *testing.T, opts ...ServerOption) (*memory.MemoryStore, *zap.Logger, PeerServer, string) {
-	store, logger, server := testSetup(t)
+// setupPeerIntegrationTest creates a complete integration test setup
+func setupPeerIntegrationTest(t *testing.T, opts ...ServerOption) (*memory.MemoryStore, *zap.Logger, PeerServer, string) {
+	store, logger, server := testPeerSetup(t)
 
 	// Apply additional server options
 	serverOpts := []ServerOption{WithPeerLogger(logger)}
 	serverOpts = append(serverOpts, opts...)
 	server = NewPeerServer(store, serverOpts...)
 
-	addr := setupIntegrationTestServer(t, server)
+	addr := setupPeerIntegrationTestServer(t, server)
 	return store, logger, server, addr
 }
 
-// setupTestClient creates a test client with automatic cleanup
-func setupTestClient(t *testing.T, addr string, logger *zap.Logger, timeout ...time.Duration) PeerClient {
-	client, _ := testClientSetup(t, addr, logger, timeout...)
+// setupPeerTestClient creates a test client with automatic cleanup
+func setupPeerTestClient(t *testing.T, addr string, logger *zap.Logger, timeout ...time.Duration) PeerClient {
+	client, _ := testPeerClientSetup(t, addr, logger, timeout...)
 	return client
 }
 
 // createAndStoreTestBlob creates a blob and stores it in the memory store
 func createAndStoreTestBlob(t *testing.T, store *memory.MemoryStore, testData []byte) (blob.Blob, string) {
-	testBlob, blobHash, _, _ := createTestBlob(t, testData)
+	testBlob, blobHash, _, _ := createPeerTestBlob(t, testData)
 	err := store.Put(blobHash, testBlob)
 	require.NoError(t, err)
 	return testBlob, blobHash
@@ -145,8 +145,8 @@ func testPaymentRate(t *testing.T, client PeerClient, blobHash string, rate floa
 	assert.Equal(t, expectedResponse, response.BlobDataPaymentRate)
 }
 
-// createTestBlob creates a blob with test data
-func createTestBlob(t *testing.T, testData []byte) (blob.Blob, string, []byte, []byte) {
+// createPeerTestBlob creates a blob with test data
+func createPeerTestBlob(t *testing.T, testData []byte) (blob.Blob, string, []byte, []byte) {
 	key := make([]byte, 16)
 	iv := make([]byte, 16)
 	_, err := io.ReadFull(rand.Reader, key)
@@ -162,12 +162,12 @@ func createTestBlob(t *testing.T, testData []byte) (blob.Blob, string, []byte, [
 }
 
 // TestBlobOperations tests basic blob operations through the peer protocol
-func TestBlobOperations(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
-	
+func TestPeerBlobOperations(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
+
 	testData := []byte("This is a test blob for integration testing")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -198,8 +198,8 @@ func TestBlobOperations(t *testing.T) {
 }
 
 // TestStreamOperations tests stream creation and retrieval through the peer protocol
-func TestStreamOperations(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
+func TestPeerStreamOperations(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
 
 	// Test stream data - adjusted size to ensure exactly 3 blobs (SD + 2 content)
 	testData := strings.Repeat("A", 2*1024*1024) // 2MB of data
@@ -226,7 +226,7 @@ func TestStreamOperations(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -255,12 +255,12 @@ func TestStreamOperations(t *testing.T) {
 }
 
 // TestPaymentRateNegotiation tests payment rate negotiation through the peer protocol
-func TestPaymentRateNegotiation(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
-	
+func TestPeerPaymentRateNegotiation(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
+
 	testData := []byte("This is a test blob for payment rate negotiation")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -271,14 +271,14 @@ func TestPaymentRateNegotiation(t *testing.T) {
 }
 
 // TestAccessControlIntegration tests access control integration
-func TestAccessControlIntegration(t *testing.T) {
+func TestPeerAccessControlIntegration(t *testing.T) {
 	accessControl := &allowAllAccessControl{}
-	store, logger, _, addr := setupIntegrationTest(t, WithPeerAccessControl(accessControl))
+	store, logger, _, addr := setupPeerIntegrationTest(t, WithPeerAccessControl(accessControl))
 
 	testData := []byte("This is a test blob for access control")
 	testBlob, blobHash := createAndStoreTestBlob(t, store, testData)
 
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -296,10 +296,10 @@ func TestAccessControlIntegration(t *testing.T) {
 }
 
 // TestIntegrationTimeoutHandling tests timeout handling in client-server communication
-func TestIntegrationTimeoutHandling(t *testing.T) {
-	_, logger, _, addr := setupIntegrationTest(t, WithPeerTimeout(100*time.Millisecond))
-	
-	client := setupTestClient(t, addr, logger, 100*time.Millisecond)
+func TestPeerIntegrationTimeoutHandling(t *testing.T) {
+	_, logger, _, addr := setupPeerIntegrationTest(t, WithPeerTimeout(100*time.Millisecond))
+
+	client := setupPeerTestClient(t, addr, logger, 100*time.Millisecond)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -310,9 +310,9 @@ func TestIntegrationTimeoutHandling(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestConcurrentClients tests multiple concurrent clients accessing the server
-func TestConcurrentClients(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
+// TestPeerConcurrentClients tests multiple concurrent clients accessing the server
+func TestPeerConcurrentClients(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
 
 	testData := []byte("This is a test blob for concurrent access")
 	testBlob, blobHash := createAndStoreTestBlob(t, store, testData)
@@ -362,9 +362,9 @@ func TestConcurrentClients(t *testing.T) {
 	liblbrytesting.RunConcurrentTasks(t, 5, tasks)
 }
 
-// TestLargeBlobHandling tests handling of large blobs
-func TestLargeBlobHandling(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
+// TestPeerLargeBlobHandling tests handling of large blobs
+func TestPeerLargeBlobHandling(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
 
 	// Create large test data (接近2MB限制)
 	largeData := make([]byte, blob.MaxBlobSize-1000)
@@ -377,7 +377,7 @@ func TestLargeBlobHandling(t *testing.T) {
 	// Verify blob size is within limits
 	assert.Less(t, len(largeBlob), blob.MaxBlobSize)
 
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -394,10 +394,10 @@ func TestLargeBlobHandling(t *testing.T) {
 	assert.Equal(t, []byte(largeBlob), retrievedData)
 }
 
-// TestConnectionManagement tests connection management features
-func TestConnectionManagement(t *testing.T) {
-	_, logger, _, addr := setupIntegrationTest(t)
-	
+// TestPeerConnectionManagement tests connection management features
+func TestPeerConnectionManagement(t *testing.T) {
+	_, logger, _, addr := setupPeerIntegrationTest(t)
+
 	client := NewPeerClient(WithClientLogger(logger))
 	defer func(client PeerClient) {
 		_ = client.Close()
@@ -428,9 +428,9 @@ func TestConnectionManagement(t *testing.T) {
 }
 
 // TestErrorScenarios tests various error scenarios
-func TestErrorScenarios(t *testing.T) {
-	_, logger, _, addr := setupIntegrationTest(t)
-	
+func TestPeerErrorScenarios(t *testing.T) {
+	_, logger, _, addr := setupPeerIntegrationTest(t)
+
 	client := NewPeerClient(WithClientLogger(logger))
 	defer func(client PeerClient) {
 		_ = client.Close()
@@ -467,13 +467,13 @@ func TestErrorScenarios(t *testing.T) {
 	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrBlobNotFound))
 }
 
-// TestNetworkFailureRecovery tests client behavior when connection drops mid-operation
-func TestNetworkFailureRecovery(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
-	
+// TestPeerNetworkFailureRecovery tests client behavior when connection drops mid-operation
+func TestPeerNetworkFailureRecovery(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
+
 	testData := []byte("This is a test blob for network failure recovery")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -511,12 +511,12 @@ func TestNetworkFailureRecovery(t *testing.T) {
 }
 
 // TestMalformedRequests tests handling of invalid JSON and malformed requests
-func TestMalformedRequests(t *testing.T) {
-	_, logger, server := testSetup(t)
-	addr := setupIntegrationTestServer(t, server)
+func TestPeerMalformedRequests(t *testing.T) {
+	_, logger, server := testPeerSetup(t)
+	addr := setupPeerIntegrationTestServer(t, server)
 
 	t.Run("Test malformed JSON", func(t *testing.T) {
-		client := setupTestClient(t, addr, logger)
+		client := setupPeerTestClient(t, addr, logger)
 		defer func(client PeerClient) {
 			_ = client.Close()
 		}(client)
@@ -553,7 +553,7 @@ func TestMalformedRequests(t *testing.T) {
 
 	t.Run("Test empty request", func(t *testing.T) {
 		// Create a new client for better isolation
-		client2 := setupTestClient(t, addr, logger)
+		client2 := setupPeerTestClient(t, addr, logger)
 		defer func(client PeerClient) {
 			_ = client.Close()
 		}(client2)
@@ -580,17 +580,17 @@ func TestMalformedRequests(t *testing.T) {
 }
 
 // TestEmptyBlobHandling tests handling of zero-size blobs
-func TestEmptyBlobHandling(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
+func TestPeerEmptyBlobHandling(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
 
 	// Test data - use minimal non-empty data that works properly with AES PKCS#7 padding
 	testData := make([]byte, 1)
 	testData[0] = 0x00
-	testBlob, blobHash, key, iv := createTestBlob(t, testData)
+	testBlob, blobHash, key, iv := createPeerTestBlob(t, testData)
 	err := store.Put(blobHash, testBlob)
 	require.NoError(t, err)
 
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -617,13 +617,13 @@ func TestEmptyBlobHandling(t *testing.T) {
 }
 
 // TestRestrictedAccessControl tests deny-by-default access control
-func TestRestrictedAccessControl(t *testing.T) {
+func TestPeerRestrictedAccessControl(t *testing.T) {
 	accessControl := &denyAllAccessControl{}
-	store, logger, _, addr := setupIntegrationTest(t, WithPeerAccessControl(accessControl))
-	
+	store, logger, _, addr := setupPeerIntegrationTest(t, WithPeerAccessControl(accessControl))
+
 	testData := []byte("This is a test blob for restricted access")
 	_, blobHash := createAndStoreTestBlob(t, store, testData)
-	client := setupTestClient(t, addr, logger)
+	client := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(client)
@@ -640,25 +640,25 @@ func TestRestrictedAccessControl(t *testing.T) {
 	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrAccessDenied))
 }
 
-// stallConn is a connection wrapper that simulates network interruption
+// peerStallConn is a connection wrapper that simulates network interruption
 // by failing writes immediately
-type stallConn struct {
+type peerStallConn struct {
 	net.Conn
 }
 
-func (s *stallConn) Read(p []byte) (int, error) {
+func (s *peerStallConn) Read(p []byte) (int, error) {
 	// For this test, reads should work normally
 	return s.Conn.Read(p)
 }
 
-func (s *stallConn) Write(p []byte) (int, error) {
+func (s *peerStallConn) Write(p []byte) (int, error) {
 	// Fail immediately with a network error
 	return 0, errors.New("network interruption")
 }
 
-// TestPartialBlobTransfer tests interrupted blob transfers
-func TestPartialBlobTransfer(t *testing.T) {
-	store, logger, _, addr := setupIntegrationTest(t)
+// TestPeerPartialBlobTransfer tests interrupted blob transfers
+func TestPeerPartialBlobTransfer(t *testing.T) {
+	store, logger, _, addr := setupPeerIntegrationTest(t)
 
 	// Create test data
 	testData := []byte("This is a test blob for partial transfer")
@@ -678,8 +678,8 @@ func TestPartialBlobTransfer(t *testing.T) {
 			return nil, err
 		}
 		// Wrap it in our stall connection that fails writes
-		return &stallConn{
-			Conn:   realConn,
+		return &peerStallConn{
+			Conn: realConn,
 		}, nil
 	}
 
@@ -703,7 +703,7 @@ func TestPartialBlobTransfer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a new client with normal connection for reconnection test
-	clientWithNormalConn := setupTestClient(t, addr, logger)
+	clientWithNormalConn := setupPeerTestClient(t, addr, logger)
 	defer func(client PeerClient) {
 		_ = client.Close()
 	}(clientWithNormalConn)
@@ -727,3 +727,4 @@ type denyAllAccessControl struct{}
 func (d *denyAllAccessControl) Allow(hash string, peerIP string) bool {
 	return false
 }
+
