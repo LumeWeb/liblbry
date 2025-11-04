@@ -21,14 +21,13 @@ package disk
 
 import (
 	"fmt"
+	"github.com/knadh/koanf/v2"
+	"go.lumeweb.com/liblbry/storage"
+	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/knadh/koanf/v2"
-	liblbry "go.lumeweb.com/liblbry"
-	"go.uber.org/zap"
 )
 
 var safeHashRe = regexp.MustCompile(`^[a-fA-F0-9]{96}$`)
@@ -76,7 +75,7 @@ func validateHashWithError(hash string, operation string) error {
 func atomicWrite(path string, data []byte, logger *zap.Logger, operation string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(path)
-	
+
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logErrorIfLogger(logger, "failed to create directory for "+operation+" operation", err, zap.String("dir", dir))
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -89,7 +88,7 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	
+
 	// Use cleanup flag to control whether we remove the temp file
 	cleanup := true
 	defer func() {
@@ -128,7 +127,7 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		logErrorIfLogger(logger, "failed to rename temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath), zap.String("path", path))
 		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
-	
+
 	// Only if rename succeeds do we skip cleanup
 	cleanup = false
 
@@ -263,11 +262,11 @@ func safeJoinSD(base, hash string) (string, error) {
 	// Check for symlinks in the base directory, sd directory, and subdirectory
 	sdDirPath := filepath.Join(base, sdDir)
 	subDirPath := filepath.Join(base, sdDir, subDir)
-	
+
 	if err := rejectSymlink(sdDirPath); err != nil {
 		return "", err
 	}
-	
+
 	if err := rejectSymlink(subDirPath); err != nil {
 		return "", err
 	}
@@ -297,7 +296,7 @@ func rejectSymlink(path string) error {
 // Returns:
 //   - liblbry.BlobStore: A new DiskStore instance
 //   - error: Any error encountered during store creation, or an error if the configuration is invalid
-func (f DiskStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, error) {
+func (f DiskStoreFactory) CreateStore(config *koanf.Koanf) (storage.BlobStore, error) {
 	if config == nil {
 		err := fmt.Errorf("configuration cannot be nil")
 		if f.logger != nil {
@@ -438,7 +437,7 @@ func (d *DiskStore) Get(hash string) ([]byte, error) {
 	if found {
 		return data, err
 	}
-	
+
 	return nil, err
 }
 

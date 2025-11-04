@@ -12,10 +12,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.lumeweb.com/liblbry"
-	"go.lumeweb.com/liblbry/mocks"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	protocolmocks "go.lumeweb.com/liblbry/protocol/mocks"
+	"go.lumeweb.com/liblbry/storage"
+	storagemocks "go.lumeweb.com/liblbry/storage/mocks"
 )
 
 var blobs = map[string][]byte{
@@ -96,8 +96,8 @@ var invalidBlobHashRequests = []pair{
 	},
 }
 
-func setupMockStore(t *testing.T, withBlobs bool) *mocks.MockBlobStore {
-	mockStore := mocks.NewMockBlobStore(t)
+func setupMockStore(t *testing.T, withBlobs bool) *storagemocks.MockBlobStore {
+	mockStore := storagemocks.NewMockBlobStore(t)
 
 	if withBlobs {
 		for k, v := range blobs {
@@ -121,20 +121,20 @@ func setupMockStore(t *testing.T, withBlobs bool) *mocks.MockBlobStore {
 	return mockStore
 }
 
-func getServerWithOptions(t *testing.T, withBlobs bool, opts ...ServerOption) (PeerServer, *mocks.MockBlobStore) {
+func getServerWithOptions(t *testing.T, withBlobs bool, opts ...ServerOption) (PeerServer, *storagemocks.MockBlobStore) {
 	mockStore := setupMockStore(t, withBlobs)
 	return NewPeerServer(mockStore, opts...), mockStore
 }
 
-func getServer(t *testing.T, withBlobs bool) (PeerServer, *mocks.MockBlobStore) {
+func getServer(t *testing.T, withBlobs bool) (PeerServer, *storagemocks.MockBlobStore) {
 	return getServerWithOptions(t, withBlobs)
 }
 
-func getServerWithAccessControl(t *testing.T, withBlobs bool, accessControl liblbry.AccessControl) (PeerServer, *mocks.MockBlobStore) {
+func getServerWithAccessControl(t *testing.T, withBlobs bool, accessControl storage.AccessControl) (PeerServer, *storagemocks.MockBlobStore) {
 	return getServerWithOptions(t, withBlobs, WithPeerAccessControl(accessControl))
 }
 
-func getServerWithProtector(t *testing.T, withBlobs bool, protector Protector) (PeerServer, *mocks.MockBlobStore) {
+func getServerWithProtector(t *testing.T, withBlobs bool, protector Protector) (PeerServer, *storagemocks.MockBlobStore) {
 	return getServerWithOptions(t, withBlobs, WithPeerProtector(protector))
 }
 
@@ -314,7 +314,7 @@ func testRequestAndCompare(t *testing.T, server PeerServer, request CompositeReq
 }
 
 // Helper function to create a test server with standard options
-func setupTestListener(t *testing.T, withBlobs bool) (*mocks.MockBlobStore, net.Listener) {
+func setupTestListener(t *testing.T, withBlobs bool) (*storagemocks.MockBlobStore, net.Listener) {
 	t.Helper()
 	mockStore := setupMockStore(t, withBlobs)
 
@@ -414,7 +414,7 @@ func TestInvalidBlobHashes(t *testing.T) {
 
 func TestAccessControl(t *testing.T) {
 	// Create a mock access control that denies access to the first blob
-	mockAccessControl := mocks.NewMockAccessControl(t)
+	mockAccessControl := storagemocks.NewMockAccessControl(t)
 	mockAccessControl.On("Allow", mock.AnythingOfType("string"), testLocalIP).Return(true)
 	// Deny access to the first blob in our blobs map
 	blobKeys := getBlobKeys()

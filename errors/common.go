@@ -26,7 +26,9 @@ var (
 	ErrNoBlobData       = errors.New("no blob data received")
 	ErrAlreadyConnected = errors.New("already connected")
 	ErrServerValidation = errors.New("server validation error")
+	ErrAcquisitionFailed = errors.New("failed to acquire blob from all transfer methods")
 )
+
 
 // IsBlobNotFoundError checks if an error represents a blob not found condition
 // It checks both for the exact error object and string containment

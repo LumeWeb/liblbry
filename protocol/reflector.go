@@ -20,9 +20,9 @@ import (
 	"net"
 	"time"
 
-	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/crypto"
+	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 )
@@ -63,8 +63,8 @@ var (
 
 // DefaultReflectorServer implements the ReflectorServer interface
 type DefaultReflectorServer struct {
-	store             liblbry.BlobStore
-	accessControl     liblbry.AccessControl
+	store             storage.BlobStore
+	accessControl     storage.AccessControl
 	connectionTimeout time.Duration
 	logger            *zap.Logger
 }
@@ -73,7 +73,7 @@ type DefaultReflectorServer struct {
 type ReflectorServerOption func(*DefaultReflectorServer)
 
 // NewReflectorServer creates a new reflector server instance with optional configuration
-func NewReflectorServer(store liblbry.BlobStore, options ...ReflectorServerOption) ReflectorServer {
+func NewReflectorServer(store storage.BlobStore, options ...ReflectorServerOption) ReflectorServer {
 	server := &DefaultReflectorServer{
 		store:             store,
 		accessControl:     nil, // Default to no access control
@@ -87,7 +87,7 @@ func NewReflectorServer(store liblbry.BlobStore, options ...ReflectorServerOptio
 }
 
 // WithReflectorAccessControl sets the access control for reflector connections
-func WithReflectorAccessControl(accessControl liblbry.AccessControl) ReflectorServerOption {
+func WithReflectorAccessControl(accessControl storage.AccessControl) ReflectorServerOption {
 	return func(s *DefaultReflectorServer) {
 		s.accessControl = accessControl
 	}
