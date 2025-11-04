@@ -94,21 +94,44 @@ func (t *PeerTransfer) Get(hash string) ([]byte, error) {
 			break
 		}
 
+		peerAddr := contact.Addr().String()
+
+		if err := t.peerClient.Connect(ctx, peerAddr); err != nil {
+			lastErr = fmt.Errorf("connect to peer %s: %w", peerAddr, err)
+			t.logger.Debug("Failed to connect to peer",
+				zap.String("hash", hash),
+				zap.String("peer", peerAddr),
+				zap.Error(err))
+			continue
+		}
+
 		// Attempt to download blob from peer
 		data, err := t.peerClient.GetBlob(ctx, hash)
 		if err == nil {
 			// Success!
 			t.logger.Debug("Successfully fetched blob from peer",
 				zap.String("hash", hash),
-				zap.String("peer", contact.Addr().String()))
+				zap.String("peer", peerAddr))
+			if closeErr := t.peerClient.Close(); closeErr != nil {
+				t.logger.Debug("Failed to close peer connection",
+					zap.String("hash", hash),
+					zap.String("peer", peerAddr),
+					zap.Error(closeErr))
+			}
 			return data, nil
 		}
 
-		lastErr = err
+		lastErr = fmt.Errorf("fetch blob from peer %s: %w", peerAddr, err)
 		t.logger.Debug("Failed to fetch blob from peer",
 			zap.String("hash", hash),
-			zap.String("peer", contact.Addr().String()),
+			zap.String("peer", peerAddr),
 			zap.Error(err))
+		if closeErr := t.peerClient.Close(); closeErr != nil {
+			t.logger.Debug("Failed to close peer connection",
+				zap.String("hash", hash),
+				zap.String("peer", peerAddr),
+				zap.Error(closeErr))
+		}
 	}
 
 	// All attempts failed

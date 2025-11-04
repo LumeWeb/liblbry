@@ -28,6 +28,10 @@ func NewBlobAcquirer(transfers []transfer.Transfer, store storage.BlobStore) Blo
 
 // Acquire attempts to acquire a blob using the transfer methods in order
 func (ba *DefaultBlobAcquirer) Acquire(hash string) ([]byte, error) {
+	if ba.store == nil {
+		return nil, lbryerrors.ErrAcquisitionFailed
+	}
+
 	// First check if blob already exists in storage
 	has, err := ba.store.Has(hash)
 	if err != nil {
@@ -45,6 +49,9 @@ func (ba *DefaultBlobAcquirer) Acquire(hash string) ([]byte, error) {
 
 	// Try each transfer method in order
 	for _, transferMethod := range ba.transfers {
+		if transferMethod == nil {
+			continue
+		}
 		data, err := transferMethod.Get(hash)
 		if err == nil {
 			// Successfully acquired blob, store it

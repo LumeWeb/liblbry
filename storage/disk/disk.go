@@ -294,7 +294,7 @@ func rejectSymlink(path string) error {
 //   - config: A koanf configuration object containing the storage path
 //
 // Returns:
-//   - liblbry.BlobStore: A new DiskStore instance
+//   - storage.BlobStore: A new DiskStore instance
 //   - error: Any error encountered during store creation, or an error if the configuration is invalid
 func (f DiskStoreFactory) CreateStore(config *koanf.Koanf) (storage.BlobStore, error) {
 	if config == nil {
