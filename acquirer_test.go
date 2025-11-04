@@ -16,12 +16,23 @@ func TestNewBlobAcquirer(t *testing.T) {
 	store := mocks.NewMockBlobStore(t)
 	transfers := []transfer.Transfer{}
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
 
+	require.NoError(t, err)
 	assert.NotNil(t, acquirer)
 	// Test that the returned value implements the BlobAcquirer interface
 	_, ok := acquirer.(BlobAcquirer)
 	assert.True(t, ok)
+}
+
+func TestNewBlobAcquirer_NilStore(t *testing.T) {
+	transfers := []transfer.Transfer{}
+
+	acquirer, err := NewBlobAcquirer(transfers, nil)
+
+	require.Error(t, err)
+	assert.Nil(t, acquirer)
+	assert.Contains(t, err.Error(), "store cannot be nil")
 }
 
 func TestBlobAcquirer_Acquire_FromStorage(t *testing.T) {
@@ -34,7 +45,8 @@ func TestBlobAcquirer_Acquire_FromStorage(t *testing.T) {
 	store.EXPECT().Has(hash).Return(true, nil)
 	store.EXPECT().Get(hash).Return(expectedData, nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -54,7 +66,8 @@ func TestBlobAcquirer_Acquire_FromTransfer(t *testing.T) {
 	transferMock.EXPECT().Get(hash).Return(expectedData, nil)
 	store.EXPECT().Put(hash, expectedData).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -76,7 +89,8 @@ func TestBlobAcquirer_Acquire_TransferFallback(t *testing.T) {
 	transferMock2.EXPECT().Get(hash).Return(expectedData, nil)
 	store.EXPECT().Put(hash, expectedData).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -96,7 +110,8 @@ func TestBlobAcquirer_Acquire_AllMethodsFail(t *testing.T) {
 	transferMock1.EXPECT().Get(hash).Return(nil, errors.New("first transfer failed"))
 	transferMock2.EXPECT().Get(hash).Return(nil, errors.New("second transfer failed"))
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -114,7 +129,8 @@ func TestBlobAcquirer_Acquire_StorageHasError(t *testing.T) {
 
 	store.EXPECT().Has(hash).Return(false, expectedError)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -133,7 +149,8 @@ func TestBlobAcquirer_Acquire_StorageGetError(t *testing.T) {
 	store.EXPECT().Has(hash).Return(true, nil)
 	store.EXPECT().Get(hash).Return(nil, expectedError)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -150,7 +167,8 @@ func TestBlobAcquirer_Acquire_EmptyTransfersList(t *testing.T) {
 
 	store.EXPECT().Has(hash).Return(false, nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -172,7 +190,8 @@ func TestBlobAcquirer_Acquire_StoragePutError(t *testing.T) {
 	transferMock.EXPECT().Get(hash).Return(transferData, nil)
 	store.EXPECT().Put(hash, transferData).Return(expectedError)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -193,7 +212,8 @@ func TestBlobAcquirer_Acquire_TransferNameCalled(t *testing.T) {
 	transferMock.EXPECT().Get(hash).Return(expectedData, nil)
 	store.EXPECT().Put(hash, expectedData).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -209,7 +229,8 @@ func TestBlobAcquirer_Acquire_EmptyHash(t *testing.T) {
 
 	store.EXPECT().Has(hash).Return(false, nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -229,7 +250,8 @@ func TestBlobAcquirer_Acquire_EmptyDataFromTransfer(t *testing.T) {
 	transferMock.EXPECT().Get(hash).Return(expectedData, nil)
 	store.EXPECT().Put(hash, expectedData).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -248,7 +270,8 @@ func TestBlobAcquirer_Acquire_NilDataFromTransfer(t *testing.T) {
 	transferMock.EXPECT().Get(hash).Return(nil, nil) // Nil data but no error
 	store.EXPECT().Put(hash, []byte(nil)).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 
@@ -271,7 +294,8 @@ func TestBlobAcquirer_Acquire_MultipleTransfersMixedResults(t *testing.T) {
 	transferMock2.EXPECT().Get(hash).Return([]byte{}, nil) // Empty data
 	store.EXPECT().Put(hash, []byte{}).Return(nil)
 
-	acquirer := NewBlobAcquirer(transfers, store)
+	acquirer, err := NewBlobAcquirer(transfers, store)
+	require.NoError(t, err)
 
 	data, err := acquirer.Acquire(hash)
 

@@ -100,7 +100,9 @@ func TestPeerTransfer_Get_Success(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
 	// Mock peer client to succeed on first attempt
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+	peerClient.EXPECT().Close().Return(nil)
 
 	transfer := NewPeerTransfer(dhtNode, peerClient)
 
@@ -146,7 +148,9 @@ func TestPeerTransfer_Get_AllPeersFail(t *testing.T) {
 
 	// Mock all peer clients to fail
 	for i := 0; i < 3; i++ {
+		peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 		peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("peer %d failed", i+1))
+		peerClient.EXPECT().Close().Return(nil)
 	}
 
 	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferMaxPeers(3))
@@ -175,7 +179,9 @@ func TestPeerTransfer_Get_PeerClientSuccess(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
 	// Mock peer client to succeed
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+	peerClient.EXPECT().Close().Return(nil)
 
 	transfer := NewPeerTransfer(dhtNode, peerClient)
 
@@ -232,11 +238,15 @@ func TestPeerTransfer_Get_PeerClientFailure(t *testing.T) {
 			// Mock peer client based on test case
 			switch test.name {
 			case "Connection error":
-				peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, test.clientError)
+				peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(test.setupError)
 			case "Timeout error":
+				peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 				peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, test.clientError)
+				peerClient.EXPECT().Close().Return(nil)
 			case "Context cancellation":
+				peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 				peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, test.clientError)
+				peerClient.EXPECT().Close().Return(nil)
 			}
 
 			transfer := NewPeerTransfer(dhtNode, peerClient)
@@ -265,7 +275,9 @@ func TestPeerTransfer_Get_ContextCancellation(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
 	// Mock peer client to handle context cancellation
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, context.Canceled)
+	peerClient.EXPECT().Close().Return(nil)
 
 	// Cancel context immediately after starting operation
 	_, cancel := context.WithCancel(context.Background())
@@ -342,7 +354,9 @@ func TestPeerTransfer_Get_Timeout(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
 	// Mock peer client to timeout after delay
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("timeout"))
+	peerClient.EXPECT().Close().Return(nil)
 
 	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferTimeout(100*time.Millisecond))
 
@@ -372,7 +386,9 @@ func TestPeerTransfer_Get_MaxPeers(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
 
 	// Mock peer client to succeed
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+	peerClient.EXPECT().Close().Return(nil)
 
 	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferMaxPeers(10))
 
@@ -402,9 +418,13 @@ func TestPeerTransfer_Get_FallbackLogic(t *testing.T) {
 	// Mock peer clients: first succeeds, others fail
 	for i := 0; i < 5; i++ {
 		if i == 0 {
+			peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 			peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+			peerClient.EXPECT().Close().Return(nil)
 		} else {
+			peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 			peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("peer %d failed", i+1))
+			peerClient.EXPECT().Close().Return(nil)
 		}
 	}
 
@@ -533,9 +553,13 @@ func TestPeerTransfer_TableDrivenTests(t *testing.T) {
 			// For "No DHT node" case with empty contacts, no GetBlob calls should be made
 			if len(test.contacts) > 0 {
 				if test.expectError {
+					peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 					peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("connection failed"))
+					peerClient.EXPECT().Close().Return(nil)
 				} else if test.expectData {
+					peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
 					peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+					peerClient.EXPECT().Close().Return(nil)
 				}
 			}
 

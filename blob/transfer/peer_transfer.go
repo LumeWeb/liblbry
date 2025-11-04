@@ -88,6 +88,11 @@ func (t *PeerTransfer) Get(hash string) ([]byte, error) {
 	defer cancel()
 
 	var lastErr error
+	// Calculate per-peer timeout to ensure fair distribution
+	perPeerTimeout := t.timeout / time.Duration(t.maxPeers)
+	if perPeerTimeout <= 0 {
+		perPeerTimeout = 1 * time.Second // Minimum 1 second per peer
+	}
 
 	for i, contact := range contacts {
 		if i >= t.maxPeers {
@@ -96,17 +101,23 @@ func (t *PeerTransfer) Get(hash string) ([]byte, error) {
 
 		peerAddr := contact.Addr().String()
 
-		if err := t.peerClient.Connect(ctx, peerAddr); err != nil {
+		// Create per-peer context with timeout
+		peerCtx, peerCancel := context.WithTimeout(ctx, perPeerTimeout)
+
+		if err := t.peerClient.Connect(peerCtx, peerAddr); err != nil {
 			lastErr = fmt.Errorf("connect to peer %s: %w", peerAddr, err)
 			t.logger.Debug("Failed to connect to peer",
 				zap.String("hash", hash),
 				zap.String("peer", peerAddr),
 				zap.Error(err))
+			peerCancel()
 			continue
 		}
 
 		// Attempt to download blob from peer
-		data, err := t.peerClient.GetBlob(ctx, hash)
+		data, err := t.peerClient.GetBlob(peerCtx, hash)
+		peerCancel()
+
 		if err == nil {
 			// Success!
 			t.logger.Debug("Successfully fetched blob from peer",

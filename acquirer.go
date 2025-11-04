@@ -1,6 +1,7 @@
 package liblbry
 
 import (
+	"errors"
 	"go.lumeweb.com/liblbry/blob/transfer"
 	lbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
@@ -19,11 +20,14 @@ type DefaultBlobAcquirer struct {
 }
 
 // NewBlobAcquirer creates a new BlobAcquirer with the given transfer methods and storage
-func NewBlobAcquirer(transfers []transfer.Transfer, store storage.BlobStore) BlobAcquirer {
+func NewBlobAcquirer(transfers []transfer.Transfer, store storage.BlobStore) (BlobAcquirer, error) {
+	if store == nil {
+		return nil, errors.New("store cannot be nil")
+	}
 	return &DefaultBlobAcquirer{
 		transfers: transfers,
 		store:     store,
-	}
+	}, nil
 }
 
 // Acquire attempts to acquire a blob using the transfer methods in order

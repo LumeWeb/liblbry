@@ -8,27 +8,26 @@ import (
 
 // Common errors
 var (
-	ErrBlobNotFound     = errors.New("blob not found")
-	ErrBlobExists       = errors.New("blob already exists on server")
-	ErrInvalidHash      = errors.New("invalid hash")
-	ErrInvalidSize      = errors.New("invalid size")
-	ErrStreamCorrupted  = errors.New("stream corrupted")
-	ErrAccessDenied     = errors.New("access denied")
-	ErrInvalidManifest  = errors.New("invalid manifest")
-	ErrHashMismatch     = errors.New("hash mismatch")
-	ErrConnectionFailed = errors.New("connection failed")
-	ErrTimeout          = errors.New("operation timeout")
-	ErrInvalidConfig    = errors.New("invalid configuration")
-	ErrRequestTooLarge  = errors.New("request is too large")
-	ErrInvalidData      = errors.New("Invalid data")
-	ErrInvalidHashLen   = errors.New("Invalid blob hash length")
-	ErrBlobProtected    = errors.New("requested blob is protected")
-	ErrNoBlobData       = errors.New("no blob data received")
-	ErrAlreadyConnected = errors.New("already connected")
-	ErrServerValidation = errors.New("server validation error")
+	ErrBlobNotFound      = errors.New("blob not found")
+	ErrBlobExists        = errors.New("blob already exists on server")
+	ErrInvalidHash       = errors.New("invalid hash")
+	ErrInvalidSize       = errors.New("invalid size")
+	ErrStreamCorrupted   = errors.New("stream corrupted")
+	ErrAccessDenied      = errors.New("access denied")
+	ErrInvalidManifest   = errors.New("invalid manifest")
+	ErrHashMismatch      = errors.New("hash mismatch")
+	ErrConnectionFailed  = errors.New("connection failed")
+	ErrTimeout           = errors.New("operation timeout")
+	ErrInvalidConfig     = errors.New("invalid configuration")
+	ErrRequestTooLarge   = errors.New("request is too large")
+	ErrInvalidData       = errors.New("Invalid data")
+	ErrInvalidHashLen    = errors.New("Invalid blob hash length")
+	ErrBlobProtected     = errors.New("requested blob is protected")
+	ErrNoBlobData        = errors.New("no blob data received")
+	ErrAlreadyConnected  = errors.New("already connected")
+	ErrServerValidation  = errors.New("server validation error")
 	ErrAcquisitionFailed = errors.New("failed to acquire blob from all transfer methods")
 )
-
 
 // IsBlobNotFoundError checks if an error represents a blob not found condition
 // It checks both for the exact error object and string containment
@@ -54,7 +53,8 @@ func IsKnownErrorType(err error) bool {
 		err == ErrTimeout ||
 		err == ErrInvalidConfig ||
 		err == ErrNoBlobData ||
-		err == ErrAlreadyConnected
+		err == ErrAlreadyConnected ||
+		err == ErrAcquisitionFailed
 }
 
 // DetectErrorType detects specific error types by string matching since errors come from different process
@@ -72,6 +72,8 @@ func DetectErrorType(errorMsg string) error {
 		return ErrInvalidHashLen
 	case ErrBlobProtected.Error():
 		return ErrBlobProtected
+	case ErrAcquisitionFailed.Error():
+		return ErrAcquisitionFailed
 	default:
 		// For unknown errors, create a generic error
 		return fmt.Errorf("%s", errorMsg)
