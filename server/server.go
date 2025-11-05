@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +11,8 @@ import (
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
 	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Default protocol ports
@@ -94,7 +95,7 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 			if stopErr := s.Stop(stopCtx); stopErr != nil {
 				s.logger.Error("Error stopping server after startup failure", zap.Error(stopErr))
 			}
-			return fmt.Errorf("failed to start %s protocol: %w", strings.Title(name), err)
+			return fmt.Errorf("failed to start %s protocol: %w", cases.Title(language.Und).String(name), err)
 		}
 	}
 
@@ -213,7 +214,11 @@ func (s *DefaultServer) startTCPProtocol(protocolName string, port int, serverFa
 					continue
 				}
 			}
-			go server.HandleConnection(conn)
+			s.wg.Add(1)
+			go func() {
+				defer s.wg.Done()
+				server.HandleConnection(conn)
+			}()
 		}
 	}()
 

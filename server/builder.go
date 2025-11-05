@@ -145,11 +145,13 @@ func ProductionBuilder(storagePath string, logger *zap.Logger) (*ServerBuilder, 
 		WithLogger(logger), nil
 }
 
-// TestBuilder creates a minimal server builder for testing
+// TestBuilder creates a minimal server builder for testing with a default Peer protocol
+// Callers can add additional protocols using the builder methods if needed
 func TestBuilder() *ServerBuilder {
 	return NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess())
+		WithAccessControl(storage.NewAllowAllAccess()).
+		WithPeer()
 }
 
 // PeerOnlyBuilder creates a server with only Peer protocol
