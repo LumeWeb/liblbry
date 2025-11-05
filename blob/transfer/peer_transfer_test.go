@@ -326,7 +326,17 @@ func TestPeerTransfer_Get_Timeout(t *testing.T) {
 
 	// Mock peer client to timeout after delay
 	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
-	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("timeout"))
+	peerClient.EXPECT().
+		GetBlob(mock.MatchedBy(func(ctx context.Context) bool {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				return false
+			}
+			remaining := time.Until(deadline)
+			// allow a bit of slack for scheduling jitter
+			return remaining <= 100*time.Millisecond+25*time.Millisecond && remaining > 0
+		}), mock.AnythingOfType("string")).
+		Return(nil, context.DeadlineExceeded)
 	peerClient.EXPECT().Close().Return(nil)
 
 	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferTimeout(100*time.Millisecond))
@@ -334,7 +344,7 @@ func TestPeerTransfer_Get_Timeout(t *testing.T) {
 	_, err := transfer.Get(context.Background(), "76fd253c8fd922886c60e2dfc1c7f47a213ad035b9622b9a3be5377e66eccf7c026919fccd771ca1d2b0a87bf4b4ce7b")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "timeout")
+	assert.True(t, errors.Is(err, context.DeadlineExceeded))
 	dhtNode.AssertExpectations(t)
 	peerClient.AssertExpectations(t)
 }
