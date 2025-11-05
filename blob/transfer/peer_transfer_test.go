@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,6 +106,25 @@ func TestPeerTransfer_Get_NoPeersFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "blob not found")
+	assert.Nil(t, data)
+	dhtNode.AssertExpectations(t)
+	peerClient.AssertExpectations(t)
+}
+
+// TestPeerTransfer_Get_DHTError tests DHT.Get() error scenarios
+func TestPeerTransfer_Get_DHTError(t *testing.T) {
+	dhtNode := protocolMocks.NewMockDHTNode(t)
+	peerClient := protocolMocks.NewMockPeerClient(t)
+
+	// Mock DHT to return an error
+	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(nil, fmt.Errorf("DHT lookup failed"))
+
+	transfer := NewPeerTransfer(dhtNode, peerClient)
+
+	data, err := transfer.Get(context.Background(), "76fd253c8fd922886c60e2dfc1c7f47a213ad035b9622b9a3be5377e66eccf7c026919fccd771ca1d2b0a87bf4b4ce7b")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "DHT lookup failed")
 	assert.Nil(t, data)
 	dhtNode.AssertExpectations(t)
 	peerClient.AssertExpectations(t)
@@ -289,7 +309,7 @@ func TestPeerTransfer_Get_InvalidHash(t *testing.T) {
 		},
 		{
 			name:        "Too long",
-			hash:        "g" + string(make([]byte, 65)),
+			hash:        strings.Repeat("a", 66),
 			description: "exceeds maximum hash length",
 		},
 	}
