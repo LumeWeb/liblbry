@@ -40,7 +40,9 @@ func WithPeerTransferMaxPeers(maxPeers int) PeerTransferOption {
 // WithPeerTransferLogger sets the logger for peer transfer
 func WithPeerTransferLogger(logger *zap.Logger) PeerTransferOption {
 	return func(t *PeerTransfer) {
-		t.logger = logger
+		if logger != nil {
+			t.logger = logger
+		}
 	}
 }
 

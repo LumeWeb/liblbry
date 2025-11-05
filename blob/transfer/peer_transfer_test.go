@@ -39,6 +39,7 @@ func TestNewPeerTransfer(t *testing.T) {
 			expected: &PeerTransfer{
 				timeout:  30 * time.Second,
 				maxPeers: 5,
+				logger:   zap.NewNop(),
 			},
 		},
 		{
@@ -81,9 +82,10 @@ func TestNewPeerTransfer(t *testing.T) {
 			assert.Equal(t, test.expected.timeout, transfer.timeout)
 			assert.Equal(t, test.expected.maxPeers, transfer.maxPeers)
 			if test.logger != nil {
-				assert.NotNil(t, transfer.logger)
+				assert.Equal(t, test.logger, transfer.logger)
 			} else {
-				assert.Nil(t, transfer.logger)
+				// When nil logger is passed, default logger should be preserved
+				assert.Equal(t, zap.NewNop(), transfer.logger)
 			}
 		})
 	}
@@ -630,21 +632,24 @@ func TestPeerTransfer_TableDrivenTests(t *testing.T) {
 
 					if behavior.shouldConnect {
 						if behavior.connectError != nil {
+							// When connectError is non-nil, only set Connect expectation to return the error
+							// Do NOT set GetBlob or Close expectations since Connect will fail
 							peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(behavior.connectError)
 						} else {
+							// When Connect succeeds, set Connect to return nil and then set GetBlob and Close expectations
 							peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
-						}
 
-						if behavior.getBlobError != nil {
-							peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, behavior.getBlobError)
-						} else if behavior.getBlobData != nil {
-							peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(behavior.getBlobData, nil)
-						} else {
-							// Default to success if no data or error specified
-							peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
-						}
+							if behavior.getBlobError != nil {
+								peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, behavior.getBlobError)
+							} else if behavior.getBlobData != nil {
+								peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(behavior.getBlobData, nil)
+							} else {
+								// Default to success if no data or error specified
+								peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+							}
 
-						peerClient.EXPECT().Close().Return(nil)
+							peerClient.EXPECT().Close().Return(nil)
+						}
 					} else {
 						// If shouldn't connect, expect Connect to fail
 						connectErr := behavior.connectError
