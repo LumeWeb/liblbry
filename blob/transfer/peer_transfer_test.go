@@ -486,6 +486,36 @@ func TestPeerTransfer_Options(t *testing.T) {
 	assert.NotNil(t, transfer.logger)
 }
 
+// TestPeerTransfer_ZeroMaxPeers tests that maxPeers=0 doesn't cause division by zero
+func TestPeerTransfer_ZeroMaxPeers(t *testing.T) {
+	dhtNode := protocolMocks.NewMockDHTNode(t)
+	peerClient := protocolMocks.NewMockPeerClient(t)
+
+	// Mock DHT to return a contact
+	contact := dht.Contact{
+		ID:       bits.Rand(),
+		IP:       net.ParseIP("192.168.1.100"),
+		Port:     3333,
+		PeerPort: 3333,
+	}
+	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
+
+	// Mock peer client to succeed
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
+	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil)
+	peerClient.EXPECT().Close().Return(nil)
+
+	// Create transfer with maxPeers=0 (should not cause division by zero)
+	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferMaxPeers(0))
+
+	data, err := transfer.Get(context.Background(), "76fd253c8fd922886c60e2dfc1c7f47a213ad035b9622b9a3be5377e66eccf7c026919fccd771ca1d2b0a87bf4b4ce7b")
+
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("test-blob-data"), data)
+	dhtNode.AssertExpectations(t)
+	peerClient.AssertExpectations(t)
+}
+
 // PeerBehavior defines how each peer should behave in tests
 type PeerBehavior struct {
 	shouldConnect bool

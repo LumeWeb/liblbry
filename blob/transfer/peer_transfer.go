@@ -89,14 +89,15 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	var lastErr error
 	// Calculate per-peer timeout based on actual peers to try
-	peersToTry := min(len(contacts), t.maxPeers)
+	// Ensure maxPeers is at least 1 to prevent division by zero
+	peersToTry := max(1, min(len(contacts), t.maxPeers))
 	perPeerTimeout := t.timeout / time.Duration(peersToTry)
 	if perPeerTimeout <= 0 {
 		perPeerTimeout = 1 * time.Second // Minimum 1 second per peer
 	}
 
 	for i, contact := range contacts {
-		if i >= t.maxPeers {
+		if i >= peersToTry {
 			break
 		}
 
