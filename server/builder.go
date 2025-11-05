@@ -97,6 +97,12 @@ func (b *ServerBuilder) Build() (Server, error) {
 		return nil, errors.New("at least one protocol must be configured")
 	}
 
+	// Set safe default for accessControl if nil to prevent runtime panics
+	// when protocol servers call AccessControl.Allow()
+	if b.accessControl == nil {
+		b.accessControl = storage.NewAllowAllAccess()
+	}
+
 	return &DefaultServer{
 		storage:       b.storage,
 		acquirer:      b.acquirer,
