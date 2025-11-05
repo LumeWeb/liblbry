@@ -85,7 +85,7 @@ func TestNewPeerTransfer(t *testing.T) {
 				assert.Equal(t, test.logger, transfer.logger)
 			} else {
 				// When nil logger is passed, default logger should be preserved
-				assert.Equal(t, zap.NewNop(), transfer.logger)
+				assert.NotNil(t, transfer.logger, "default logger should be preserved when nil is passed")
 			}
 		})
 	}

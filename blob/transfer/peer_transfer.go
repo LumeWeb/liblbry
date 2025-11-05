@@ -90,6 +90,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	defer cancel()
 
 	var lastErr error
+	var attemptedCount int
 	// Calculate per-peer timeout based on actual peers to try
 	// Ensure maxPeers is at least 1 to prevent division by zero
 	peersToTry := max(1, min(len(contacts), t.maxPeers))
@@ -103,6 +104,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 			break
 		}
 
+		attemptedCount++
 		peerAddr := contact.Addr().String()
 
 		// Create per-peer context with timeout
@@ -151,7 +153,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	// All attempts failed
 	if lastErr != nil {
-		return nil, fmt.Errorf("failed to fetch blob from %d peers: %w", len(contacts), lastErr)
+		return nil, fmt.Errorf("failed to fetch blob from %d peers: %w", attemptedCount, lastErr)
 	}
 	return nil, lbryerrors.ErrAcquisitionFailed
 }
