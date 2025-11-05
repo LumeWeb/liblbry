@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/protocol"
@@ -87,7 +88,10 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 		}
 
 		if err != nil {
-			if stopErr := s.Stop(ctx); stopErr != nil {
+			// Create a fresh context for cleanup to ensure it runs to completion
+			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if stopErr := s.Stop(stopCtx); stopErr != nil {
 				s.logger.Error("Error stopping server after startup failure", zap.Error(stopErr))
 			}
 			return fmt.Errorf("failed to start %s protocol: %w", strings.Title(name), err)

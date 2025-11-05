@@ -3,8 +3,10 @@ package server
 import (
 	"errors"
 
+	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/storage"
+	"go.lumeweb.com/liblbry/storage/disk"
 	"go.lumeweb.com/liblbry/storage/memory"
 	"go.uber.org/zap"
 )
@@ -111,11 +113,36 @@ func DevelopmentBuilder() *ServerBuilder {
 }
 
 // ProductionBuilder creates a server builder with production-ready defaults
-func ProductionBuilder(storagePath string) *ServerBuilder {
+func ProductionBuilder(storagePath string, logger *zap.Logger) (*ServerBuilder, error) {
+	// Use provided logger or default to no-op logger
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	// Create disk storage factory using the helper from store.go
+	factory, err := liblbry.CreateStorageFactory[disk.DiskStoreFactory](logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create configuration with the storage path
+	config := koanf.New(".")
+	if err := config.Set("path", storagePath); err != nil {
+		return nil, err
+	}
+
+	// Create the disk store
+	store, err := factory.CreateStore(config)
+	if err != nil {
+		return nil, err
+	}
+
 	return NewServerBuilder().
+		WithStorage(store).
 		WithAccessControl(storage.NewDenyAllAccess()).
 		WithPeer().
-		WithReflector()
+		WithReflector().
+		WithLogger(logger), nil
 }
 
 // TestBuilder creates a minimal server builder for testing
