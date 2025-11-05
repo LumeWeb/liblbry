@@ -357,26 +357,19 @@ func TestPeerTransfer_Get_MaxPeers(t *testing.T) {
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
 
 	// Mock first 9 peers to fail, 10th to succeed
-	// Use On/Maybe to make expectations more flexible
-	connectCall := peerClient.On("Connect", mock.Anything, mock.AnythingOfType("string")).Return(nil)
-	getBlobCall := peerClient.On("GetBlob", mock.Anything, mock.AnythingOfType("string"))
-	closeCall := peerClient.On("Close").Return(nil)
+	// Create distinct expectations for each peer attempt
 
-	// Set up GetBlob to fail first 9 times, then succeed
-	getBlobCall.Return(nil, fmt.Errorf("peer 1 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 2 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 3 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 4 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 5 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 6 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 7 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 8 failed")).Once()
-	getBlobCall.Return(nil, fmt.Errorf("peer 9 failed")).Once()
-	getBlobCall.Return([]byte("test-blob-data"), nil).Once()
+	// First 9 peers fail
+	for i := 1; i <= 9; i++ {
+		peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
+		peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return(nil, fmt.Errorf("peer %d failed", i)).Once()
+		peerClient.EXPECT().Close().Return(nil).Once()
+	}
 
-	// Allow multiple calls to Connect and Close
-	connectCall.Maybe()
-	closeCall.Maybe()
+	// 10th peer succeeds
+	peerClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
+	peerClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).Return([]byte("test-blob-data"), nil).Once()
+	peerClient.EXPECT().Close().Return(nil).Once()
 
 	transfer := NewPeerTransfer(dhtNode, peerClient, WithPeerTransferMaxPeers(10))
 
