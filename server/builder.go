@@ -114,12 +114,17 @@ func (b *ServerBuilder) Build() (Server, error) {
 
 // Preset helper functions for common server configurations
 
-// DevelopmentBuilder creates a server builder with development-friendly defaults
-func DevelopmentBuilder() *ServerBuilder {
+// baseMemoryBuilder creates a server builder with common memory storage defaults:
+// memory storage + AllowAllAccess for convenient non-production setups
+func baseMemoryBuilder() *ServerBuilder {
 	return NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess()).
-		WithPeer()
+		WithAccessControl(storage.NewAllowAllAccess())
+}
+
+// DevelopmentBuilder creates a server builder with development-friendly defaults
+func DevelopmentBuilder() *ServerBuilder {
+	return baseMemoryBuilder().WithPeer()
 }
 
 // ProductionBuilder creates a server builder with production-ready defaults
@@ -163,33 +168,22 @@ func ProductionBuilderWithAccess(storagePath string, logger *zap.Logger, accessC
 // TestBuilder creates a minimal server builder for testing with a default Peer protocol
 // Callers can add additional protocols using the builder methods if needed
 func TestBuilder() *ServerBuilder {
-	return NewServerBuilder().
-		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess()).
-		WithPeer()
+	return baseMemoryBuilder().WithPeer()
 }
 
 // PeerOnlyBuilder creates a server with only Peer protocol
 func PeerOnlyBuilder(port ...int) *ServerBuilder {
-	return NewServerBuilder().
-		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess()).
-		WithPeer(port...)
+	return baseMemoryBuilder().WithPeer(port...)
 }
 
 // ReflectorOnlyBuilder creates a server with only Reflector protocol
 func ReflectorOnlyBuilder(port ...int) *ServerBuilder {
-	return NewServerBuilder().
-		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess()).
-		WithReflector(port...)
+	return baseMemoryBuilder().WithReflector(port...)
 }
 
 // AllProtocolsBuilder creates a server with all protocols enabled
 func AllProtocolsBuilder(peerPort, reflectorPort, dhtPort int) *ServerBuilder {
-	return NewServerBuilder().
-		WithStorage(memory.NewMemoryStore()).
-		WithAccessControl(storage.NewAllowAllAccess()).
+	return baseMemoryBuilder().
 		WithPeer(peerPort).
 		WithReflector(reflectorPort).
 		WithDHT(dhtPort)
