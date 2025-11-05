@@ -62,7 +62,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClient protocol.PeerClient, o
 }
 
 // Get attempts to fetch a blob from peers discovered via DHT
-func (t *PeerTransfer) Get(hash string) ([]byte, error) {
+func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if !stream.ValidateHash(hash) {
 		return nil, lbryerrors.ErrInvalidHash
@@ -84,12 +84,13 @@ func (t *PeerTransfer) Get(hash string) ([]byte, error) {
 	}
 
 	// Try up to maxPeers peers
-	ctx, cancel := context.WithTimeout(context.Background(), t.timeout)
+	ctx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
 
 	var lastErr error
-	// Calculate per-peer timeout to ensure fair distribution
-	perPeerTimeout := t.timeout / time.Duration(t.maxPeers)
+	// Calculate per-peer timeout based on actual peers to try
+	peersToTry := min(len(contacts), t.maxPeers)
+	perPeerTimeout := t.timeout / time.Duration(peersToTry)
 	if perPeerTimeout <= 0 {
 		perPeerTimeout = 1 * time.Second // Minimum 1 second per peer
 	}

@@ -1,7 +1,9 @@
 package transfer
 
+import "context"
+
 // Transfer defines the interface for blob acquisition/transfer
 type Transfer interface {
-	Get(hash string) ([]byte, error)
+	Get(ctx context.Context, hash string) ([]byte, error)
 	Name() string
 }

@@ -1,6 +1,7 @@
 package liblbry
 
 import (
+	"context"
 	"errors"
 	"go.lumeweb.com/liblbry/blob/transfer"
 	lbryerrors "go.lumeweb.com/liblbry/errors"
@@ -10,7 +11,7 @@ import (
 // BlobAcquirer defines the interface for blob acquisition with fallback mechanisms
 type BlobAcquirer interface {
 	// Acquire attempts to acquire a blob using available transfer methods
-	Acquire(hash string) ([]byte, error)
+	Acquire(ctx context.Context, hash string) ([]byte, error)
 }
 
 // DefaultBlobAcquirer implements the BlobAcquirer interface with fallback mechanisms
@@ -31,7 +32,7 @@ func NewBlobAcquirer(transfers []transfer.Transfer, store storage.BlobStore) (Bl
 }
 
 // Acquire attempts to acquire a blob using the transfer methods in order
-func (ba *DefaultBlobAcquirer) Acquire(hash string) ([]byte, error) {
+func (ba *DefaultBlobAcquirer) Acquire(ctx context.Context, hash string) ([]byte, error) {
 	if ba.store == nil {
 		return nil, lbryerrors.ErrAcquisitionFailed
 	}
@@ -56,7 +57,7 @@ func (ba *DefaultBlobAcquirer) Acquire(hash string) ([]byte, error) {
 		if transferMethod == nil {
 			continue
 		}
-		data, err := transferMethod.Get(hash)
+		data, err := transferMethod.Get(ctx, hash)
 		if err == nil {
 			// Successfully acquired blob, store it
 			err = ba.store.Put(hash, data)
