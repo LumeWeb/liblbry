@@ -114,6 +114,11 @@ func DevelopmentBuilder() *ServerBuilder {
 
 // ProductionBuilder creates a server builder with production-ready defaults
 func ProductionBuilder(storagePath string, logger *zap.Logger) (*ServerBuilder, error) {
+	return ProductionBuilderWithAccess(storagePath, logger, storage.NewAllowAllAccess())
+}
+
+// ProductionBuilderWithAccess creates a server builder with production-ready defaults and custom access control
+func ProductionBuilderWithAccess(storagePath string, logger *zap.Logger, accessControl storage.AccessControl) (*ServerBuilder, error) {
 	// Use provided logger or default to no-op logger
 	if logger == nil {
 		logger = zap.NewNop()
@@ -139,7 +144,7 @@ func ProductionBuilder(storagePath string, logger *zap.Logger) (*ServerBuilder, 
 
 	return NewServerBuilder().
 		WithStorage(store).
-		WithAccessControl(storage.NewDenyAllAccess()).
+		WithAccessControl(accessControl).
 		WithPeer().
 		WithReflector().
 		WithLogger(logger), nil
