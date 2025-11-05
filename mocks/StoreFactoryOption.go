@@ -36,16 +36,16 @@ func (_m *MockStoreFactoryOption) EXPECT() *MockStoreFactoryOption_Expecter {
 }
 
 // Apply provides a mock function for the type MockStoreFactoryOption
-func (_mock *MockStoreFactoryOption) Apply(ifaceVal interface{}) error {
-	ret := _mock.Called(ifaceVal)
+func (_mock *MockStoreFactoryOption) Apply(v any) error {
+	ret := _mock.Called(v)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Apply")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(interface{}) error); ok {
-		r0 = returnFunc(ifaceVal)
+	if returnFunc, ok := ret.Get(0).(func(any) error); ok {
+		r0 = returnFunc(v)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -58,16 +58,16 @@ type MockStoreFactoryOption_Apply_Call struct {
 }
 
 // Apply is a helper method to define mock.On call
-//   - ifaceVal interface{}
-func (_e *MockStoreFactoryOption_Expecter) Apply(ifaceVal interface{}) *MockStoreFactoryOption_Apply_Call {
-	return &MockStoreFactoryOption_Apply_Call{Call: _e.mock.On("Apply", ifaceVal)}
+//   - v any
+func (_e *MockStoreFactoryOption_Expecter) Apply(v interface{}) *MockStoreFactoryOption_Apply_Call {
+	return &MockStoreFactoryOption_Apply_Call{Call: _e.mock.On("Apply", v)}
 }
 
-func (_c *MockStoreFactoryOption_Apply_Call) Run(run func(ifaceVal interface{})) *MockStoreFactoryOption_Apply_Call {
+func (_c *MockStoreFactoryOption_Apply_Call) Run(run func(v any)) *MockStoreFactoryOption_Apply_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 interface{}
+		var arg0 any
 		if args[0] != nil {
-			arg0 = args[0].(interface{})
+			arg0 = args[0].(any)
 		}
 		run(
 			arg0,
@@ -81,7 +81,7 @@ func (_c *MockStoreFactoryOption_Apply_Call) Return(err error) *MockStoreFactory
 	return _c
 }
 
-func (_c *MockStoreFactoryOption_Apply_Call) RunAndReturn(run func(ifaceVal interface{}) error) *MockStoreFactoryOption_Apply_Call {
+func (_c *MockStoreFactoryOption_Apply_Call) RunAndReturn(run func(v any) error) *MockStoreFactoryOption_Apply_Call {
 	_c.Call.Return(run)
 	return _c
 }

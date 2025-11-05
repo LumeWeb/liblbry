@@ -2,16 +2,12 @@ package liblbry
 
 import (
 	"fmt"
-	"github.com/knadh/koanf/v2"
-	"go.uber.org/zap"
-	"reflect"
-)
 
-// StoreFactory defines the interface for creating blob storage instances
-type StoreFactory interface {
-	CreateStore(config *koanf.Koanf) (BlobStore, error)
-	Name() string
-}
+	"reflect"
+
+	"go.lumeweb.com/liblbry/storage"
+	"go.uber.org/zap"
+)
 
 // LoggerGetter defines an interface for types that can provide their logger
 type LoggerGetter interface {
@@ -28,7 +24,7 @@ var defaultLogger = zap.NewNop()
 
 // StoreFactoryOption defines a functional option for configuring StoreFactory implementations
 type StoreFactoryOption interface {
-	Apply(interface{}) error
+	Apply(any) error
 }
 
 // LoggerOption is a functional option for setting a logger
@@ -50,12 +46,12 @@ func WithLogger(logger *zap.Logger) StoreFactoryOption {
 }
 
 // CreateStorageFactory is a generic helper function that creates instances of StoreFactory implementations
-func CreateStorageFactory[T StoreFactory](logger *zap.Logger) (T, error) {
+func CreateStorageFactory[T storage.StoreFactory](logger *zap.Logger) (T, error) {
 	return CreateStorageFactoryWithOptions[T](WithLogger(logger))
 }
 
 // CreateStorageFactoryWithOptions is a generic helper function that creates instances of StoreFactory implementations with options
-func CreateStorageFactoryWithOptions[T StoreFactory](opts ...StoreFactoryOption) (T, error) {
+func CreateStorageFactoryWithOptions[T storage.StoreFactory](opts ...StoreFactoryOption) (T, error) {
 	var factory T
 
 	// Check if T is a pointer type to avoid nil pointer issues

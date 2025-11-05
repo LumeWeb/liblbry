@@ -1,4 +1,4 @@
-package liblbry
+package storage
 
 // AccessControl defines the interface for controlling access to blobs based on peer identity
 type AccessControl interface {

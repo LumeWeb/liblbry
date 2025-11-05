@@ -13,54 +13,54 @@ import (
 )
 
 func TestNewDHTConfig(t *testing.T) {
-	config, err := NewDHTConfig()
+	cfg, err := NewDHTConfig()
 	require.NoError(t, err, "Failed to create DHT config")
 
-	if config.Address != "0.0.0.0:4444" {
-		t.Errorf("Expected default address '0.0.0.0:4444', got '%s'", config.Address)
+	if cfg.Address != "0.0.0.0:4444" {
+		t.Errorf("Expected default address '0.0.0.0:4444', got '%s'", cfg.Address)
 	}
 
-	if len(config.SeedNodes) != 4 {
-		t.Errorf("Expected 4 seed nodes, got %d", len(config.SeedNodes))
+	if len(cfg.SeedNodes) != 4 {
+		t.Errorf("Expected 4 seed nodes, got %d", len(cfg.SeedNodes))
 	}
 
-	if config.PeerProtocolPort != 3333 {
-		t.Errorf("Expected default peer port 3333, got %d", config.PeerProtocolPort)
+	if cfg.PeerProtocolPort != 3333 {
+		t.Errorf("Expected default peer port 3333, got %d", cfg.PeerProtocolPort)
 	}
 }
 
 func TestDHTOptions(t *testing.T) {
-	config, err := NewDHTConfig()
+	cfg, err := NewDHTConfig()
 	require.NoError(t, err, "Failed to create DHT config")
 
 	// Test WithDHTAddress
-	WithDHTAddress("127.0.0.1:5555")(config)
-	if config.Address != "127.0.0.1:5555" {
-		t.Errorf("Expected address '127.0.0.1:5555', got '%s'", config.Address)
+	WithDHTAddress("127.0.0.1:5555")(cfg)
+	if cfg.Address != "127.0.0.1:5555" {
+		t.Errorf("Expected address '127.0.0.1:5555', got '%s'", cfg.Address)
 	}
 
 	// Test WithDHTNodeID
-	WithDHTNodeID("1234567890abcdef")(config)
-	if config.NodeID != "1234567890abcdef" {
-		t.Errorf("Expected node ID '1234567890abcdef', got '%s'", config.NodeID)
+	WithDHTNodeID("1234567890abcdef")(cfg)
+	if cfg.NodeID != "1234567890abcdef" {
+		t.Errorf("Expected node ID '1234567890abcdef', got '%s'", cfg.NodeID)
 	}
 
 	// Test WithDHTPeerProtocolPort
-	WithDHTPeerProtocolPort(4444)(config)
-	if config.PeerProtocolPort != 4444 {
-		t.Errorf("Expected peer port 4444, got %d", config.PeerProtocolPort)
+	WithDHTPeerProtocolPort(4444)(cfg)
+	if cfg.PeerProtocolPort != 4444 {
+		t.Errorf("Expected peer port 4444, got %d", cfg.PeerProtocolPort)
 	}
 
 	// Test WithDHTAnnounceRate
-	WithDHTAnnounceRate(20)(config)
-	if config.AnnounceRate != 20 {
-		t.Errorf("Expected announce rate 20, got %d", config.AnnounceRate)
+	WithDHTAnnounceRate(20)(cfg)
+	if cfg.AnnounceRate != 20 {
+		t.Errorf("Expected announce rate 20, got %d", cfg.AnnounceRate)
 	}
 
 	// Test WithDHTReannounceTime
-	WithDHTReannounceTime(30 * time.Minute)(config)
-	if config.ReannounceTime != 30*time.Minute {
-		t.Errorf("Expected reannounce time 30m, got %v", config.ReannounceTime)
+	WithDHTReannounceTime(30 * time.Minute)(cfg)
+	if cfg.ReannounceTime != 30*time.Minute {
+		t.Errorf("Expected reannounce time 30m, got %v", cfg.ReannounceTime)
 	}
 }
 

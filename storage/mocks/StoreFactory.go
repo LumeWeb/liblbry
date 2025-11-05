@@ -7,7 +7,7 @@ package mocks
 import (
 	"github.com/knadh/koanf/v2"
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry/storage"
 )
 
 // NewMockStoreFactory creates a new instance of MockStoreFactory. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -38,23 +38,23 @@ func (_m *MockStoreFactory) EXPECT() *MockStoreFactory_Expecter {
 }
 
 // CreateStore provides a mock function for the type MockStoreFactory
-func (_mock *MockStoreFactory) CreateStore(config *koanf.Koanf) (liblbry.BlobStore, error) {
+func (_mock *MockStoreFactory) CreateStore(config *koanf.Koanf) (storage.BlobStore, error) {
 	ret := _mock.Called(config)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateStore")
 	}
 
-	var r0 liblbry.BlobStore
+	var r0 storage.BlobStore
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) (liblbry.BlobStore, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) (storage.BlobStore, error)); ok {
 		return returnFunc(config)
 	}
-	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) liblbry.BlobStore); ok {
+	if returnFunc, ok := ret.Get(0).(func(*koanf.Koanf) storage.BlobStore); ok {
 		r0 = returnFunc(config)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(liblbry.BlobStore)
+			r0 = ret.Get(0).(storage.BlobStore)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(*koanf.Koanf) error); ok {
@@ -89,12 +89,12 @@ func (_c *MockStoreFactory_CreateStore_Call) Run(run func(config *koanf.Koanf)) 
 	return _c
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) Return(blobStore liblbry.BlobStore, err error) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) Return(blobStore storage.BlobStore, err error) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Return(blobStore, err)
 	return _c
 }
 
-func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config *koanf.Koanf) (liblbry.BlobStore, error)) *MockStoreFactory_CreateStore_Call {
+func (_c *MockStoreFactory_CreateStore_Call) RunAndReturn(run func(config *koanf.Koanf) (storage.BlobStore, error)) *MockStoreFactory_CreateStore_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.lumeweb.com/liblbry/blob"
-	"go.lumeweb.com/liblbry/mocks"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
+	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 )
 
 // Reflector-specific test constants
@@ -35,8 +35,8 @@ var reflectorTestBlobs = map[string][]byte{
 // MockConnWrapper wraps the mockery MockConn and provides testing helper methods
 type MockConnWrapper struct {
 	*protocolMocks.MockConn
-	readBuffer  *bytes.Buffer
-	writeBuffer *bytes.Buffer
+	readBuffer        *bytes.Buffer
+	writeBuffer       *bytes.Buffer
 	lastReadDeadline  time.Time
 	lastWriteDeadline time.Time
 	lastDeadline      time.Time
@@ -116,8 +116,8 @@ func (m *MockConnWrapper) RemoteAddr() net.Addr {
 }
 
 // setupReflectorMockStore sets up a mock blob store with test data
-func setupReflectorMockStore(t *testing.T, withBlobs bool) *mocks.MockBlobStore {
-	mockStore := mocks.NewMockBlobStore(t)
+func setupReflectorMockStore(t *testing.T, withBlobs bool) *storageMocks.MockBlobStore {
+	mockStore := storageMocks.NewMockBlobStore(t)
 
 	if withBlobs {
 		for k, v := range reflectorTestBlobs {
@@ -139,7 +139,7 @@ func setupReflectorMockStore(t *testing.T, withBlobs bool) *mocks.MockBlobStore 
 }
 
 func TestNewReflectorServer(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 
 	server := NewReflectorServer(store)
 
@@ -153,8 +153,8 @@ func TestNewReflectorServer(t *testing.T) {
 }
 
 func TestNewReflectorServerWithOptions(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
-	accessControl := mocks.NewMockAccessControl(t)
+	store := storageMocks.NewMockBlobStore(t)
+	accessControl := storageMocks.NewMockAccessControl(t)
 	timeout := 10 * time.Second
 
 	server := NewReflectorServer(
@@ -170,7 +170,7 @@ func TestNewReflectorServerWithOptions(t *testing.T) {
 }
 
 func TestDoHandshake_Success(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -197,7 +197,7 @@ func TestDoHandshake_Success(t *testing.T) {
 }
 
 func TestDoHandshake_InvalidVersion(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -216,7 +216,7 @@ func TestDoHandshake_InvalidVersion(t *testing.T) {
 }
 
 func TestDoHandshake_MissingVersion(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -234,7 +234,7 @@ func TestDoHandshake_MissingVersion(t *testing.T) {
 }
 
 func TestReadBlobRequest_RegularBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -257,7 +257,7 @@ func TestReadBlobRequest_RegularBlob(t *testing.T) {
 }
 
 func TestReadBlobRequest_SDBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -280,7 +280,7 @@ func TestReadBlobRequest_SDBlob(t *testing.T) {
 }
 
 func TestReadBlobRequest_EmptyHash(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -301,7 +301,7 @@ func TestReadBlobRequest_EmptyHash(t *testing.T) {
 }
 
 func TestReadBlobRequest_BlobTooBig(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -322,7 +322,7 @@ func TestReadBlobRequest_BlobTooBig(t *testing.T) {
 }
 
 func TestShouldAcceptBlob_NewBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	// Mock store methods
@@ -336,7 +336,7 @@ func TestShouldAcceptBlob_NewBlob(t *testing.T) {
 }
 
 func TestShouldAcceptBlob_ExistingBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	// Mock store methods - blob already exists
@@ -350,7 +350,7 @@ func TestShouldAcceptBlob_ExistingBlob(t *testing.T) {
 }
 
 func TestSendBlobResponse_RegularBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -368,7 +368,7 @@ func TestSendBlobResponse_RegularBlob(t *testing.T) {
 }
 
 func TestSendBlobResponse_SDBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -388,7 +388,7 @@ func TestSendBlobResponse_SDBlob(t *testing.T) {
 }
 
 func TestSendTransferResponse_RegularBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -406,7 +406,7 @@ func TestSendTransferResponse_RegularBlob(t *testing.T) {
 }
 
 func TestSendTransferResponse_SDBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -424,7 +424,7 @@ func TestSendTransferResponse_SDBlob(t *testing.T) {
 }
 
 func TestCalculateBlobHash(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	blobData := []byte("test data for hashing")
@@ -498,7 +498,7 @@ func TestCalculateTimeout(t *testing.T) {
 }
 
 func TestReceiveBlob_Success(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	// Prepare blob data
@@ -520,7 +520,7 @@ func TestReceiveBlob_Success(t *testing.T) {
 }
 
 func TestReceiveBlob_HashMismatch(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	// Prepare blob data
@@ -538,7 +538,7 @@ func TestReceiveBlob_HashMismatch(t *testing.T) {
 }
 
 func TestReceiveBlob_SDBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 
 	// Prepare SD blob data
@@ -559,7 +559,7 @@ func TestReceiveBlob_SDBlob(t *testing.T) {
 }
 
 func TestReceiveBlob_ExistingBlob(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -590,7 +590,7 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 }
 
 func TestReceiveBlob_Integration(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 
@@ -624,7 +624,7 @@ func TestReceiveBlob_Integration(t *testing.T) {
 }
 
 func TestReceiveBlob_NegativeSize(t *testing.T) {
-	store := mocks.NewMockBlobStore(t)
+	store := storageMocks.NewMockBlobStore(t)
 	server := NewReflectorServer(store)
 	conn := NewMockConn(t)
 

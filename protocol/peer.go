@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 )
@@ -71,12 +71,11 @@ var (
 	ErrAccessDenied   = liblbryerrors.ErrAccessDenied
 )
 
-
 // DefaultPeerServer implements the PeerServer interface
 type DefaultPeerServer struct {
-	store             liblbry.BlobStore
+	store             storage.BlobStore
 	protector         Protector
-	accessControl     liblbry.AccessControl
+	accessControl     storage.AccessControl
 	connectionTimeout time.Duration
 	logger            *zap.Logger
 }
@@ -96,7 +95,7 @@ func applyPeerOptions(server *DefaultPeerServer, options []ServerOption) {
 }
 
 // NewPeerServer creates a new peer server instance with optional configuration
-func NewPeerServer(store liblbry.BlobStore, options ...ServerOption) PeerServer {
+func NewPeerServer(store storage.BlobStore, options ...ServerOption) PeerServer {
 	server := &DefaultPeerServer{
 		store:             store,
 		protector:         nil, // Default to no protection
@@ -126,7 +125,7 @@ func WithPeerProtector(protector Protector) ServerOption {
 }
 
 // WithPeerAccessControl sets the access control policy for peer connections
-func WithPeerAccessControl(accessControl liblbry.AccessControl) ServerOption {
+func WithPeerAccessControl(accessControl storage.AccessControl) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.accessControl = accessControl
 	}

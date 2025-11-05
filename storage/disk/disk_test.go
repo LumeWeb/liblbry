@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	"github.com/knadh/koanf/v2"
-	"go.lumeweb.com/liblbry"
-	"go.uber.org/zap"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry/storage"
+	"go.uber.org/zap"
 )
 
 // setupTestStore creates a temporary directory, logger, and disk store for testing
@@ -29,11 +30,10 @@ func setupTestFactory(t *testing.T) *DiskStoreFactory {
 	return factory
 }
 
-
 // testInvalidHashes tests all invalid hash scenarios
 func testInvalidHashes(t *testing.T, store *DiskStore) {
 	t.Helper()
-	
+
 	invalidHashes := []struct {
 		hash string
 		desc string
@@ -81,7 +81,7 @@ func testInvalidHashes(t *testing.T, store *DiskStore) {
 // testPathTraversal tests path traversal attempts
 func testPathTraversal(t *testing.T, store *DiskStore) {
 	t.Helper()
-	
+
 	traversalAttempts := []struct {
 		name string
 		hash string
@@ -149,7 +149,7 @@ func setupSymlinkAttack(t *testing.T, baseDir, hash string) string {
 
 	err = os.Symlink(symlinkTarget, legitimateDir)
 	require.NoError(t, err)
-	
+
 	return symlinkTarget
 }
 
@@ -159,7 +159,7 @@ func TestDiskStoreFactory_CreateStore(t *testing.T) {
 		store, _ := setupTestStore(t)
 		factory, err := liblbry.CreateStorageFactory[DiskStoreFactory](store.logger)
 		require.NoError(t, err, "CreateStorageFactory failed")
-		
+
 		k := koanf.New(".")
 		require.NoError(t, k.Set("path", store.path))
 		config := k
@@ -460,13 +460,13 @@ func generateLargeData(size int) []byte {
 // Test that the BlobStore interface is properly implemented
 func TestDiskStore_Interface(t *testing.T) {
 	store, _ := setupTestStore(t)
-	var _ liblbry.BlobStore = store
+	var _ storage.BlobStore = store
 }
 
 // Test that the StoreFactory interface is properly implemented
 func TestDiskStoreFactory_Interface(t *testing.T) {
 	factory := setupTestFactory(t)
-	var _ liblbry.StoreFactory = factory
+	var _ storage.StoreFactory = factory
 }
 
 // Test hash validation with various invalid formats
@@ -570,7 +570,7 @@ func TestDiskStore_RejectSymlink(t *testing.T) {
 
 	// Test that safeJoin properly rejects symlinks in directory path
 	validHash := "1f39f474898e1ea8d75937452396321e518822252f7de28f568db3c967bb81380b357594c0ca231efb0a9bb5e665a2df"
-	
+
 	symlinkTarget := setupSymlinkAttack(t, tempDir, validHash)
 	defer os.RemoveAll(symlinkTarget)
 
@@ -579,7 +579,7 @@ func TestDiskStore_RejectSymlink(t *testing.T) {
 
 	// Test that safeJoinSD properly rejects symlinks in directory path
 	sdValidHash := "10c5d5b7e3dfec03a7f123a4a34d3fc4a06cae9f5fe6f288fb2baadfa4eb979b6e1653336f39cd6135e62172e29426ec"
-	
+
 	sdLegitimateDir := filepath.Join(tempDir, "sd", sdValidHash[:2])
 	err = os.MkdirAll(filepath.Join(tempDir, "sd"), 0755)
 	require.NoError(t, err)
@@ -600,4 +600,3 @@ func TestDiskStore_RejectSymlink(t *testing.T) {
 	_, err = safeJoinSD(tempDir, sdValidHash)
 	require.Error(t, err, "Expected error when trying to join SD path with symlink directory")
 }
-
