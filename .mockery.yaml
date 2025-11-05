@@ -12,3 +12,4 @@ packages:
   go.lumeweb.com/liblbry/crypto:
   go.lumeweb.com/liblbry/blob/transfer:
   go.lumeweb.com/liblbry/storage:
+  go.lumeweb.com/liblbry/server:

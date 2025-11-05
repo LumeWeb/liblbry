@@ -1,0 +1,152 @@
+package server
+
+import (
+	"errors"
+
+	"go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry/storage"
+	"go.lumeweb.com/liblbry/storage/memory"
+	"go.uber.org/zap"
+)
+
+// ServerBuilder provides a fluent interface for building a Server
+type ServerBuilder struct {
+	storage       storage.BlobStore
+	acquirer      liblbry.BlobAcquirer
+	accessControl storage.AccessControl
+	protocols     map[string]interface{}
+	logger        *zap.Logger
+}
+
+// NewServerBuilder creates a new ServerBuilder instance
+func NewServerBuilder() *ServerBuilder {
+	return &ServerBuilder{
+		protocols: make(map[string]interface{}),
+		logger:    zap.NewNop(), // Default to no-op logger
+	}
+}
+
+// WithStorage sets the blob storage for the server
+func (b *ServerBuilder) WithStorage(store storage.BlobStore) *ServerBuilder {
+	b.storage = store
+	return b
+}
+
+// WithAcquirer sets the blob acquirer for the server
+func (b *ServerBuilder) WithAcquirer(acquirer liblbry.BlobAcquirer) *ServerBuilder {
+	b.acquirer = acquirer
+	return b
+}
+
+// WithAccessControl sets the access control for the server
+func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuilder {
+	b.accessControl = ac
+	return b
+}
+
+// withProtocolConfig adds a protocol configuration with the specified port and default
+func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) interface{}) *ServerBuilder {
+	p := defaultPort
+	if len(port) > 0 {
+		p = port[0]
+	}
+	b.protocols[protocolName] = configFactory(p)
+	return b
+}
+
+// WithPeer adds a Peer protocol handler on the specified port
+func (b *ServerBuilder) WithPeer(port ...int) *ServerBuilder {
+	return b.withProtocolConfig(ProtocolPeer, DefaultPeerPort, port, func(p int) interface{} {
+		return &PeerConfig{Port: p}
+	})
+}
+
+// WithReflector adds a Reflector protocol handler on the specified port
+func (b *ServerBuilder) WithReflector(port ...int) *ServerBuilder {
+	return b.withProtocolConfig(ProtocolReflector, DefaultReflectorPort, port, func(p int) interface{} {
+		return &ReflectorConfig{Port: p}
+	})
+}
+
+// WithDHT adds a DHT protocol handler on the specified port
+func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
+	return b.withProtocolConfig(ProtocolDHT, DefaultDHTPort, port, func(p int) interface{} {
+		return &DHTConfig{Port: p}
+	})
+}
+
+// WithLogger sets the logger for the server
+func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
+	b.logger = logger
+	return b
+}
+
+// Build creates a Server instance from the builder configuration
+func (b *ServerBuilder) Build() (Server, error) {
+	if b.storage == nil {
+		return nil, errors.New("storage is required")
+	}
+
+	if len(b.protocols) == 0 {
+		return nil, errors.New("at least one protocol must be configured")
+	}
+
+	return &DefaultServer{
+		storage:       b.storage,
+		acquirer:      b.acquirer,
+		accessControl: b.accessControl,
+		protocols:     b.protocols,
+		logger:        b.logger.Named("server"),
+	}, nil
+}
+
+// Preset helper functions for common server configurations
+
+// DevelopmentBuilder creates a server builder with development-friendly defaults
+func DevelopmentBuilder() *ServerBuilder {
+	return NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithAccessControl(storage.NewAllowAllAccess()).
+		WithPeer()
+}
+
+// ProductionBuilder creates a server builder with production-ready defaults
+func ProductionBuilder(storagePath string) *ServerBuilder {
+	return NewServerBuilder().
+		WithAccessControl(storage.NewDenyAllAccess()).
+		WithPeer().
+		WithReflector()
+}
+
+// TestBuilder creates a minimal server builder for testing
+func TestBuilder() *ServerBuilder {
+	return NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithAccessControl(storage.NewAllowAllAccess())
+}
+
+// PeerOnlyBuilder creates a server with only Peer protocol
+func PeerOnlyBuilder(port ...int) *ServerBuilder {
+	return NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithAccessControl(storage.NewAllowAllAccess()).
+		WithPeer(port...)
+}
+
+// ReflectorOnlyBuilder creates a server with only Reflector protocol
+func ReflectorOnlyBuilder(port ...int) *ServerBuilder {
+	return NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithAccessControl(storage.NewAllowAllAccess()).
+		WithReflector(port...)
+}
+
+// AllProtocolsBuilder creates a server with all protocols enabled
+func AllProtocolsBuilder(peerPort, reflectorPort, dhtPort int) *ServerBuilder {
+	return NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithAccessControl(storage.NewAllowAllAccess()).
+		WithPeer(peerPort).
+		WithReflector(reflectorPort).
+		WithDHT(dhtPort)
+}
