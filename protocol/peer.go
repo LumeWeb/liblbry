@@ -31,7 +31,7 @@ import (
 
 // PeerServer defines the interface for handling peer connections
 type PeerServer interface {
-	HandleConnection(conn net.Conn)
+	ConnectionHandler
 }
 
 // getPeerIP extracts the peer IP address from a connection

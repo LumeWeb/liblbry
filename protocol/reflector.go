@@ -29,7 +29,7 @@ import (
 
 // ReflectorServer defines the interface for handling reflector connections
 type ReflectorServer interface {
-	HandleConnection(conn net.Conn)
+	ConnectionHandler
 }
 
 // Protocol constants
