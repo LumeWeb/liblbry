@@ -46,7 +46,8 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 	return b
 }
 
-// withProtocolConfig adds a protocol configuration with the specified port and default
+// withProtocolConfig adds a protocol configuration with the specified port and default.
+// If multiple ports are provided, only the first is used.
 func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) interface{}) *ServerBuilder {
 	p := defaultPort
 	if len(port) > 0 {
@@ -79,6 +80,9 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 
 // WithLogger sets the logger for the server
 func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
+	if logger == nil {
+		return b
+	}
 	b.logger = logger
 	return b
 }
