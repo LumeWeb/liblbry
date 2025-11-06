@@ -35,7 +35,7 @@ import (
 )
 
 // SDDirectory is the name of the subdirectory used for storing SD blobs.
-const SDDirectory = "/sd"
+const SDDirectory = "sd"
 
 var safeHashRe = regexp.MustCompile(`^[a-fA-F0-9]{96}$`)
 
@@ -253,7 +253,7 @@ func safeJoinSD(base, hash string) (string, error) {
 	}
 
 	// Create the expected path for SD blob
-	sdDir := "sd"
+	sdDir := SDDirectory
 	subDir := hash[:2]
 	expectedPath := filepath.Join(base, sdDir, subDir, hash)
 
@@ -570,7 +570,7 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 
 		// Skip directories
 		if info.IsDir() {
-			sdDirPath := filepath.Join(d.path, "sd")
+			sdDirPath := filepath.Join(d.path, SDDirectory)
 			if path == d.path || path == sdDirPath {
 				return nil
 			}
