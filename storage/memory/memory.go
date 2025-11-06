@@ -32,7 +32,7 @@ func NewMemoryStore() *MemoryStore {
 // validate performs common validation for hash format and blob data
 func (m *MemoryStore) validate(hash string, data []byte, kind string) error {
 	if !stream.ValidateHash(hash) {
-		return liblbryerrors.Err("invalid hash format")
+		return liblbryerrors.ErrInvalidHash
 	}
 	b := blob.Blob(data)
 	if err := b.ValidForSend(); err != nil {
@@ -53,7 +53,7 @@ func (m *MemoryStore) validate(hash string, data []byte, kind string) error {
 func (m *MemoryStore) Has(hash string) (bool, error) {
 	// Validate hash format
 	if !stream.ValidateHash(hash) {
-		return false, liblbryerrors.Err("invalid hash format")
+		return false, liblbryerrors.ErrInvalidHash
 	}
 
 	m.mutex.RLock()
@@ -79,7 +79,7 @@ func (m *MemoryStore) Has(hash string) (bool, error) {
 func (m *MemoryStore) Get(hash string) ([]byte, error) {
 	// Validate hash format
 	if !stream.ValidateHash(hash) {
-		return nil, liblbryerrors.Err("invalid hash format")
+		return nil, liblbryerrors.ErrInvalidHash
 	}
 
 	m.mutex.RLock()
@@ -182,4 +182,27 @@ func (m *MemoryStore) List(offset, limit int) ([]string, error) {
 	}
 
 	return hashSlice[start:end], nil
+}
+
+// Delete removes a blob from storage.
+// If the blob exists in both regular and SD blob stores, it removes both.
+// If the blob is not found, it returns nil (no-op).
+// Only returns an error for invalid hash format or other unknown errors.
+func (m *MemoryStore) Delete(hash string) error {
+	// Validate hash format
+	if !stream.ValidateHash(hash) {
+		return liblbryerrors.ErrInvalidHash
+	}
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	// Delete from regular blobs if it exists
+	delete(m.blobs, hash)
+	
+	// Delete from SD blobs if it exists
+	delete(m.sdBlobs, hash)
+
+	// Always return nil as this is a no-op if the blob doesn't exist
+	return nil
 }

@@ -69,7 +69,7 @@ func validateHash(hash string) bool {
 // The operation parameter is used for logging purposes.
 func validateHashWithError(hash string, operation string) error {
 	if !validateHash(hash) {
-		return fmt.Errorf("%s: invalid hash format: %s", operation, hash)
+		return liblbryerrors.ErrInvalidHash
 	}
 	return nil
 }
@@ -217,7 +217,7 @@ func logErrorIfLogger(logger *zap.Logger, msg string, err error, fields ...zap.F
 func safeJoin(base, hash string) (string, error) {
 	// Validate hash format
 	if !validateHash(hash) {
-		return "", fmt.Errorf("invalid hash format: %s", hash)
+		return "", liblbryerrors.ErrInvalidHash
 	}
 
 	// Create the expected path
@@ -249,7 +249,7 @@ func safeJoin(base, hash string) (string, error) {
 func safeJoinSD(base, hash string) (string, error) {
 	// Validate hash format
 	if !validateHash(hash) {
-		return "", fmt.Errorf("invalid hash format: %s", hash)
+		return "", liblbryerrors.ErrInvalidHash
 	}
 
 	// Create the expected path for SD blob
@@ -596,4 +596,43 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 	sort.Strings(allHashes)
 
 	return allHashes, nil
+}
+
+// Delete removes a blob from storage.
+// If the blob exists in both regular and SD blob stores, it removes both.
+// If the blob is not found, it returns nil (no-op).
+// Only returns an error for invalid hash format or other unknown errors.
+func (d *DiskStore) Delete(hash string) error {
+	// Validate hash format
+	if err := validateHashWithError(hash, "Delete"); err != nil {
+		logDebugIfLogger(d.logger, "invalid hash format for Delete operation", zap.String("hash", hash))
+		return err
+	}
+
+	// Try to delete regular blob
+	blobPath, err := safeJoin(d.path, hash)
+	if err != nil {
+		logErrorIfLogger(d.logger, "unsafe path detected for Delete operation", err, zap.String("hash", hash))
+		return err
+	}
+
+	if err := os.Remove(blobPath); err != nil && !os.IsNotExist(err) {
+		logErrorIfLogger(d.logger, "failed to delete regular blob", err, zap.String("hash", hash), zap.String("path", blobPath))
+		return fmt.Errorf("failed to delete regular blob: %w", err)
+	}
+
+	// Try to delete SD blob
+	sdBlobPath, err := safeJoinSD(d.path, hash)
+	if err != nil {
+		logErrorIfLogger(d.logger, "unsafe path detected for Delete operation (SD blob)", err, zap.String("hash", hash))
+		return err
+	}
+
+	if err := os.Remove(sdBlobPath); err != nil && !os.IsNotExist(err) {
+		logErrorIfLogger(d.logger, "failed to delete SD blob", err, zap.String("hash", hash), zap.String("path", sdBlobPath))
+		return fmt.Errorf("failed to delete SD blob: %w", err)
+	}
+
+	logDebugIfLogger(d.logger, "deleted blob(s)", zap.String("hash", hash))
+	return nil
 }
