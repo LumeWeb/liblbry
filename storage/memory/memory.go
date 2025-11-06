@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"sort"
 	"sync"
 
 	"go.lumeweb.com/liblbry/blob"
@@ -139,4 +140,46 @@ func (m *MemoryStore) PutSD(hash string, data []byte) error {
 // Name returns the name of the store implementation
 func (m *MemoryStore) Name() string {
 	return "memory"
+}
+
+// List returns a list of blob hashes with pagination support
+func (m *MemoryStore) List(offset, limit int) ([]string, error) {
+	if offset < 0 {
+		return nil, liblbryerrors.ErrInvalidOffset
+	}
+	if limit <= 0 {
+		return nil, liblbryerrors.ErrInvalidLimit
+	}
+
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	// Collect all blob hashes with deduplication
+	allHashes := make(map[string]struct{})
+	for hash := range m.blobs {
+		allHashes[hash] = struct{}{}
+	}
+	for hash := range m.sdBlobs {
+		allHashes[hash] = struct{}{}
+	}
+
+	// Convert to slice and sort for deterministic ordering
+	hashSlice := make([]string, 0, len(allHashes))
+	for hash := range allHashes {
+		hashSlice = append(hashSlice, hash)
+	}
+	sort.Strings(hashSlice)
+
+	// Apply pagination
+	start := offset
+	if start >= len(hashSlice) {
+		return []string{}, nil
+	}
+
+	end := start + limit
+	if end > len(hashSlice) {
+		end = len(hashSlice)
+	}
+
+	return hashSlice[start:end], nil
 }

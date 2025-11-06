@@ -21,14 +21,21 @@ package disk
 
 import (
 	"fmt"
-	"github.com/knadh/koanf/v2"
-	"go.lumeweb.com/liblbry/storage"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+
+	"github.com/knadh/koanf/v2"
+	"github.com/samber/lo"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	"go.lumeweb.com/liblbry/storage"
+	"go.uber.org/zap"
 )
+
+// SDDirectory is the name of the subdirectory used for storing SD blobs.
+const SDDirectory = "sd"
 
 var safeHashRe = regexp.MustCompile(`^[a-fA-F0-9]{96}$`)
 
@@ -246,7 +253,7 @@ func safeJoinSD(base, hash string) (string, error) {
 	}
 
 	// Create the expected path for SD blob
-	sdDir := "sd"
+	sdDir := SDDirectory
 	subDir := hash[:2]
 	expectedPath := filepath.Join(base, sdDir, subDir, hash)
 
@@ -519,4 +526,74 @@ func (d *DiskStore) Name() string {
 		d.logger.Debug("returning disk store name")
 	}
 	return "disk"
+}
+
+// List returns a list of blob hashes with pagination support
+func (d *DiskStore) List(offset, limit int) ([]string, error) {
+	if offset < 0 {
+		return nil, liblbryerrors.ErrInvalidOffset
+	}
+	if limit <= 0 {
+		return nil, liblbryerrors.ErrInvalidLimit
+	}
+
+	// Collect all blob hashes from the disk store
+	allHashes, err := d.collectBlobHashes()
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to collect blob hashes: %w", err)
+	}
+
+	// Apply pagination
+	start := offset
+	if start >= len(allHashes) {
+		return []string{}, nil
+	}
+
+	end := start + limit
+	if end > len(allHashes) {
+		end = len(allHashes)
+	}
+
+	return allHashes[start:end], nil
+}
+
+// collectBlobHashes walks the disk store directory structure and collects all blob hashes
+func (d *DiskStore) collectBlobHashes() ([]string, error) {
+	// Use a map to track unique hashes for deduplication
+	hashSet := make(map[string]struct{})
+
+	// Walk the directory structure to find all blobs
+	err := filepath.Walk(d.path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			sdDirPath := filepath.Join(d.path, SDDirectory)
+			if path == d.path || path == sdDirPath {
+				return nil
+			}
+			return nil
+		}
+
+		// Extract the hash from the file path (it's the filename)
+		filename := filepath.Base(path)
+		// Validate that it's a valid hash format
+		if validateHash(filename) {
+			hashSet[filename] = struct{}{}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to sorted slice for deterministic pagination
+	allHashes := lo.Keys(hashSet)
+	sort.Strings(allHashes)
+
+	return allHashes, nil
 }
