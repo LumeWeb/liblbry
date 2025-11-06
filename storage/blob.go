@@ -7,4 +7,5 @@ type BlobStore interface {
 	Put(hash string, data []byte) error
 	PutSD(hash string, data []byte) error
 	Name() string
+	List(offset, limit int) ([]string, error)
 }

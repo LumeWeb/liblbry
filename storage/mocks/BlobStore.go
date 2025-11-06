@@ -157,6 +157,74 @@ func (_c *MockBlobStore_Has_Call) RunAndReturn(run func(hash string) (bool, erro
 	return _c
 }
 
+// List provides a mock function for the type MockBlobStore
+func (_mock *MockBlobStore) List(offset int, limit int) ([]string, error) {
+	ret := _mock.Called(offset, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for List")
+	}
+
+	var r0 []string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(int, int) ([]string, error)); ok {
+		return returnFunc(offset, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(int, int) []string); ok {
+		r0 = returnFunc(offset, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(int, int) error); ok {
+		r1 = returnFunc(offset, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlobStore_List_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'List'
+type MockBlobStore_List_Call struct {
+	*mock.Call
+}
+
+// List is a helper method to define mock.On call
+//   - offset int
+//   - limit int
+func (_e *MockBlobStore_Expecter) List(offset interface{}, limit interface{}) *MockBlobStore_List_Call {
+	return &MockBlobStore_List_Call{Call: _e.mock.On("List", offset, limit)}
+}
+
+func (_c *MockBlobStore_List_Call) Run(run func(offset int, limit int)) *MockBlobStore_List_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlobStore_List_Call) Return(strings []string, err error) *MockBlobStore_List_Call {
+	_c.Call.Return(strings, err)
+	return _c
+}
+
+func (_c *MockBlobStore_List_Call) RunAndReturn(run func(offset int, limit int) ([]string, error)) *MockBlobStore_List_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Name provides a mock function for the type MockBlobStore
 func (_mock *MockBlobStore) Name() string {
 	ret := _mock.Called()

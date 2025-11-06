@@ -21,14 +21,19 @@ package disk
 
 import (
 	"fmt"
-	"github.com/knadh/koanf/v2"
-	"go.lumeweb.com/liblbry/storage"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/knadh/koanf/v2"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	"go.lumeweb.com/liblbry/storage"
+	"go.uber.org/zap"
 )
+
+// SDDirectory is the name of the subdirectory used for storing SD blobs.
+const SDDirectory = "/sd"
 
 var safeHashRe = regexp.MustCompile(`^[a-fA-F0-9]{96}$`)
 
@@ -519,4 +524,69 @@ func (d *DiskStore) Name() string {
 		d.logger.Debug("returning disk store name")
 	}
 	return "disk"
+}
+
+// List returns a list of blob hashes with pagination support
+func (d *DiskStore) List(offset, limit int) ([]string, error) {
+	if offset < 0 {
+		return nil, liblbryerrors.ErrInvalidOffset
+	}
+	if limit <= 0 {
+		return nil, liblbryerrors.ErrInvalidLimit
+	}
+
+	// Collect all blob hashes from the disk store
+	allHashes, err := d.collectBlobHashes()
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to collect blob hashes: %w", err)
+	}
+
+	// Apply pagination
+	start := offset
+	if start >= len(allHashes) {
+		return []string{}, nil
+	}
+
+	end := start + limit
+	if end > len(allHashes) {
+		end = len(allHashes)
+	}
+
+	return allHashes[start:end], nil
+}
+
+// collectBlobHashes walks the disk store directory structure and collects all blob hashes
+func (d *DiskStore) collectBlobHashes() ([]string, error) {
+	var allHashes []string
+
+	// Walk the directory structure to find all blobs
+	err := filepath.Walk(d.path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			// Skip the base directory and sd directory
+			if path == d.path || strings.HasSuffix(path, SDDirectory) {
+				return nil
+			}
+			return nil
+		}
+
+		// Extract the hash from the file path (it's the filename)
+		filename := filepath.Base(path)
+		// Validate that it's a valid hash format
+		if validateHash(filename) {
+			allHashes = append(allHashes, filename)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return allHashes, nil
 }

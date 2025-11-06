@@ -140,3 +140,38 @@ func (m *MemoryStore) PutSD(hash string, data []byte) error {
 func (m *MemoryStore) Name() string {
 	return "memory"
 }
+
+// List returns a list of blob hashes with pagination support
+func (m *MemoryStore) List(offset, limit int) ([]string, error) {
+	if offset < 0 {
+		return nil, liblbryerrors.ErrInvalidOffset
+	}
+	if limit <= 0 {
+		return nil, liblbryerrors.ErrInvalidLimit
+	}
+
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	// Collect all blob hashes
+	allHashes := make([]string, 0, len(m.blobs)+len(m.sdBlobs))
+	for hash := range m.blobs {
+		allHashes = append(allHashes, hash)
+	}
+	for hash := range m.sdBlobs {
+		allHashes = append(allHashes, hash)
+	}
+
+	// Apply pagination
+	start := offset
+	if start >= len(allHashes) {
+		return []string{}, nil
+	}
+
+	end := start + limit
+	if end > len(allHashes) {
+		end = len(allHashes)
+	}
+
+	return allHashes[start:end], nil
+}

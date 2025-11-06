@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/knadh/koanf/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/storage"
@@ -557,6 +558,99 @@ func TestDiskStore_SafeJoinSDEdgeCases(t *testing.T) {
 
 	_, err = safeJoinSD(tempDir, "..\\malicious")
 	require.Error(t, err)
+}
+
+// Test List method
+func TestDiskStore_List(t *testing.T) {
+	store, _ := setupTestStore(t)
+
+	// Test with empty store
+	hashes, err := store.List(0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, hashes)
+
+	// Add some test blobs
+	testBlobs := []struct {
+		hash string
+		data []byte
+	}{
+		{"adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data 1")},
+		{"89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8", []byte("test data 2")},
+		{"212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1", []byte("test data 3")},
+		{"09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57", []byte("test data 4")},
+	}
+
+	for _, blob := range testBlobs {
+		err := store.Put(blob.hash, blob.data)
+		require.NoError(t, err)
+	}
+
+	// Test listing all blobs
+	hashes, err = store.List(0, 10)
+	require.NoError(t, err)
+	require.Len(t, hashes, 4)
+
+	// Check that all hashes are present (order might vary)
+	for _, blob := range testBlobs {
+		found := false
+		for _, hash := range hashes {
+			if hash == blob.hash {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Expected hash %s in list", blob.hash)
+	}
+
+	// Test pagination - first page
+	hashes, err = store.List(0, 2)
+	require.NoError(t, err)
+	require.Len(t, hashes, 2)
+
+	// Test pagination - second page
+	hashes, err = store.List(2, 2)
+	require.NoError(t, err)
+	require.Len(t, hashes, 2)
+
+	// Test with offset beyond available data
+	hashes, err = store.List(10, 5)
+	require.NoError(t, err)
+	assert.Empty(t, hashes)
+
+	// Test error conditions
+	_, err = store.List(-1, 5)
+	require.Error(t, err)
+
+	_, err = store.List(0, 0)
+	require.Error(t, err)
+
+	_, err = store.List(0, -5)
+	require.Error(t, err)
+
+	// Test with SD blobs
+	sdBlobs := []struct {
+		hash string
+		data []byte
+	}{
+		{"56886c6339e484ae68ee3987b88423bf1441587397d4938e15c7f77d8ab18e7aaaa3f8d535692ed073392636cc957512", []byte("sd test data 1")},
+		{"67183bc35c5c45fd6eec6ce37e9db1ed872676b964b2adb735ca374b57a125b39b109a607ccc087483c9ba3bca6adbae", []byte("sd test data 2")},
+	}
+
+	for _, blob := range sdBlobs {
+		err := store.PutSD(blob.hash, blob.data)
+		require.NoError(t, err)
+	}
+
+	// Test listing all blobs (regular + SD)
+	hashes, err = store.List(0, 20)
+	require.NoError(t, err)
+	require.Len(t, hashes, 6) // 4 regular + 2 SD
+
+	// Test that we can retrieve all the blobs we listed
+	for _, hash := range hashes {
+		_, err := store.Get(hash)
+		require.NoError(t, err, "Should be able to retrieve blob with hash %s", hash)
+	}
 }
 
 // Test rejectSymlink function directly

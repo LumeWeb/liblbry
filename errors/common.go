@@ -27,6 +27,8 @@ var (
 	ErrAlreadyConnected  = errors.New("already connected")
 	ErrServerValidation  = errors.New("server validation error")
 	ErrAcquisitionFailed = errors.New("failed to acquire blob from all transfer methods")
+	ErrInvalidOffset     = errors.New("offset must be non-negative")
+	ErrInvalidLimit      = errors.New("limit must be positive")
 )
 
 // IsBlobNotFoundError checks if an error represents a blob not found condition
