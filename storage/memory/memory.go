@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"sort"
 	"sync"
 
 	"go.lumeweb.com/liblbry/blob"
@@ -153,25 +154,32 @@ func (m *MemoryStore) List(offset, limit int) ([]string, error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	// Collect all blob hashes
-	allHashes := make([]string, 0, len(m.blobs)+len(m.sdBlobs))
+	// Collect all blob hashes with deduplication
+	allHashes := make(map[string]struct{})
 	for hash := range m.blobs {
-		allHashes = append(allHashes, hash)
+		allHashes[hash] = struct{}{}
 	}
 	for hash := range m.sdBlobs {
-		allHashes = append(allHashes, hash)
+		allHashes[hash] = struct{}{}
 	}
+
+	// Convert to slice and sort for deterministic ordering
+	hashSlice := make([]string, 0, len(allHashes))
+	for hash := range allHashes {
+		hashSlice = append(hashSlice, hash)
+	}
+	sort.Strings(hashSlice)
 
 	// Apply pagination
 	start := offset
-	if start >= len(allHashes) {
+	if start >= len(hashSlice) {
 		return []string{}, nil
 	}
 
 	end := start + limit
-	if end > len(allHashes) {
-		end = len(allHashes)
+	if end > len(hashSlice) {
+		end = len(hashSlice)
 	}
 
-	return allHashes[start:end], nil
+	return hashSlice[start:end], nil
 }

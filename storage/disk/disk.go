@@ -24,9 +24,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/knadh/koanf/v2"
+	"github.com/samber/lo"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
 	"go.uber.org/zap"
@@ -557,7 +559,8 @@ func (d *DiskStore) List(offset, limit int) ([]string, error) {
 
 // collectBlobHashes walks the disk store directory structure and collects all blob hashes
 func (d *DiskStore) collectBlobHashes() ([]string, error) {
-	var allHashes []string
+	// Use a map to track unique hashes for deduplication
+	hashSet := make(map[string]struct{})
 
 	// Walk the directory structure to find all blobs
 	err := filepath.Walk(d.path, func(path string, info os.FileInfo, err error) error {
@@ -567,8 +570,8 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 
 		// Skip directories
 		if info.IsDir() {
-			// Skip the base directory and sd directory
-			if path == d.path || strings.HasSuffix(path, SDDirectory) {
+			sdDirPath := filepath.Join(d.path, "sd")
+			if path == d.path || path == sdDirPath {
 				return nil
 			}
 			return nil
@@ -578,7 +581,7 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 		filename := filepath.Base(path)
 		// Validate that it's a valid hash format
 		if validateHash(filename) {
-			allHashes = append(allHashes, filename)
+			hashSet[filename] = struct{}{}
 		}
 
 		return nil
@@ -587,6 +590,10 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Convert to sorted slice for deterministic pagination
+	allHashes := lo.Keys(hashSet)
+	sort.Strings(allHashes)
 
 	return allHashes, nil
 }

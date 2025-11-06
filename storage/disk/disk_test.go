@@ -16,6 +16,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// Common test data for blob operations
+var testBlobs = []struct {
+	hash string
+	data []byte
+}{
+	{"adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data 1")},
+	{"89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8", []byte("test data 2")},
+	{"212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1", []byte("test data 3")},
+	{"09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57", []byte("test data 4")},
+}
+
 // setupTestStore creates a temporary directory, logger, and disk store for testing
 func setupTestStore(t *testing.T) (*DiskStore, string) {
 	tempDir := t.TempDir()
@@ -569,17 +580,6 @@ func TestDiskStore_List(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, hashes)
 
-	// Add some test blobs
-	testBlobs := []struct {
-		hash string
-		data []byte
-	}{
-		{"adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data 1")},
-		{"89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8", []byte("test data 2")},
-		{"212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1", []byte("test data 3")},
-		{"09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57", []byte("test data 4")},
-	}
-
 	for _, blob := range testBlobs {
 		err := store.Put(blob.hash, blob.data)
 		require.NoError(t, err)
@@ -651,6 +651,32 @@ func TestDiskStore_List(t *testing.T) {
 		_, err := store.Get(hash)
 		require.NoError(t, err, "Should be able to retrieve blob with hash %s", hash)
 	}
+
+	// Test with duplicate hash in both regular and SD stores
+	t.Run("List_DuplicateHashInBothStores", func(t *testing.T) {
+		store, _ := setupTestStore(t)
+
+		hash := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
+		err := store.Put(hash, []byte("regular data"))
+		require.NoError(t, err)
+
+		err = store.PutSD(hash, []byte("sd data"))
+		require.NoError(t, err)
+
+		hashes, err := store.List(0, 10)
+		require.NoError(t, err)
+
+		// Count occurrences of the hash
+		count := 0
+		for _, h := range hashes {
+			if h == hash {
+				count++
+			}
+		}
+
+		// Document expected behavior: should it appear once or twice?
+		assert.Equal(t, 1, count, "Duplicate hash should appear only once in the list")
+	})
 }
 
 // Test rejectSymlink function directly
