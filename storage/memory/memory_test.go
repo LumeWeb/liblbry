@@ -68,494 +68,721 @@ var invalidHashCases = []struct {
 	}, // contains unicode characters
 }
 
-func TestMemoryStore(t *testing.T) {
+func TestMemoryStore_Name(t *testing.T) {
+	store := NewMemoryStore()
+	assert.Equal(t, "memory", store.Name())
+}
+
+func TestMemoryStore_Has(t *testing.T) {
+	tests := []struct {
+		name     string
+		hash     string
+		data     []byte
+		expected bool
+		setup    bool
+	}{
+		{
+			name:     "existing blob",
+			hash:     "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c",
+			data:     []byte("test data 1"),
+			expected: true,
+			setup:    true,
+		},
+		{
+			name:     "non-existing blob",
+			hash:     "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb",
+			expected: false,
+			setup:    false,
+		},
+		{
+			name:     "empty hash",
+			hash:     "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+			expected: false,
+			setup:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			if tt.setup {
+				err := store.Put(tt.hash, tt.data)
+				require.NoError(t, err)
+			}
+
+			exists, err := store.Has(tt.hash)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, exists)
+		})
+	}
+}
+
+func TestMemoryStore_Get(t *testing.T) {
+	tests := []struct {
+		name        string
+		hash        string
+		data        []byte
+		expectError bool
+		setup       bool
+	}{
+		{
+			name:        "existing blob",
+			hash:        "b2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6d",
+			data:        []byte("test data 2"),
+			expectError: false,
+			setup:       true,
+		},
+		{
+			name:        "non-existing blob",
+			hash:        "1c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cc",
+			expectError: true,
+			setup:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			if tt.setup {
+				err := store.Put(tt.hash, tt.data)
+				require.NoError(t, err)
+			}
+
+			data, err := store.Get(tt.hash)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, data)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.data, data)
+			}
+		})
+	}
+}
+
+func TestMemoryStore_Put(t *testing.T) {
+	tests := []struct {
+		name        string
+		hash        string
+		data        []byte
+		expectError bool
+	}{
+		{
+			name:        "valid data",
+			hash:        "c2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6e",
+			data:        []byte("test data 3"),
+			expectError: false,
+		},
+		{
+			name:        "empty data",
+			hash:        "2c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cd",
+			data:        []byte{},
+			expectError: true,
+		},
+		{
+			name:        "nil data",
+			hash:        "3c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5ce",
+			data:        nil,
+			expectError: true,
+		},
+	}
+
+	// Add invalid hash cases
+	for _, invalidCase := range invalidHashCases {
+		tests = append(tests, struct {
+			name        string
+			hash        string
+			data        []byte
+			expectError bool
+		}{
+			name:        "invalid hash: " + invalidCase.name,
+			hash:        invalidCase.hash,
+			data:        []byte("test data for invalid hash"),
+			expectError: true,
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			err := store.Put(tt.hash, tt.data)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify the data was stored
+				data, err := store.Get(tt.hash)
+				require.NoError(t, err)
+				assert.Equal(t, tt.data, data)
+			}
+		})
+	}
+}
+
+func TestMemoryStore_PutSD(t *testing.T) {
+	tests := []struct {
+		name        string
+		hash        string
+		data        []byte
+		expectError bool
+	}{
+		{
+			name:        "valid SD data",
+			hash:        "d2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6f",
+			data:        []byte("sd test data 1"),
+			expectError: false,
+		},
+		{
+			name:        "empty SD data",
+			hash:        "4c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cf",
+			data:        []byte{},
+			expectError: true,
+		},
+		{
+			name:        "nil SD data",
+			hash:        "5c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d0",
+			data:        nil,
+			expectError: true,
+		},
+	}
+
+	// Add invalid hash cases
+	for _, invalidCase := range invalidHashCases {
+		tests = append(tests, struct {
+			name        string
+			hash        string
+			data        []byte
+			expectError bool
+		}{
+			name:        "invalid SD hash: " + invalidCase.name,
+			hash:        invalidCase.hash,
+			data:        []byte("sd test data for invalid hash"),
+			expectError: true,
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewMemoryStore()
+			err := store.PutSD(tt.hash, tt.data)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify the SD data was stored
+				data, err := store.Get(tt.hash)
+				require.NoError(t, err)
+				assert.Equal(t, tt.data, data)
+			}
+		})
+	}
+}
+
+func TestMemoryStore_BlobSDIntegration(t *testing.T) {
 	store := NewMemoryStore()
 
-	// Test Name method
-	t.Run("Name", func(t *testing.T) {
-		assert.Equal(t, "memory", store.Name())
-	})
+	regularHash := "e2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e60"
+	sdHash := "6c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d1"
+	regularData := []byte("regular data")
+	sdData := []byte("sd data")
 
-	// Test Has method
-	t.Run("Has", func(t *testing.T) {
-		tests := []struct {
-			name     string
-			hash     string
-			data     []byte
-			expected bool
-			setup    bool
-		}{
-			{
-				name:     "existing blob",
-				hash:     "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c",
-				data:     []byte("test data 1"),
-				expected: true,
-				setup:    true,
-			},
-			{
-				name:     "non-existing blob",
-				hash:     "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb",
-				expected: false,
-				setup:    false,
-			},
-			{
-				name:     "empty hash",
-				hash:     "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-				expected: false,
-				setup:    false,
-			},
+	// Put regular blob
+	err := store.Put(regularHash, regularData)
+	require.NoError(t, err)
+
+	// Put SD blob
+	err = store.PutSD(sdHash, sdData)
+	require.NoError(t, err)
+
+	// Verify both exist
+	exists, err := store.Has(regularHash)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	exists, err = store.Has(sdHash)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Verify data is correct
+	data, err := store.Get(regularHash)
+	require.NoError(t, err)
+	assert.Equal(t, regularData, data)
+
+	data, err = store.Get(sdHash)
+	require.NoError(t, err)
+	assert.Equal(t, sdData, data)
+}
+
+func TestMemoryStore_HashCollisionBehavior(t *testing.T) {
+	store := NewMemoryStore()
+
+	collisionHash := "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e61"
+	regularData := []byte("regular blob data")
+	sdData := []byte("sd blob data")
+
+	// Test case 1: Regular blob stored first, then SD blob with same hash
+	err := store.Put(collisionHash, regularData)
+	require.NoError(t, err)
+
+	err = store.PutSD(collisionHash, sdData)
+	require.NoError(t, err)
+
+	// Has should return true (blob exists)
+	exists, err := store.Has(collisionHash)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Get should return regular blob data (priority over SD)
+	data, err := store.Get(collisionHash)
+	require.NoError(t, err)
+	assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob")
+
+	// Test case 2: SD blob stored first, then regular blob with same hash
+	store = NewMemoryStore() // Fresh store
+
+	err = store.PutSD(collisionHash, sdData)
+	require.NoError(t, err)
+
+	err = store.Put(collisionHash, regularData)
+	require.NoError(t, err)
+
+	// Has should return true (blob exists)
+	exists, err = store.Has(collisionHash)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Get should still return regular blob data (priority over SD)
+	data, err = store.Get(collisionHash)
+	require.NoError(t, err)
+	assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob regardless of storage order")
+
+	// Test case 3: Only SD blob exists
+	store = NewMemoryStore() // Fresh store
+
+	err = store.PutSD(collisionHash, sdData)
+	require.NoError(t, err)
+
+	// Has should return true
+	exists, err = store.Has(collisionHash)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Get should return SD blob data (no regular blob to prioritize)
+	data, err = store.Get(collisionHash)
+	require.NoError(t, err)
+	assert.Equal(t, sdData, data, "Get should return SD blob when no regular blob exists")
+}
+
+func TestMemoryStore_ConcurrentAccess(t *testing.T) {
+	store := NewMemoryStore()
+	const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
+	testData := []byte("concurrent test data")
+
+	libtesting.TestConcurrentAccess(
+		t,
+		store,
+		testHash,
+		testData,
+		func(i int) string { return fmt.Sprintf("%096x", i+1) },
+		func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
+		100,
+		10,
+	)
+}
+
+func TestMemoryStore_ConcurrentAccess_HighConcurrency(t *testing.T) {
+	store := NewMemoryStore()
+	const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
+	testData := []byte("concurrent test data")
+
+	libtesting.TestConcurrentAccess(
+		t,
+		store,
+		testHash,
+		testData,
+		func(i int) string { return fmt.Sprintf("%096x", i+1) },
+		func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
+		500,
+		20,
+	)
+}
+
+func TestMemoryStore_ConcurrentAccess_LowConcurrency(t *testing.T) {
+	store := NewMemoryStore()
+	const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
+	testData := []byte("concurrent test data")
+
+	libtesting.TestConcurrentAccess(
+		t,
+		store,
+		testHash,
+		testData,
+		func(i int) string { return fmt.Sprintf("%096x", i+1) },
+		func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
+		50,
+		2,
+	)
+}
+
+func TestMemoryStore_DefensiveCopies(t *testing.T) {
+	store := NewMemoryStore()
+	hash := "7c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d2"
+	original := []byte("original")
+	data := append([]byte(nil), original...) // make a separate slice to mutate later
+	require.NoError(t, store.Put(hash, data))
+	// Mutate caller's slice after Put; store should be unaffected
+	data[0] = 'X'
+	got1, err := store.Get(hash)
+	require.NoError(t, err)
+	assert.Equal(t, original, got1)
+	// Mutate result of Get; store should still be unaffected
+	got1[1] = 'Y'
+	got2, err := store.Get(hash)
+	require.NoError(t, err)
+	assert.Equal(t, original, got2)
+}
+
+func TestMemoryStore_List(t *testing.T) {
+	store := NewMemoryStore()
+
+	// Test with empty store
+	hashes, err := store.List(0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, hashes)
+
+	for _, blob := range testBlobs {
+		err := store.Put(blob.hash, blob.data)
+		require.NoError(t, err)
+	}
+
+	// Test listing all blobs
+	hashes, err = store.List(0, 10)
+	require.NoError(t, err)
+	require.Len(t, hashes, 4)
+
+	// Check that all hashes are present (order might vary)
+	for _, blob := range testBlobs {
+		found := false
+		for _, hash := range hashes {
+			if hash == blob.hash {
+				found = true
+				break
+			}
 		}
+		assert.True(t, found, "Expected hash %s in list", blob.hash)
+	}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				store := NewMemoryStore()
-				if tt.setup {
-					err := store.Put(tt.hash, tt.data)
-					require.NoError(t, err)
-				}
+	// Test pagination - first page
+	hashes, err = store.List(0, 2)
+	require.NoError(t, err)
+	require.Len(t, hashes, 2)
 
-				exists, err := store.Has(tt.hash)
-				require.NoError(t, err)
-				assert.Equal(t, tt.expected, exists)
-			})
+	// Test pagination - second page
+	hashes, err = store.List(2, 2)
+	require.NoError(t, err)
+	require.Len(t, hashes, 2)
+
+	// Test with offset beyond available data
+	hashes, err = store.List(10, 5)
+	require.NoError(t, err)
+	assert.Empty(t, hashes)
+
+	// Test error conditions
+	_, err = store.List(-1, 5)
+	require.Error(t, err)
+
+	_, err = store.List(0, 0)
+	require.Error(t, err)
+
+	_, err = store.List(0, -5)
+	require.Error(t, err)
+}
+
+func TestMemoryStore_List_DuplicateHashInBothStores(t *testing.T) {
+	store := NewMemoryStore()
+
+	hash := "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"
+	err := store.Put(hash, []byte("regular data"))
+	require.NoError(t, err)
+
+	err = store.PutSD(hash, []byte("sd data"))
+	require.NoError(t, err)
+
+	hashes, err := store.List(0, 10)
+	require.NoError(t, err)
+
+	// Count occurrences of the hash
+	count := 0
+	for _, h := range hashes {
+		if h == hash {
+			count++
 		}
-	})
+	}
 
-	// Test Get method
-	t.Run("Get", func(t *testing.T) {
-		tests := []struct {
-			name        string
-			hash        string
-			data        []byte
-			expectError bool
-			setup       bool
-		}{
-			{
-				name:        "existing blob",
-				hash:        "b2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6d",
-				data:        []byte("test data 2"),
-				expectError: false,
-				setup:       true,
-			},
-			{
-				name:        "non-existing blob",
-				hash:        "1c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cc",
-				expectError: true,
-				setup:       false,
-			},
-		}
+	// Document expected behavior: should it appear once or twice?
+	assert.Equal(t, 1, count, "Duplicate hash should appear only once")
+}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				store := NewMemoryStore()
-				if tt.setup {
-					err := store.Put(tt.hash, tt.data)
-					require.NoError(t, err)
-				}
+func TestMemoryStore_List_OrderingConsistency(t *testing.T) {
+	store := NewMemoryStore()
 
-				data, err := store.Get(tt.hash)
-				if tt.expectError {
-					assert.Error(t, err)
-					assert.Nil(t, data)
-				} else {
-					require.NoError(t, err)
-					assert.Equal(t, tt.data, data)
-				}
-			})
-		}
-	})
+	for _, blob := range testBlobs {
+		err := store.Put(blob.hash, blob.data)
+		require.NoError(t, err)
+	}
 
-	// Test Put method
-	t.Run("Put", func(t *testing.T) {
-		tests := []struct {
-			name        string
-			hash        string
-			data        []byte
-			expectError bool
-		}{
-			{
-				name:        "valid data",
-				hash:        "c2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6e",
-				data:        []byte("test data 3"),
-				expectError: false,
-			},
-			{
-				name:        "empty data",
-				hash:        "2c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cd",
-				data:        []byte{},
-				expectError: true,
-			},
-			{
-				name:        "nil data",
-				hash:        "3c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5ce",
-				data:        nil,
-				expectError: true,
-			},
-		}
+	// Call List multiple times and verify same order
+	hashes1, err := store.List(0, 10)
+	require.NoError(t, err)
 
-		// Add invalid hash cases
-		for _, invalidCase := range invalidHashCases {
-			tests = append(tests, struct {
-				name        string
-				hash        string
-				data        []byte
-				expectError bool
-			}{
-				name:        "invalid hash: " + invalidCase.name,
-				hash:        invalidCase.hash,
-				data:        []byte("test data for invalid hash"),
-				expectError: true,
-			})
-		}
+	hashes2, err := store.List(0, 10)
+	require.NoError(t, err)
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				store := NewMemoryStore()
-				err := store.Put(tt.hash, tt.data)
-				if tt.expectError {
-					assert.Error(t, err)
-				} else {
-					assert.NoError(t, err)
+	assert.Equal(t, hashes1, hashes2, "List should return hashes in consistent order")
+}
 
-					// Verify the data was stored
-					data, err := store.Get(tt.hash)
-					require.NoError(t, err)
-					assert.Equal(t, tt.data, data)
-				}
-			})
-		}
-	})
-
-	// Test PutSD method
-	t.Run("PutSD", func(t *testing.T) {
-		tests := []struct {
-			name        string
-			hash        string
-			data        []byte
-			expectError bool
-		}{
-			{
-				name:        "valid SD data",
-				hash:        "d2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6f",
-				data:        []byte("sd test data 1"),
-				expectError: false,
-			},
-			{
-				name:        "empty SD data",
-				hash:        "4c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cf",
-				data:        []byte{},
-				expectError: true,
-			},
-			{
-				name:        "nil SD data",
-				hash:        "5c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d0",
-				data:        nil,
-				expectError: true,
-			},
-		}
-
-		// Add invalid hash cases
-		for _, invalidCase := range invalidHashCases {
-			tests = append(tests, struct {
-				name        string
-				hash        string
-				data        []byte
-				expectError bool
-			}{
-				name:        "invalid SD hash: " + invalidCase.name,
-				hash:        invalidCase.hash,
-				data:        []byte("sd test data for invalid hash"),
-				expectError: true,
-			})
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				store := NewMemoryStore()
-				err := store.PutSD(tt.hash, tt.data)
-				if tt.expectError {
-					assert.Error(t, err)
-				} else {
-					assert.NoError(t, err)
-
-					// Verify the SD data was stored
-					data, err := store.Get(tt.hash)
-					require.NoError(t, err)
-					assert.Equal(t, tt.data, data)
-				}
-			})
-		}
-	})
-
-	// Test integration between regular blobs and SD blobs
-	t.Run("BlobSDIntegration", func(t *testing.T) {
+func TestMemoryStore_Delete(t *testing.T) {
+	// Delete existing regular blob
+	t.Run("DeleteExistingRegularBlob", func(t *testing.T) {
 		store := NewMemoryStore()
+		hash := "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"
+		data := []byte("test data 1")
 
-		regularHash := "e2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e60"
-		sdHash := "6c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d1"
+		err := store.Put(hash, data)
+		require.NoError(t, err)
+
+		// Verify blob exists
+		exists, err := store.Has(hash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Delete the blob
+		err = store.Delete(hash)
+		require.NoError(t, err)
+
+		// Verify blob is deleted
+		exists, err = store.Has(hash)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// Delete existing SD blob
+	t.Run("DeleteExistingSDBlob", func(t *testing.T) {
+		store := NewMemoryStore()
+		hash := "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb"
+		data := []byte("test data 2")
+
+		err := store.PutSD(hash, data)
+		require.NoError(t, err)
+
+		// Verify blob exists
+		exists, err := store.Has(hash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Delete the blob
+		err = store.Delete(hash)
+		require.NoError(t, err)
+
+		// Verify blob is deleted
+		exists, err = store.Has(hash)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// Delete blob that exists in both regular and SD stores
+	t.Run("DeleteBlobInBothStores", func(t *testing.T) {
+		store := NewMemoryStore()
+		hash := "a4d07d442b9907036c75b6c92db316a8b8428733bf5ec976627a48a7c862bf84db33075d54125a7c0b297bd2dc445f1c"
 		regularData := []byte("regular data")
 		sdData := []byte("sd data")
 
-		// Put regular blob
-		err := store.Put(regularHash, regularData)
+		err := store.Put(hash, regularData)
 		require.NoError(t, err)
 
-		// Put SD blob
-		err = store.PutSD(sdHash, sdData)
+		err = store.PutSD(hash, sdData)
 		require.NoError(t, err)
 
-		// Verify both exist
-		exists, err := store.Has(regularHash)
+		// Verify blob exists
+		exists, err := store.Has(hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(sdHash)
+		// Delete the blob
+		err = store.Delete(hash)
 		require.NoError(t, err)
-		assert.True(t, exists)
 
-		// Verify data is correct
-		data, err := store.Get(regularHash)
+		// Verify blob is deleted
+		exists, err = store.Has(hash)
 		require.NoError(t, err)
-		assert.Equal(t, regularData, data)
-
-		data, err = store.Get(sdHash)
-		require.NoError(t, err)
-		assert.Equal(t, sdData, data)
+		assert.False(t, exists)
 	})
 
-	// Test hash collision behavior between regular and SD blobs
-	t.Run("HashCollisionBehavior", func(t *testing.T) {
+	// Delete non-existent blob (should be no-op)
+	t.Run("DeleteNonExistentBlob", func(t *testing.T) {
 		store := NewMemoryStore()
+		hash := "dcd2093f4a3eca9f6dd59d785d0bef068fee788481986aa894cf72ed4d992c0ff9d19d1743525de2f5c3c62f5ede1c58"
 
-		collisionHash := "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e61"
-		regularData := []byte("regular blob data")
-		sdData := []byte("sd blob data")
-
-		// Test case 1: Regular blob stored first, then SD blob with same hash
-		err := store.Put(collisionHash, regularData)
+		// Delete non-existent blob (should be no-op)
+		err := store.Delete(hash)
 		require.NoError(t, err)
 
-		err = store.PutSD(collisionHash, sdData)
+		// Verify blob still doesn't exist
+		exists, err := store.Has(hash)
 		require.NoError(t, err)
-
-		// Has should return true (blob exists)
-		exists, err := store.Has(collisionHash)
-		require.NoError(t, err)
-		assert.True(t, exists)
-
-		// Get should return regular blob data (priority over SD)
-		data, err := store.Get(collisionHash)
-		require.NoError(t, err)
-		assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob")
-
-		// Test case 2: SD blob stored first, then regular blob with same hash
-		store = NewMemoryStore() // Fresh store
-
-		err = store.PutSD(collisionHash, sdData)
-		require.NoError(t, err)
-
-		err = store.Put(collisionHash, regularData)
-		require.NoError(t, err)
-
-		// Has should return true (blob exists)
-		exists, err = store.Has(collisionHash)
-		require.NoError(t, err)
-		assert.True(t, exists)
-
-		// Get should still return regular blob data (priority over SD)
-		data, err = store.Get(collisionHash)
-		require.NoError(t, err)
-		assert.Equal(t, regularData, data, "Get should prioritize regular blob over SD blob regardless of storage order")
-
-		// Test case 3: Only SD blob exists
-		store = NewMemoryStore() // Fresh store
-
-		err = store.PutSD(collisionHash, sdData)
-		require.NoError(t, err)
-
-		// Has should return true
-		exists, err = store.Has(collisionHash)
-		require.NoError(t, err)
-		assert.True(t, exists)
-
-		// Get should return SD blob data (no regular blob to prioritize)
-		data, err = store.Get(collisionHash)
-		require.NoError(t, err)
-		assert.Equal(t, sdData, data, "Get should return SD blob when no regular blob exists")
+		assert.False(t, exists)
 	})
 
-	// Test concurrent access
-	t.Run("ConcurrentAccess", func(t *testing.T) {
-		store := NewMemoryStore()
-		const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
-		testData := []byte("concurrent test data")
-
-		libtesting.TestConcurrentAccess(
-			t,
-			store,
-			testHash,
-			testData,
-			func(i int) string { return fmt.Sprintf("%096x", i+1) },
-			func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
-			100,
-			10,
-		)
-	})
-
-	// Test concurrent access with different parameters
-	t.Run("ConcurrentAccess_HighConcurrency", func(t *testing.T) {
-		store := NewMemoryStore()
-		const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
-		testData := []byte("concurrent test data")
-
-		libtesting.TestConcurrentAccess(
-			t,
-			store,
-			testHash,
-			testData,
-			func(i int) string { return fmt.Sprintf("%096x", i+1) },
-			func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
-			500,
-			20,
-		)
-	})
-
-	t.Run("ConcurrentAccess_LowConcurrency", func(t *testing.T) {
-		store := NewMemoryStore()
-		const testHash = "f2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e67"
-		testData := []byte("concurrent test data")
-
-		libtesting.TestConcurrentAccess(
-			t,
-			store,
-			testHash,
-			testData,
-			func(i int) string { return fmt.Sprintf("%096x", i+1) },
-			func(i int) []byte { return []byte(fmt.Sprintf("data_%d", i)) },
-			50,
-			2,
-		)
-	})
-
-	// Test defensive copies (copy-on-write/read)
-	t.Run("DefensiveCopies", func(t *testing.T) {
-		store := NewMemoryStore()
-		hash := "7c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5d2"
-		original := []byte("original")
-		data := append([]byte(nil), original...) // make a separate slice to mutate later
-		require.NoError(t, store.Put(hash, data))
-		// Mutate caller's slice after Put; store should be unaffected
-		data[0] = 'X'
-		got1, err := store.Get(hash)
-		require.NoError(t, err)
-		assert.Equal(t, original, got1)
-		// Mutate result of Get; store should still be unaffected
-		got1[1] = 'Y'
-		got2, err := store.Get(hash)
-		require.NoError(t, err)
-		assert.Equal(t, original, got2)
-	})
-
-	// Test List method
-	t.Run("List", func(t *testing.T) {
+	// Delete with invalid hash format (should return ErrInvalidHash)
+	t.Run("DeleteWithInvalidHash", func(t *testing.T) {
 		store := NewMemoryStore()
 
-		// Test with empty store
-		hashes, err := store.List(0, 10)
-		require.NoError(t, err)
-		assert.Empty(t, hashes)
-
-		for _, blob := range testBlobs {
-			err := store.Put(blob.hash, blob.data)
-			require.NoError(t, err)
+		for _, invalidCase := range invalidHashCases {
+			t.Run(invalidCase.name, func(t *testing.T) {
+				err := store.Delete(invalidCase.hash)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "invalid hash")
+			})
 		}
-
-		// Test listing all blobs
-		hashes, err = store.List(0, 10)
-		require.NoError(t, err)
-		require.Len(t, hashes, 4)
-
-		// Check that all hashes are present (order might vary)
-		for _, blob := range testBlobs {
-			found := false
-			for _, hash := range hashes {
-				if hash == blob.hash {
-					found = true
-					break
-				}
-			}
-			assert.True(t, found, "Expected hash %s in list", blob.hash)
-		}
-
-		// Test pagination - first page
-		hashes, err = store.List(0, 2)
-		require.NoError(t, err)
-		require.Len(t, hashes, 2)
-
-		// Test pagination - second page
-		hashes, err = store.List(2, 2)
-		require.NoError(t, err)
-		require.Len(t, hashes, 2)
-
-		// Test with offset beyond available data
-		hashes, err = store.List(10, 5)
-		require.NoError(t, err)
-		assert.Empty(t, hashes)
-
-		// Test error conditions
-		_, err = store.List(-1, 5)
-		require.Error(t, err)
-
-		_, err = store.List(0, 0)
-		require.Error(t, err)
-
-		_, err = store.List(0, -5)
-		require.Error(t, err)
 	})
 
-	// Test with duplicate hash in both blobs and sdBlobs
-	t.Run("List_DuplicateHashInBothStores", func(t *testing.T) {
+	// Delete from empty store
+	t.Run("DeleteFromEmptyStore", func(t *testing.T) {
 		store := NewMemoryStore()
 
-		hash := "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"
-		err := store.Put(hash, []byte("regular data"))
+		// Delete from empty store (should be no-op)
+		err := store.Delete("a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c")
 		require.NoError(t, err)
-
-		err = store.PutSD(hash, []byte("sd data"))
-		require.NoError(t, err)
-
-		hashes, err := store.List(0, 10)
-		require.NoError(t, err)
-
-		// Count occurrences of the hash
-		count := 0
-		for _, h := range hashes {
-			if h == hash {
-				count++
-			}
-		}
-
-		// Document expected behavior: should it appear once or twice?
-		assert.Equal(t, 1, count, "Duplicate hash should appear only once")
 	})
 
-	// Test ordering consistency
-	t.Run("List_OrderingConsistency", func(t *testing.T) {
+	// Delete multiple blobs in sequence
+	t.Run("DeleteMultipleBlobs", func(t *testing.T) {
 		store := NewMemoryStore()
 
-		for _, blob := range testBlobs {
-			err := store.Put(blob.hash, blob.data)
-			require.NoError(t, err)
-		}
+		// Add multiple blobs
+		blob1 := "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"
+		blob2 := "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb"
+		blob3 := "a4d07d442b9907036c75b6c92db316a8b8428733bf5ec976627a48a7c862bf84db33075d54125a7c0b297bd2dc445f1c"
 
-		// Call List multiple times and verify same order
-		hashes1, err := store.List(0, 10)
+		err := store.Put(blob1, []byte("data1"))
 		require.NoError(t, err)
 
-		hashes2, err := store.List(0, 10)
+		err = store.PutSD(blob2, []byte("data2"))
 		require.NoError(t, err)
 
-		assert.Equal(t, hashes1, hashes2, "List should return hashes in consistent order")
+		err = store.Put(blob3, []byte("data3"))
+		require.NoError(t, err)
+
+		// Verify all blobs exist
+		exists, err := store.Has(blob1)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = store.Has(blob2)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = store.Has(blob3)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Delete blobs sequentially
+		err = store.Delete(blob1)
+		require.NoError(t, err)
+
+		err = store.Delete(blob2)
+		require.NoError(t, err)
+
+		err = store.Delete(blob3)
+		require.NoError(t, err)
+
+		// Verify all blobs are deleted
+		exists, err = store.Has(blob1)
+		require.NoError(t, err)
+		assert.False(t, exists)
+
+		exists, err = store.Has(blob2)
+		require.NoError(t, err)
+		assert.False(t, exists)
+
+		exists, err = store.Has(blob3)
+		require.NoError(t, err)
+		assert.False(t, exists)
 	})
 
+	// Verify blob is actually deleted (Has returns false after Delete)
+	t.Run("VerifyBlobIsActuallyDeleted", func(t *testing.T) {
+		store := NewMemoryStore()
+		hash := "dcd2093f4a3eca9f6dd59d785d0bef068fee788481986aa894cf72ed4d992c0ff9d19d1743525de2f5c3c62f5ede1c58"
+		data := []byte("test data")
+
+		err := store.Put(hash, data)
+		require.NoError(t, err)
+
+		// Verify blob exists before deletion
+		exists, err := store.Has(hash)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Delete the blob
+		err = store.Delete(hash)
+		require.NoError(t, err)
+
+		// Verify blob is actually deleted
+		exists, err = store.Has(hash)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// Verify Delete doesn't affect other blobs
+	t.Run("DeleteDoesntAffectOtherBlobs", func(t *testing.T) {
+		store := NewMemoryStore()
+
+		// Add multiple blobs
+		blob1 := "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c"
+		blob2 := "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb"
+		blob3 := "a4d07d442b9907036c75b6c92db316a8b8428733bf5ec976627a48a7c862bf84db33075d54125a7c0b297bd2dc445f1c"
+
+		err := store.Put(blob1, []byte("data1"))
+		require.NoError(t, err)
+
+		err = store.PutSD(blob2, []byte("data2"))
+		require.NoError(t, err)
+
+		err = store.Put(blob3, []byte("data3"))
+		require.NoError(t, err)
+
+		// Verify all blobs exist
+		exists, err := store.Has(blob1)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = store.Has(blob2)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = store.Has(blob3)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Delete one blob
+		err = store.Delete(blob2)
+		require.NoError(t, err)
+
+		// Verify other blobs still exist
+		exists, err = store.Has(blob1)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = store.Has(blob3)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		// Verify deleted blob doesn't exist
+		exists, err = store.Has(blob2)
+		require.NoError(t, err)
+		assert.False(t, exists)
+	})
 }

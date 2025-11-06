@@ -12,4 +12,9 @@ type BlobStore interface {
 	// If the same hash exists in both regular and SD blob stores, it may appear once or twice depending on the implementation.
 	// Returns an empty slice if offset is beyond the available data.
 	List(offset, limit int) ([]string, error)
+	// Delete removes a blob from storage.
+	// If the blob exists in both regular and SD blob stores, it removes both.
+	// If the blob is not found, it returns nil (no-op).
+	// Only returns an error for invalid hash format or other unknown errors.
+	Delete(hash string) error
 }
