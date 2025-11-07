@@ -214,7 +214,7 @@ func (c *DefaultReflectorClient) doHandshake() error {
 
 // sendBlobRequest sends a blob upload request
 func (c *DefaultReflectorClient) sendBlobRequest(hash string, size int, isSdBlob bool) error {
-	var request interface{}
+	var request any
 	if isSdBlob {
 		request = SendBlobRequest{SdBlobHash: hash, SdBlobSize: size}
 	} else {
@@ -281,12 +281,12 @@ func (c *DefaultReflectorClient) readTransferResponse(isSdBlob bool) (bool, erro
 }
 
 // writeJSON writes a JSON message to the connection
-func (c *DefaultReflectorClient) writeJSON(v interface{}) error {
+func (c *DefaultReflectorClient) writeJSON(v any) error {
 	if err := c.conn.SetWriteDeadline(time.Now().Add(c.timeout)); err != nil {
 		return err
 	}
 
-	// First encode the interface{} to JSON bytes
+	// First encode the any to JSON bytes
 	jsonData, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -298,7 +298,7 @@ func (c *DefaultReflectorClient) writeJSON(v interface{}) error {
 }
 
 // readJSON reads a JSON message from the connection
-func (c *DefaultReflectorClient) readJSON(v interface{}) error {
+func (c *DefaultReflectorClient) readJSON(v any) error {
 	if err := c.conn.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {
 		return err
 	}

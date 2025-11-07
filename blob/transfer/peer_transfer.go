@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	lbryerrors "go.lumeweb.com/liblbry/errors"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
@@ -67,7 +67,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClient protocol.PeerClient, o
 func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if !stream.ValidateHash(hash) {
-		return nil, lbryerrors.ErrInvalidHash
+		return nil, liblbryerrors.ErrInvalidHash
 	}
 
 	// Discover peers via DHT
@@ -82,7 +82,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	if len(contacts) == 0 {
-		return nil, lbryerrors.ErrBlobNotFound
+		return nil, liblbryerrors.ErrBlobNotFound
 	}
 
 	// Try up to maxPeers peers
@@ -155,7 +155,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	if lastErr != nil {
 		return nil, fmt.Errorf("failed to fetch blob from %d peers: %w", attemptedCount, lastErr)
 	}
-	return nil, lbryerrors.ErrAcquisitionFailed
+	return nil, liblbryerrors.ErrAcquisitionFailed
 }
 
 // Name returns the name of this transfer implementation

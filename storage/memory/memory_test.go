@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	libtesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
@@ -486,8 +487,9 @@ func TestMemoryStore_List(t *testing.T) {
 
 	// Test with offset beyond available data
 	hashes, err = store.List(10, 5)
-	require.NoError(t, err)
-	assert.Empty(t, hashes)
+	require.Error(t, err)
+	assert.True(t, liblbryerrors.IsEndOfListError(err))
+	assert.Nil(t, hashes)
 
 	// Test error conditions
 	_, err = store.List(-1, 5)

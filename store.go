@@ -33,7 +33,7 @@ type LoggerOption struct {
 }
 
 // Apply applies the logger option to a StoreFactory
-func (l LoggerOption) Apply(factory interface{}) error {
+func (l LoggerOption) Apply(factory any) error {
 	if f, ok := factory.(LoggerSetter); ok {
 		f.SetLogger(l.logger)
 	}

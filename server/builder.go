@@ -16,15 +16,22 @@ type ServerBuilder struct {
 	storage       storage.BlobStore
 	acquirer      liblbry.BlobAcquirer
 	accessControl storage.AccessControl
-	protocols     map[string]interface{}
+	protocols     map[string]any
 	logger        *zap.Logger
+	dhtWorkers    int
+	dhtBatchSize  int
 }
 
 // NewServerBuilder creates a new ServerBuilder instance
 func NewServerBuilder() *ServerBuilder {
 	return &ServerBuilder{
-		protocols: make(map[string]interface{}),
-		logger:    zap.NewNop(), // Default to no-op logger
+		storage:       nil,
+		acquirer:      nil,
+		accessControl: nil,
+		protocols:     make(map[string]any),
+		logger:        zap.NewNop(),                    // Default to no-op logger
+		dhtWorkers:    DefaultDHTAnnouncerWorkers,      // Default value
+		dhtBatchSize:  DefaultDHTAnnouncementBatchSize, // Default batch size
 	}
 }
 
@@ -48,7 +55,7 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 
 // withProtocolConfig adds a protocol configuration with the specified port and default.
 // If multiple ports are provided, only the first is used.
-func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) interface{}) *ServerBuilder {
+func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) any) *ServerBuilder {
 	p := defaultPort
 	if len(port) > 0 {
 		p = port[0]
@@ -59,21 +66,21 @@ func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int,
 
 // WithPeer adds a Peer protocol handler on the specified port
 func (b *ServerBuilder) WithPeer(port ...int) *ServerBuilder {
-	return b.withProtocolConfig(ProtocolPeer, DefaultPeerPort, port, func(p int) interface{} {
+	return b.withProtocolConfig(ProtocolPeer, DefaultPeerPort, port, func(p int) any {
 		return &PeerConfig{Port: p}
 	})
 }
 
 // WithReflector adds a Reflector protocol handler on the specified port
 func (b *ServerBuilder) WithReflector(port ...int) *ServerBuilder {
-	return b.withProtocolConfig(ProtocolReflector, DefaultReflectorPort, port, func(p int) interface{} {
+	return b.withProtocolConfig(ProtocolReflector, DefaultReflectorPort, port, func(p int) any {
 		return &ReflectorConfig{Port: p}
 	})
 }
 
 // WithDHT adds a DHT protocol handler on the specified port
 func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
-	return b.withProtocolConfig(ProtocolDHT, DefaultDHTPort, port, func(p int) interface{} {
+	return b.withProtocolConfig(ProtocolDHT, DefaultDHTPort, port, func(p int) any {
 		return &DHTConfig{Port: p}
 	})
 }
@@ -84,6 +91,18 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 		return b
 	}
 	b.logger = logger
+	return b
+}
+
+// WithDHTWorkers sets the number of workers for DHT announcements
+func (b *ServerBuilder) WithDHTWorkers(workers int) *ServerBuilder {
+	b.dhtWorkers = workers
+	return b
+}
+
+// WithDHTBatchSize sets the batch size for DHT announcements
+func (b *ServerBuilder) WithDHTBatchSize(batchSize int) *ServerBuilder {
+	b.dhtBatchSize = batchSize
 	return b
 }
 
@@ -109,6 +128,8 @@ func (b *ServerBuilder) Build() (Server, error) {
 		accessControl: b.accessControl,
 		protocols:     b.protocols,
 		logger:        b.logger.Named("server"),
+		dhtWorkers:    b.dhtWorkers,
+		dhtBatchSize:  b.dhtBatchSize,
 	}, nil
 }
 

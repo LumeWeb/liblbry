@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"go.lumeweb.com/liblbry/blob/transfer"
-	lbryerrors "go.lumeweb.com/liblbry/errors"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
 )
 
@@ -34,7 +34,7 @@ func NewBlobAcquirer(transfers []transfer.Transfer, store storage.BlobStore) (Bl
 // Acquire attempts to acquire a blob using the transfer methods in order
 func (ba *DefaultBlobAcquirer) Acquire(ctx context.Context, hash string) ([]byte, error) {
 	if ba.store == nil {
-		return nil, lbryerrors.ErrAcquisitionFailed
+		return nil, liblbryerrors.ErrAcquisitionFailed
 	}
 
 	// First check if blob already exists in storage
@@ -69,5 +69,5 @@ func (ba *DefaultBlobAcquirer) Acquire(ctx context.Context, hash string) ([]byte
 		// If transfer failed, continue to next one
 	}
 
-	return nil, lbryerrors.ErrAcquisitionFailed
+	return nil, liblbryerrors.ErrAcquisitionFailed
 }

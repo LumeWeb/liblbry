@@ -136,7 +136,7 @@ func TestDefaultStreamCreator_WithChunkSize(t *testing.T) {
 	for _, size := range result.ChunkSizes {
 		totalChunkData += size
 	}
-	
+
 	// The total chunk data should be >= our original test data size
 	assert.GreaterOrEqual(t, totalChunkData, len(testData))
 }
@@ -282,7 +282,7 @@ func (m *mockFS) Open(name string) (fs.File, error) {
 	if !exists {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
-	
+
 	// Return a non-seekable file (like embed.FS)
 	return &mockNonSeekableFile{
 		reader: strings.NewReader(string(data)),
@@ -336,7 +336,7 @@ func (fi *mockFileInfo) IsDir() bool {
 	return false
 }
 
-func (fi *mockFileInfo) Sys() interface{} {
+func (fi *mockFileInfo) Sys() any {
 	return nil
 }
 
@@ -360,7 +360,7 @@ func TestDefaultStreamCreator_ChunkHandlerErrors(t *testing.T) {
 	result, err := streamCreator.CreateStream(reader, int64(len(testData)), WithChunkHandler(chunkHandler))
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	
+
 	// Check that the error is the exact expected error type
 	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }

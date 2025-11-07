@@ -67,6 +67,7 @@ type DefaultReflectorServer struct {
 	accessControl     storage.AccessControl
 	connectionTimeout time.Duration
 	logger            *zap.Logger
+	notifier          Notifier
 }
 
 // ReflectorServerOption configures the reflector server
@@ -104,6 +105,13 @@ func WithReflectorTimeout(timeout time.Duration) ReflectorServerOption {
 func WithReflectorLogger(logger *zap.Logger) ReflectorServerOption {
 	return func(s *DefaultReflectorServer) {
 		s.logger = logger
+	}
+}
+
+// WithReflectorNotifier sets the notifier for the server
+func WithReflectorNotifier(notifier Notifier) ReflectorServerOption {
+	return func(s *DefaultReflectorServer) {
+		s.notifier = notifier
 	}
 }
 
@@ -213,6 +221,9 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 	if err != nil {
 		return fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), err)
 	}
+
+	// Notify about blob addition
+	NotifyBlob(r.notifier, r.logger, NOTIFY_BLOB_ADDED, blobHash)
 
 	// Send transfer success response
 	return r.sendTransferResponse(conn, true, isSdBlob)
@@ -365,7 +376,7 @@ func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, reader *bufio.Reader
 }
 
 // readJSON reads and unmarshals JSON from the connection with timeout
-func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v interface{}) error {
+func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v any) error {
 	if err := conn.SetReadDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
 		return fmt.Errorf("failed to set read deadline: %w", err)
 	}
@@ -382,7 +393,7 @@ func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v
 }
 
 // writeJSON marshals and writes JSON to the connection
-func (r *DefaultReflectorServer) writeJSON(conn net.Conn, v interface{}) error {
+func (r *DefaultReflectorServer) writeJSON(conn net.Conn, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
