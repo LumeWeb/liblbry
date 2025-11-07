@@ -65,7 +65,8 @@ type ReflectorConfig struct {
 
 // DHTConfig contains configuration for DHT protocol
 type DHTConfig struct {
-	Port int
+	Port      int
+	SeedNodes []string
 }
 
 // DefaultServer implements the Server interface
@@ -213,12 +214,21 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 		peerProtocolPort = DefaultPeerPort
 	}
 
-	// Create DHT node with configuration
-	dhtNode, err := protocol.NewDHTNodeWithDefaults(
+	// Build options slice dynamically
+	var opts []protocol.DHTOption
+	opts = append(opts,
 		protocol.WithDHTAddress(fmt.Sprintf("0.0.0.0:%d", config.Port)),
 		protocol.WithDHTPeerProtocolPort(peerProtocolPort),
 		protocol.WithDHTLogger(s.logger.Named("dht")),
 	)
+	
+	// Conditionally add seed nodes if they exist
+	if len(config.SeedNodes) > 0 {
+		opts = append(opts, protocol.WithDHTSeedNodes(config.SeedNodes))
+	}
+
+	// Create DHT node with all options at once
+	dhtNode, err := protocol.NewDHTNodeWithDefaults(opts...)
 	if err != nil {
 		return fmt.Errorf("failed to create DHT node: %w", err)
 	}

@@ -420,3 +420,130 @@ func TestServerBuilder_DefaultLogger(t *testing.T) {
 	// The default logger should be a no-op logger
 	assert.Equal(t, zap.NewNop(), builder.logger)
 }
+
+// TestServerBuilder_WithDHTSeedNodes verifies that WithDHTSeedNodes correctly sets seed nodes on the DHT config
+func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
+	tests := []struct {
+		name           string
+		seedNodes      []string
+		expectedSeedNodes []string
+	}{
+		{
+			name:           "SingleSeedNode",
+			seedNodes:      []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
+			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
+		},
+		{
+			name:           "MultipleSeedNodes",
+			seedNodes:      []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
+			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
+		},
+		{
+			name:           "EmptySeedNodes",
+			seedNodes:      []string{},
+			expectedSeedNodes: []string{},
+		},
+		{
+			name:           "NilSeedNodes",
+			seedNodes:      nil,
+			expectedSeedNodes: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewServerBuilder()
+			
+			// Configure DHT with seed nodes
+			result := builder.WithDHTSeedNodes(tt.seedNodes...)
+			
+			// Verify builder returns same instance
+			assertBuilderReturnsSame(t, builder, result)
+			
+			// Verify DHT config exists and has correct seed nodes
+			assert.Contains(t, builder.protocols, ProtocolDHT)
+			
+			dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+			assert.Equal(t, tt.expectedSeedNodes, dhtConfig.SeedNodes)
+		})
+	}
+}
+
+// TestServerBuilder_WithDHTSeedNodesBeforeWithDHT verifies that calling WithDHTSeedNodes before WithDHT works correctly
+func TestServerBuilder_WithDHTSeedNodesBeforeWithDHT(t *testing.T) {
+	builder := NewServerBuilder()
+	
+	// Call WithDHTSeedNodes before WithDHT - should not crash
+	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
+	result := builder.WithDHTSeedNodes(seedNodes...)
+	
+	// Verify builder returns same instance
+	assertBuilderReturnsSame(t, builder, result)
+	
+	// Verify DHT config exists and has correct seed nodes
+	assert.Contains(t, builder.protocols, ProtocolDHT)
+	
+	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+	
+	// Now configure DHT - should not overwrite seed nodes
+	builder.WithDHT()
+	
+	// Verify seed nodes are still there
+	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+}
+
+// TestServerBuilder_WithDHTSeedNodesAfterWithDHT verifies that calling WithDHTSeedNodes after WithDHT works correctly
+func TestServerBuilder_WithDHTSeedNodesAfterWithDHT(t *testing.T) {
+	builder := NewServerBuilder()
+	
+	// First configure DHT
+	builder.WithDHT()
+	
+	// Verify DHT config exists with empty seed nodes initially
+	assert.Contains(t, builder.protocols, ProtocolDHT)
+	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Empty(t, dhtConfig.SeedNodes)
+	
+	// Then set seed nodes
+	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
+	result := builder.WithDHTSeedNodes(seedNodes...)
+	
+	// Verify builder returns same instance
+	assertBuilderReturnsSame(t, builder, result)
+	
+	// Verify seed nodes were set correctly
+	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+}
+
+// TestServerBuilder_WithDHTSeedNodesMultipleCalls verifies that calling WithDHTSeedNodes multiple times overwrites previous values
+func TestServerBuilder_WithDHTSeedNodesMultipleCalls(t *testing.T) {
+	builder := NewServerBuilder()
+	
+	// First call
+	seedNodes1 := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
+	builder.WithDHTSeedNodes(seedNodes1...)
+	
+	// Verify first seed nodes
+	assert.Contains(t, builder.protocols, ProtocolDHT)
+	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes1, dhtConfig.SeedNodes)
+	
+	// Second call - should overwrite
+	seedNodes2 := []string{"/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"}
+	builder.WithDHTSeedNodes(seedNodes2...)
+	
+	// Verify second seed nodes
+	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes2, dhtConfig.SeedNodes)
+	
+	// Third call - should overwrite again
+	seedNodes3 := []string{"/ip4/127.0.0.1/tcp/4446/p2p/QmSeedNode3"}
+	builder.WithDHTSeedNodes(seedNodes3...)
+	
+	// Verify third seed nodes
+	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes3, dhtConfig.SeedNodes)
+}
