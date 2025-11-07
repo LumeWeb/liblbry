@@ -200,9 +200,23 @@ func (s *DefaultServer) startReflector(config *ReflectorConfig) error {
 
 // startDHT starts the DHT protocol handler
 func (s *DefaultServer) startDHT(config *DHTConfig) error {
+	// Check if peer protocol is configured and get the port
+	var peerProtocolPort int
+	if peerConfig, ok := s.protocols[ProtocolPeer]; ok {
+		if peerCfg, ok := peerConfig.(*PeerConfig); ok {
+			peerProtocolPort = peerCfg.Port
+		}
+	}
+
+	// If no peer port was found, use a default
+	if peerProtocolPort == 0 {
+		peerProtocolPort = DefaultPeerPort
+	}
+
 	// Create DHT node with configuration
 	dhtNode, err := protocol.NewDHTNodeWithDefaults(
 		protocol.WithDHTAddress(fmt.Sprintf("0.0.0.0:%d", config.Port)),
+		protocol.WithDHTPeerProtocolPort(peerProtocolPort),
 		protocol.WithDHTLogger(s.logger.Named("dht")),
 	)
 	if err != nil {
@@ -228,7 +242,7 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 		}
 	}
 
-	s.logger.Info("DHT protocol started", zap.Int("port", config.Port))
+	s.logger.Info("DHT protocol started", zap.Int("port", config.Port), zap.Int("peer_port", peerProtocolPort))
 	return nil
 }
 
