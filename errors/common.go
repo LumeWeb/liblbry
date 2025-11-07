@@ -66,7 +66,8 @@ func IsKnownErrorType(err error) bool {
 		err == ErrInvalidConfig ||
 		err == ErrNoBlobData ||
 		err == ErrAlreadyConnected ||
-		err == ErrAcquisitionFailed
+		err == ErrAcquisitionFailed ||
+		err == ErrEndOfList
 }
 
 // DetectErrorType detects specific error types by string matching since errors come from different process

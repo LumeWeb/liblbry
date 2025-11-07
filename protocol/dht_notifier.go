@@ -41,7 +41,7 @@ func (n *DHTNotifier) handleBlobAdded(multihash string) error {
 		return nil
 	}
 
-	// Convert multihash to LBRY hash for logging purposes
+	// Convert multihash to LBRY hash for DHT operations
 	lbryHash, err := stream.FromMultihash(multihash)
 	if err != nil {
 		n.logger.Error("Failed to convert multihash to LBRY hash", zap.String("multihash", multihash), zap.Error(err))
@@ -53,17 +53,17 @@ func (n *DHTNotifier) handleBlobAdded(multihash string) error {
 		return fmt.Errorf("empty LBRY hash after conversion from multihash")
 	}
 
-	n.logger.Debug("Announcing blob to DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash))
+	n.logger.Debug("Announcing blob to DHT", zap.String("hash", lbryHash))
 
-	// Announce the blob to DHT using the multihash directly
-	// The DHT announcer expects the actual hash format it can work with
-	err = n.dhtAnnouncer.AnnounceBlob(multihash)
+	// Announce the blob to DHT using the converted LBRY hash
+	// The DHT announcer expects the LBRY hash format
+	err = n.dhtAnnouncer.AnnounceBlob(lbryHash)
 	if err != nil {
-		n.logger.Error("Failed to announce blob to DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash), zap.Error(err))
+		n.logger.Error("Failed to announce blob to DHT", zap.String("hash", lbryHash), zap.Error(err))
 		return fmt.Errorf("failed to announce blob to DHT: %w", err)
 	}
 
-	n.logger.Debug("Successfully announced blob to DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash))
+	n.logger.Debug("Successfully announced blob to DHT", zap.String("hash", lbryHash))
 	return nil
 }
 
@@ -75,7 +75,7 @@ func (n *DHTNotifier) handleBlobRemoved(multihash string) error {
 		return nil
 	}
 
-	// Convert multihash to LBRY hash for logging purposes
+	// Convert multihash to LBRY hash for DHT operations
 	lbryHash, err := stream.FromMultihash(multihash)
 	if err != nil {
 		n.logger.Error("Failed to convert multihash to LBRY hash", zap.String("multihash", multihash), zap.Error(err))
@@ -87,16 +87,16 @@ func (n *DHTNotifier) handleBlobRemoved(multihash string) error {
 		return fmt.Errorf("empty LBRY hash after conversion from multihash")
 	}
 
-	n.logger.Debug("Removing blob from DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash))
+	n.logger.Debug("Removing blob from DHT", zap.String("hash", lbryHash))
 
-	// Remove the blob from DHT using the multihash directly
-	// The DHT announcer expects the actual hash format it can work with
-	err = n.dhtAnnouncer.RemoveBlob(multihash)
+	// Remove the blob from DHT using the converted LBRY hash
+	// The DHT announcer expects the LBRY hash format
+	err = n.dhtAnnouncer.RemoveBlob(lbryHash)
 	if err != nil {
-		n.logger.Error("Failed to remove blob from DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash), zap.Error(err))
+		n.logger.Error("Failed to remove blob from DHT", zap.String("hash", lbryHash), zap.Error(err))
 		return fmt.Errorf("failed to remove blob from DHT: %w", err)
 	}
 
-	n.logger.Debug("Successfully removed blob from DHT", zap.String("multihash", multihash), zap.String("lbry_hash", lbryHash))
+	n.logger.Debug("Successfully removed blob from DHT", zap.String("hash", lbryHash))
 	return nil
 }

@@ -35,12 +35,13 @@ func (gn *GroupNotifier) AddNotifier(notifier Notifier) {
 
 // Notify sends notification to all notifiers in the group
 func (gn *GroupNotifier) Notify(id string, data string) error {
+	var firstErr error
 	for _, notifier := range gn.notifiers {
-		if err := notifier.Notify(id, data); err != nil {
-			return err
+		if err := notifier.Notify(id, data); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return nil
+	return firstErr
 }
 
 // NotifyBlob is a helper function that handles blob notifications with proper error handling and logging

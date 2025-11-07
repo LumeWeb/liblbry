@@ -15,10 +15,10 @@ import (
 
 // Test constants for DHT node testing
 const (
-	testDHTAddress    = "127.0.0.1:4444"
-	testPingAddress   = "127.0.0.1:5567"
-	testContactIP     = "127.0.0.1"
-	testContactPort   = 5567
+	testDHTAddress  = "127.0.0.1:4444"
+	testPingAddress = "127.0.0.1:5567"
+	testContactIP   = "127.0.0.1"
+	testContactPort = 5567
 )
 
 // Test helper functions
@@ -53,9 +53,9 @@ func TestNewDHTNode(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:    "with provided DHT implementation",
-			dhtImpl: mocks.NewMockDHT(t),
-			options: []DHTOption{},
+			name:        "with provided DHT implementation",
+			dhtImpl:     mocks.NewMockDHT(t),
+			options:     []DHTOption{},
 			expectError: false,
 		},
 		{
@@ -576,7 +576,6 @@ func TestManagedDHTNode_Wait(t *testing.T) {
 	node.Wait()
 }
 
-
 // TestManagedDHTNode_GetDHTInstance tests GetDHTInstance
 func TestManagedDHTNode_GetDHTInstance(t *testing.T) {
 	t.Parallel()
@@ -597,9 +596,9 @@ func TestManagedDHTNode_Concurrency(t *testing.T) {
 	t.Parallel()
 
 	mockDHT := mocks.NewMockDHT(t)
-	mockDHT.EXPECT().ID().Return(getTestHash())
-	mockDHT.EXPECT().Add(getTestHash())
-	mockDHT.EXPECT().Remove(getTestHash())
+	mockDHT.EXPECT().ID().Return(getTestHash()).Times(10)
+	mockDHT.EXPECT().Add(getTestHash()).Times(10)
+	mockDHT.EXPECT().Remove(getTestHash()).Times(10)
 
 	node := &managedDHTNode{
 		dht:     mockDHT,
@@ -639,41 +638,41 @@ func TestManagedDHTNode_ParseHashFromString(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		input       string
-		expectError bool
+		name          string
+		input         string
+		expectError   bool
 		errorContains string
 	}{
 		{
-			name:    "valid hex string",
-			input:   "1234567890abcdef",
+			name:        "valid hex string",
+			input:       "1234567890abcdef",
 			expectError: false,
 		},
 		{
-			name:    "valid hex with 0x prefix",
-			input:   "0x1234567890abcdef",
+			name:        "valid hex with 0x prefix",
+			input:       "0x1234567890abcdef",
 			expectError: false,
 		},
 		{
-			name:    "valid hex with 0X prefix",
-			input:   "0X1234567890abcdef",
+			name:        "valid hex with 0X prefix",
+			input:       "0X1234567890abcdef",
 			expectError: false,
 		},
 		{
-			name:         "empty string",
-			input:        "",
-			expectError:  true,
+			name:          "empty string",
+			input:         "",
+			expectError:   true,
 			errorContains: "empty string",
 		},
 		{
-			name:         "invalid hex",
-			input:        "xyz",
-			expectError:  true,
+			name:          "invalid hex",
+			input:         "xyz",
+			expectError:   true,
 			errorContains: "invalid hash format",
 		},
 		{
-			name:    "short hex",
-			input:   "123",
+			name:        "short hex",
+			input:       "123",
 			expectError: false,
 		},
 	}

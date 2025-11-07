@@ -25,12 +25,12 @@ func createTestLogger(t *testing.T) (*zap.Logger, *observer.ObservedLogs) {
 func setupGroupNotifierWithMocks(t *testing.T, count int) (*GroupNotifier, []*mocks.MockNotifier) {
 	groupNotifier := NewGroupNotifier()
 	mockNotifiers := make([]*mocks.MockNotifier, count)
-	
+
 	for i := 0; i < count; i++ {
 		mockNotifiers[i] = mocks.NewMockNotifier(t)
 		groupNotifier.AddNotifier(mockNotifiers[i])
 	}
-	
+
 	return groupNotifier, mockNotifiers
 }
 
@@ -115,6 +115,58 @@ func TestGroupNotifierNotifyWithError(t *testing.T) {
 	assert.Contains(t, err.Error(), "mock notifier error")
 }
 
+// TestGroupNotifierNotifyBestEffort verifies that all notifiers are called even when some fail
+func TestGroupNotifierNotifyBestEffort(t *testing.T) {
+	t.Parallel()
+
+	groupNotifier, mockNotifiers := setupGroupNotifierWithMocks(t, 3)
+	mockNotifier1 := mockNotifiers[0]
+	mockNotifier2 := mockNotifiers[1]
+	mockNotifier3 := mockNotifiers[2]
+
+	// Setup expectations - first notifier fails, others succeed
+	mockNotifier1.EXPECT().Notify("test_notification", "test_data").Return(errors.New("first notifier error"))
+	mockNotifier2.EXPECT().Notify("test_notification", "test_data").Return(nil)
+	mockNotifier3.EXPECT().Notify("test_notification", "test_data").Return(nil)
+
+	// Test notification
+	id := "test_notification"
+	data := "test_data"
+
+	err := groupNotifier.Notify(id, data)
+
+	// Verify first error is returned but all notifiers were called
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "first notifier error")
+}
+
+// TestGroupNotifierNotifyMultipleErrors verifies that the first error is returned when multiple notifiers fail
+func TestGroupNotifierNotifyMultipleErrors(t *testing.T) {
+	t.Parallel()
+
+	groupNotifier, mockNotifiers := setupGroupNotifierWithMocks(t, 3)
+	mockNotifier1 := mockNotifiers[0]
+	mockNotifier2 := mockNotifiers[1]
+	mockNotifier3 := mockNotifiers[2]
+
+	// Setup expectations - all notifiers fail
+	mockNotifier1.EXPECT().Notify("test_notification", "test_data").Return(errors.New("first error"))
+	mockNotifier2.EXPECT().Notify("test_notification", "test_data").Return(errors.New("second error"))
+	mockNotifier3.EXPECT().Notify("test_notification", "test_data").Return(errors.New("third error"))
+
+	// Test notification
+	id := "test_notification"
+	data := "test_data"
+
+	err := groupNotifier.Notify(id, data)
+
+	// Verify first error is returned
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "first error")
+	assert.NotContains(t, err.Error(), "second error")
+	assert.NotContains(t, err.Error(), "third error")
+}
+
 // TestGroupNotifierEmpty verifies behavior with empty notifier list
 func TestGroupNotifierEmpty(t *testing.T) {
 	t.Parallel()
@@ -182,7 +234,6 @@ func TestNotifyBlob_BlobAddedSuccess(t *testing.T) {
 	logger, logs := createTestLogger(t)
 
 	blobHash := validTestHash
-	expectedMultihash := expectedMultihash
 
 	// Setup expectation - should be called with multihash
 	mockNotifier.EXPECT().Notify(NOTIFY_BLOB_ADDED, expectedMultihash).Return(nil)
@@ -205,7 +256,6 @@ func TestNotifyBlob_BlobRemovedSuccess(t *testing.T) {
 	logger, logs := createTestLogger(t)
 
 	blobHash := validTestHash
-	expectedMultihash := expectedMultihash
 
 	// Setup expectation - should be called with multihash
 	mockNotifier.EXPECT().Notify(NOTIFY_BLOB_REMOVED, expectedMultihash).Return(nil)
@@ -254,7 +304,6 @@ func TestNotifyBlob_NotifierError(t *testing.T) {
 	logger, logs := createTestLogger(t)
 
 	blobHash := validTestHash
-	expectedMultihash := expectedMultihash
 	notifierError := errors.New("notifier failed")
 
 	// Setup expectation - notifier returns error

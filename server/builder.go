@@ -96,12 +96,18 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 
 // WithDHTWorkers sets the number of workers for DHT announcements
 func (b *ServerBuilder) WithDHTWorkers(workers int) *ServerBuilder {
+	if workers <= 0 {
+		workers = DefaultDHTAnnouncerWorkers
+	}
 	b.dhtWorkers = workers
 	return b
 }
 
 // WithDHTBatchSize sets the batch size for DHT announcements
 func (b *ServerBuilder) WithDHTBatchSize(batchSize int) *ServerBuilder {
+	if batchSize <= 0 {
+		batchSize = DefaultDHTAnnouncementBatchSize
+	}
 	b.dhtBatchSize = batchSize
 	return b
 }

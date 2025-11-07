@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	mocks "go.lumeweb.com/liblbry/protocol/mocks"
+	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
@@ -24,7 +26,6 @@ func createTestNotifier(t *testing.T, mockAnnouncer *mocks.MockDHTAnnouncer) *DH
 func createTestNotifierWithLogger(t *testing.T, mockAnnouncer *mocks.MockDHTAnnouncer, logger *zap.Logger) *DHTNotifier {
 	return NewDHTNotifier(mockAnnouncer, logger)
 }
-
 
 // Helper function to create a debug logger
 func createDebugLogger(t *testing.T) *zap.Logger {
@@ -53,15 +54,19 @@ func TestDHTNotifier_NewDHTNotifier(t *testing.T) {
 func TestDHTNotifier_Notify_BlobAdded(t *testing.T) {
 	t.Parallel()
 
+	// Convert test multihash to LBRY hash
+	testLbryHash, err := stream.FromMultihash(testMultihash)
+	require.NoError(t, err)
+
 	// Create a mock DHT announcer
 	mockAnnouncer := mocks.NewMockDHTAnnouncer(t)
-	mockAnnouncer.EXPECT().AnnounceBlob(testMultihash).Return(nil)
+	mockAnnouncer.EXPECT().AnnounceBlob(testLbryHash).Return(nil)
 
 	// Create the DHT notifier
 	notifier := createTestNotifier(t, mockAnnouncer)
 
 	// Test successful notification
-	err := notifier.Notify(NOTIFY_BLOB_ADDED, testMultihash)
+	err = notifier.Notify(NOTIFY_BLOB_ADDED, testMultihash)
 	assert.NoError(t, err)
 }
 
@@ -69,15 +74,19 @@ func TestDHTNotifier_Notify_BlobAdded(t *testing.T) {
 func TestDHTNotifier_Notify_BlobRemoved(t *testing.T) {
 	t.Parallel()
 
+	// Convert test multihash to LBRY hash
+	testLbryHash, err := stream.FromMultihash(testMultihash)
+	require.NoError(t, err)
+
 	// Create a mock DHT announcer
 	mockAnnouncer := mocks.NewMockDHTAnnouncer(t)
-	mockAnnouncer.EXPECT().RemoveBlob(testMultihash).Return(nil)
+	mockAnnouncer.EXPECT().RemoveBlob(testLbryHash).Return(nil)
 
 	// Create the DHT notifier
 	notifier := createTestNotifier(t, mockAnnouncer)
 
 	// Test successful notification
-	err := notifier.Notify(NOTIFY_BLOB_REMOVED, testMultihash)
+	err = notifier.Notify(NOTIFY_BLOB_REMOVED, testMultihash)
 	assert.NoError(t, err)
 }
 
@@ -135,15 +144,19 @@ func TestDHTNotifier_HandleBlobAdded_ErrorCases(t *testing.T) {
 	t.Run("DHT announcer announce failure", func(t *testing.T) {
 		t.Parallel()
 
+		// Convert test multihash to LBRY hash
+		testLbryHash, err := stream.FromMultihash(testMultihash)
+		require.NoError(t, err)
+
 		// Create a mock DHT announcer
 		mockAnnouncer := mocks.NewMockDHTAnnouncer(t)
-		mockAnnouncer.EXPECT().AnnounceBlob(testMultihash).Return(errors.New("announce failed"))
+		mockAnnouncer.EXPECT().AnnounceBlob(testLbryHash).Return(errors.New("announce failed"))
 
 		// Create the DHT notifier
 		notifier := createTestNotifier(t, mockAnnouncer)
 
 		// Test with announcer failure
-		err := notifier.handleBlobAdded(testMultihash)
+		err = notifier.handleBlobAdded(testMultihash)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to announce blob to DHT")
 	})
@@ -188,15 +201,19 @@ func TestDHTNotifier_HandleBlobRemoved_ErrorCases(t *testing.T) {
 	t.Run("DHT announcer remove failure", func(t *testing.T) {
 		t.Parallel()
 
+		// Convert test multihash to LBRY hash
+		testLbryHash, err := stream.FromMultihash(testMultihash)
+		require.NoError(t, err)
+
 		// Create a mock DHT announcer
 		mockAnnouncer := mocks.NewMockDHTAnnouncer(t)
-		mockAnnouncer.EXPECT().RemoveBlob(testMultihash).Return(errors.New("remove failed"))
+		mockAnnouncer.EXPECT().RemoveBlob(testLbryHash).Return(errors.New("remove failed"))
 
 		// Create the DHT notifier
 		notifier := createTestNotifier(t, mockAnnouncer)
 
 		// Test with announcer failure
-		err := notifier.handleBlobRemoved(testMultihash)
+		err = notifier.handleBlobRemoved(testMultihash)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to remove blob from DHT")
 	})
