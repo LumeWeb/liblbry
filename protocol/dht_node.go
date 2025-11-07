@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/lbryio/lbry.go/v2/dht"
 	"github.com/lbryio/lbry.go/v2/dht/bits"
@@ -13,16 +12,16 @@ import (
 
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
 type managedDHTNode struct {
-	dht     DHT
-	config  *DHTConfig
-	mu      sync.RWMutex
-	joined  bool
-	stopped bool
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	dht      DHT
+	config   *DHTConfig
+	mu       sync.RWMutex
+	joined   bool
+	stopped  bool
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 	joinDone chan struct{} // Channel to signal when join goroutine completes
-	joinOnce sync.Once      // Ensure joinDone is closed only once
+	joinOnce sync.Once     // Ensure joinDone is closed only once
 }
 
 // isActive returns true if the DHT peer is active (not stopped and has a DHT instance)
@@ -145,13 +144,13 @@ func (w *managedDHTNode) WaitUntilJoined() {
 		w.mu.RUnlock()
 		return
 	}
-	
+
 	// Check if we're already joined
 	if w.joined {
 		w.mu.RUnlock()
 		return
 	}
-	
+
 	// Get the joinDone channel while holding the lock
 	joinDone := w.joinDone
 	w.mu.RUnlock()
@@ -259,22 +258,7 @@ func (w *managedDHTNode) GetRoutingTableInfo() string {
 
 // Wait blocks until all goroutines have finished
 func (w *managedDHTNode) Wait() {
-	// Use a goroutine to avoid blocking if WaitGroup is already at 0
-	done := make(chan struct{})
-	go func() {
-		w.wg.Wait()
-		close(done)
-	}()
-	
-	// Wait for either completion or a very short timeout
-	select {
-	case <-done:
-		return
-	case <-time.After(10 * time.Millisecond):
-		// If timeout occurs, it means the WaitGroup was likely at 0
-		// This is not an error condition, just return
-		return
-	}
+	w.wg.Wait()
 }
 
 // Restart restarts a stopped DHT node
@@ -312,10 +296,10 @@ func (w *managedDHTNode) Restart() error {
 func (w *managedDHTNode) startJoinGoroutine() {
 	// Use a channel to signal when the goroutine has started
 	started := make(chan struct{})
-	
+
 	// Capture the current joinDone channel to avoid race conditions with Restart()
 	currentJoinDone := w.joinDone
-	
+
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()

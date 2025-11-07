@@ -169,7 +169,7 @@ func TestManagedDHTNode_Restart(t *testing.T) {
 	// Expect Shutdown() to be called once
 	mockDHT.EXPECT().Shutdown()
 	// Expect WaitUntilJoined() to be called twice (once for each start)
-	mockDHT.EXPECT().WaitUntilJoined()
+	mockDHT.EXPECT().WaitUntilJoined().Times(2)
 
 	// Create node using NewDHTNode for proper initialization
 	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))

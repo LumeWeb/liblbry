@@ -265,6 +265,7 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 				break
 			}
 			s.logger.Error("Failed to list blobs from storage", zap.Error(err))
+			pool.StopWait()
 			return
 		}
 
