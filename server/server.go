@@ -221,6 +221,13 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 	// Create DHT announcer
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
 
+	// Register DHT notifier with the existing group notifier
+	if s.notifier != nil {
+		if group, ok := s.notifier.(*protocol.GroupNotifier); ok {
+			group.AddNotifier(protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier")))
+		}
+	}
+
 	s.logger.Info("DHT protocol started", zap.Int("port", config.Port))
 	return nil
 }
@@ -229,12 +236,6 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 func (s *DefaultServer) createNotifier() {
 	// Create a GroupNotifier to manage multiple notifiers
 	groupNotifier := protocol.NewGroupNotifier()
-
-	// Add DHT notifier if available
-	if s.dhtAnnouncer != nil {
-		dhtNotifier := protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier"))
-		groupNotifier.AddNotifier(dhtNotifier)
-	}
 
 	// Add logging notifier
 	loggingNotifier := protocol.NewLoggingNotifier(s.logger.Named("notifier"))

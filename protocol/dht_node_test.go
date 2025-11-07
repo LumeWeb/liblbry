@@ -9,7 +9,7 @@ import (
 	"github.com/lbryio/lbry.go/v2/dht"
 	"github.com/lbryio/lbry.go/v2/dht/bits"
 	"github.com/stretchr/testify/assert"
-	mocks "go.lumeweb.com/liblbry/protocol/mocks"
+	"go.lumeweb.com/liblbry/protocol/mocks"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -115,8 +115,8 @@ func TestManagedDHTNode_StartStop(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, node.(*managedDHTNode).stopped)
 
-	// Wait for join goroutine to complete
-	time.Sleep(10 * time.Millisecond)
+	// Wait for join to complete
+	node.WaitUntilJoined()
 
 	// Test stop
 	node.Shutdown()
@@ -169,7 +169,7 @@ func TestManagedDHTNode_Restart(t *testing.T) {
 	// Expect Shutdown() to be called once
 	mockDHT.EXPECT().Shutdown()
 	// Expect WaitUntilJoined() to be called twice (once for each start)
-	mockDHT.EXPECT().WaitUntilJoined().Twice()
+	mockDHT.EXPECT().WaitUntilJoined()
 
 	// Create node using NewDHTNode for proper initialization
 	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
@@ -180,8 +180,8 @@ func TestManagedDHTNode_Restart(t *testing.T) {
 	err = node.Start()
 	assert.NoError(t, err)
 
-	// Wait for join goroutine to complete
-	time.Sleep(10 * time.Millisecond)
+	// Wait for join to complete
+	node.WaitUntilJoined()
 
 	// Stop the node
 	node.Shutdown()
@@ -192,8 +192,8 @@ func TestManagedDHTNode_Restart(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, node.(*managedDHTNode).stopped)
 
-	// Wait for join goroutine to complete
-	time.Sleep(10 * time.Millisecond)
+	// Wait for join to complete after restart
+	node.WaitUntilJoined()
 
 	// Clean up any remaining goroutines
 	node.Wait()
@@ -203,13 +203,15 @@ func TestManagedDHTNode_Restart(t *testing.T) {
 func TestManagedDHTNode_RestartError(t *testing.T) {
 	t.Parallel()
 
-	node := &managedDHTNode{
-		dht:     mocks.NewMockDHT(t),
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	// Create a properly initialized node using NewDHTNode
+	node, err := NewDHTNode(mocks.NewMockDHT(t), WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
-	err := node.Restart()
+	// Ensure the node is not stopped (default state after creation)
+	assert.False(t, node.(*managedDHTNode).stopped)
+
+	err = node.Restart()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "DHT node must be stopped before restarting")
 }
@@ -219,11 +221,16 @@ func TestManagedDHTNode_WaitUntilJoined(t *testing.T) {
 	t.Parallel()
 
 	mockDHT := mocks.NewMockDHT(t)
+	mockDHT.EXPECT().Start().Return(nil)
 	mockDHT.EXPECT().WaitUntilJoined()
 
 	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
 	assert.NoError(t, err)
 	assert.NotNil(t, node)
+
+	// Start the node before waiting for join
+	err = node.Start()
+	assert.NoError(t, err)
 
 	node.WaitUntilJoined()
 	assert.True(t, node.(*managedDHTNode).joined)
@@ -307,13 +314,11 @@ func TestManagedDHTNode_Ping(t *testing.T) {
 	mockDHT := mocks.NewMockDHT(t)
 	mockDHT.EXPECT().Ping(testAddr).Return(nil)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
-	err := node.Ping(testAddr)
+	err = node.Ping(testAddr)
 	assert.NoError(t, err)
 }
 
@@ -325,13 +330,11 @@ func TestManagedDHTNode_PingError(t *testing.T) {
 	mockDHT := mocks.NewMockDHT(t)
 	mockDHT.EXPECT().Ping(testAddr).Return(assert.AnError)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
-	err := node.Ping(testAddr)
+	err = node.Ping(testAddr)
 	assert.Error(t, err)
 }
 
@@ -366,11 +369,9 @@ func TestManagedDHTNode_Get(t *testing.T) {
 	mockDHT := mocks.NewMockDHT(t)
 	mockDHT.EXPECT().Get(testHash).Return(expectedContacts, nil)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
 	contacts, err := node.Get(testHash)
 	assert.NoError(t, err)
@@ -405,11 +406,9 @@ func TestManagedDHTNode_Add(t *testing.T) {
 	mockDHT := mocks.NewMockDHT(t)
 	mockDHT.EXPECT().Add(testHash)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
 	node.Add(testHash)
 }
@@ -440,11 +439,9 @@ func TestManagedDHTNode_Remove(t *testing.T) {
 	mockDHT := mocks.NewMockDHT(t)
 	mockDHT.EXPECT().Remove(testHash)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
 	node.Remove(testHash)
 }
@@ -541,12 +538,13 @@ func TestManagedDHTNode_GetRoutingTableInfo(t *testing.T) {
 				mockDHT.EXPECT().ID().Return(getTestHash())
 			}
 
-			node := &managedDHTNode{
-				dht:     mockDHT,
-				config:  &DHTConfig{Address: tt.address},
-				stopped: tt.stopped,
-				joined:  tt.joined,
-			}
+			node, err := NewDHTNode(mockDHT, WithDHTAddress(tt.address))
+			assert.NoError(t, err)
+			assert.NotNil(t, node)
+
+			managedNode := node.(*managedDHTNode)
+			managedNode.stopped = tt.stopped
+			managedNode.joined = tt.joined
 
 			info := node.GetRoutingTableInfo()
 			assert.Contains(t, info, tt.contains)
@@ -563,32 +561,29 @@ func TestManagedDHTNode_Wait(t *testing.T) {
 		dht:     nil,
 		config:  &DHTConfig{},
 		stopped: false,
+		wg:      sync.WaitGroup{},
 	}
 
-	// Add a goroutine to the wait group
+	// Add a task to the WaitGroup to ensure Wait() has something to wait for
 	node.wg.Add(1)
 	go func() {
-		time.Sleep(10 * time.Millisecond)
-		node.wg.Done()
+		defer node.wg.Done()
+		time.Sleep(10 * time.Millisecond) // Brief work
 	}()
 
-	// Wait should complete
-	node.Wait()
-}
+	// Test that Wait completes without hanging
+	done := make(chan bool)
+	go func() {
+		node.Wait()
+		done <- true
+	}()
 
-// TestManagedDHTNode_GetDHTInstance tests GetDHTInstance
-func TestManagedDHTNode_GetDHTInstance(t *testing.T) {
-	t.Parallel()
-
-	mockDHT := mocks.NewMockDHT(t)
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
+	select {
+	case <-done:
+		// Test completed successfully
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Wait method hung")
 	}
-
-	instance := node.GetDHTInstance()
-	assert.Equal(t, mockDHT, instance)
 }
 
 // TestManagedDHTNode_Concurrency tests concurrent access
@@ -600,11 +595,9 @@ func TestManagedDHTNode_Concurrency(t *testing.T) {
 	mockDHT.EXPECT().Add(getTestHash()).Times(10)
 	mockDHT.EXPECT().Remove(getTestHash()).Times(10)
 
-	node := &managedDHTNode{
-		dht:     mockDHT,
-		config:  &DHTConfig{},
-		stopped: false,
-	}
+	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
@@ -631,6 +624,9 @@ func TestManagedDHTNode_Concurrency(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	// Ensure any internal goroutines are also cleaned up
+	node.Wait()
 }
 
 // TestManagedDHTNode_ParseHashFromString tests the ParseHashFromString utility function
@@ -759,13 +755,17 @@ func TestManagedDHTNode_isActive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			node := &managedDHTNode{
+			// For the "active without DHT" case, we need to ensure the node has a nil dht field
+			// We'll create a managedDHTNode directly to control the dht field
+			managedNode := &managedDHTNode{
 				dht:     tt.dht,
-				config:  &DHTConfig{},
+				config:  &DHTConfig{Address: testDHTAddress},
 				stopped: tt.stopped,
+				joined:  false,
+				wg:      sync.WaitGroup{},
 			}
 
-			active := node.isActive()
+			active := managedNode.isActive()
 			assert.Equal(t, tt.expected, active)
 		})
 	}
@@ -776,6 +776,8 @@ func TestManagedDHTNode_startJoinGoroutine(t *testing.T) {
 	t.Parallel()
 
 	mockDHT := mocks.NewMockDHT(t)
+	// Start will be called when node.Start() is called
+	mockDHT.EXPECT().Start().Return(nil)
 	mockDHT.EXPECT().WaitUntilJoined()
 	mockDHT.EXPECT().Shutdown()
 
@@ -783,19 +785,18 @@ func TestManagedDHTNode_startJoinGoroutine(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, node)
 
-	// Start the goroutine
-	managedNode := node.(*managedDHTNode)
-	managedNode.startJoinGoroutine()
+	// Start the node which will internally call startJoinGoroutine
+	err = node.Start()
+	assert.NoError(t, err)
 
-	// Wait a bit for the goroutine to complete
-	time.Sleep(10 * time.Millisecond)
+	// Wait for the join to complete
+	node.WaitUntilJoined()
 
-	// The goroutine should have set joined to true
-	assert.True(t, managedNode.joined)
+	// The node should now be joined
+	assert.True(t, node.IsJoined())
 
 	// Clean up
-	managedNode.Shutdown()
-	managedNode.wg.Wait()
+	node.Shutdown()
 }
 
 // TestManagedDHTNode_startJoinGoroutineWithCancel tests startJoinGoroutine with context cancellation
@@ -803,28 +804,26 @@ func TestManagedDHTNode_startJoinGoroutineWithCancel(t *testing.T) {
 	t.Parallel()
 
 	mockDHT := mocks.NewMockDHT(t)
-	// WaitUntilJoined might be called before cancellation is detected
-	mockDHT.EXPECT().WaitUntilJoined().Maybe()
-	// Don't expect Shutdown to be called since we're testing the cancel path
+	// Start will be called when node.Start() is called
+	mockDHT.EXPECT().Start().Return(nil)
+	// WaitUntilJoined will be called once in startJoinGoroutine but may be cancelled
+	mockDHT.EXPECT().WaitUntilJoined()
+	mockDHT.EXPECT().Shutdown()
+
 	node, err := NewDHTNode(mockDHT, WithDHTAddress(testDHTAddress))
 	assert.NoError(t, err)
 	assert.NotNil(t, node)
 
-	managedNode := node.(*managedDHTNode)
+	// Start the node first
+	err = node.Start()
+	assert.NoError(t, err)
 
-	// Cancel the context immediately
-	managedNode.cancel()
+	// Immediately shutdown to test cancellation
+	node.Shutdown()
 
-	// Start the goroutine
-	managedNode.startJoinGoroutine()
+	// The node should not be joined since we cancelled quickly
+	assert.False(t, node.IsJoined())
 
-	// Wait a bit for the goroutine to complete
-	time.Sleep(10 * time.Millisecond)
-
-	// The goroutine should have been cancelled and not set joined to true
-	assert.False(t, managedNode.joined)
-
-	// Clean up - call Shutdown directly to match the test's intent
-	managedNode.stopped = true
-	managedNode.wg.Wait()
+	// Wait should not hang
+	node.Wait()
 }

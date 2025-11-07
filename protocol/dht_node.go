@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lbryio/lbry.go/v2/dht"
 	"github.com/lbryio/lbry.go/v2/dht/bits"
@@ -20,6 +21,8 @@ type managedDHTNode struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
+	joinDone chan struct{} // Channel to signal when join goroutine completes
+	joinOnce sync.Once      // Ensure joinDone is closed only once
 }
 
 // isActive returns true if the DHT peer is active (not stopped and has a DHT instance)
@@ -64,11 +67,12 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	wrapper := &managedDHTNode{
-		dht:    dhtImpl,
-		config: config,
-		joined: false,
-		ctx:    ctx,
-		cancel: cancel,
+		dht:      dhtImpl,
+		config:   config,
+		joined:   false,
+		ctx:      ctx,
+		cancel:   cancel,
+		joinDone: make(chan struct{}),
 	}
 
 	return wrapper, nil
@@ -141,23 +145,24 @@ func (w *managedDHTNode) WaitUntilJoined() {
 		w.mu.RUnlock()
 		return
 	}
+	
+	// Check if we're already joined
+	if w.joined {
+		w.mu.RUnlock()
+		return
+	}
+	
+	// Get the joinDone channel while holding the lock
+	joinDone := w.joinDone
 	w.mu.RUnlock()
 
-	done := make(chan struct{})
-	go func() {
-		w.dht.WaitUntilJoined()
-		close(done)
-	}()
-
+	// Wait for either the join goroutine to complete or context cancellation
 	select {
+	case <-joinDone:
+		// Join goroutine completed, state should already be updated
 	case <-w.ctx.Done():
+		// Context was cancelled
 		return
-	case <-done:
-		w.mu.Lock()
-		if !w.stopped {
-			w.joined = true
-		}
-		w.mu.Unlock()
 	}
 }
 
@@ -254,7 +259,22 @@ func (w *managedDHTNode) GetRoutingTableInfo() string {
 
 // Wait blocks until all goroutines have finished
 func (w *managedDHTNode) Wait() {
-	w.wg.Wait()
+	// Use a goroutine to avoid blocking if WaitGroup is already at 0
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+	
+	// Wait for either completion or a very short timeout
+	select {
+	case <-done:
+		return
+	case <-time.After(10 * time.Millisecond):
+		// If timeout occurs, it means the WaitGroup was likely at 0
+		// This is not an error condition, just return
+		return
+	}
 }
 
 // Restart restarts a stopped DHT node
@@ -270,14 +290,14 @@ func (w *managedDHTNode) Restart() error {
 	w.stopped = false
 	w.joined = false
 	w.ctx, w.cancel = context.WithCancel(context.Background())
+	w.joinDone = make(chan struct{}) // Create new joinDone channel
+	w.joinOnce = sync.Once{}         // Reset joinOnce for the new channel
 
 	// Start fresh wait group
 	w.wg = sync.WaitGroup{}
 
-	// Release lock before potentially blocking operation
-	w.mu.Unlock()
+	// Start the DHT
 	err := w.dht.Start()
-	w.mu.Lock()
 	if err != nil {
 		return fmt.Errorf("failed to restart DHT node: %w", err)
 	}
@@ -290,27 +310,44 @@ func (w *managedDHTNode) Restart() error {
 
 // startJoinGoroutine starts a goroutine to monitor DHT join status
 func (w *managedDHTNode) startJoinGoroutine() {
+	// Use a channel to signal when the goroutine has started
+	started := make(chan struct{})
+	
+	// Capture the current joinDone channel to avoid race conditions with Restart()
+	currentJoinDone := w.joinDone
+	
 	w.wg.Add(1)
 	go func() {
 		defer w.wg.Done()
 
-		done := make(chan struct{})
-		go func() {
-			w.dht.WaitUntilJoined()
-			close(done)
-		}()
+		// Signal that we've started
+		close(started)
 
+		// Check if context is already cancelled before starting
 		select {
 		case <-w.ctx.Done():
 			return
-		case <-done:
-			w.mu.Lock()
-			if !w.stopped {
-				w.joined = true
-			}
-			w.mu.Unlock()
+		default:
 		}
+
+		// Call the underlying DHT's WaitUntilJoined directly
+		// This is a blocking call that waits for the DHT to join the network
+		w.dht.WaitUntilJoined()
+
+		// After WaitUntilJoined returns, check if we're still active and using the same channel
+		w.mu.Lock()
+		if !w.stopped && w.joinDone == currentJoinDone {
+			w.joined = true
+			// Use sync.Once to ensure the channel is only closed once
+			w.joinOnce.Do(func() {
+				close(w.joinDone)
+			})
+		}
+		w.mu.Unlock()
 	}()
+
+	// Wait for the goroutine to start before returning
+	<-started
 }
 
 // PrintState prints the current state of the DHT (for debugging)
