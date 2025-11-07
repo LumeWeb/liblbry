@@ -80,9 +80,60 @@ func (b *ServerBuilder) WithReflector(port ...int) *ServerBuilder {
 
 // WithDHT adds a DHT protocol handler on the specified port
 func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
-	return b.withProtocolConfig(ProtocolDHT, DefaultDHTPort, port, func(p int) any {
-		return &DHTConfig{Port: p}
-	})
+	// Get the port to use
+	p := DefaultDHTPort
+	if len(port) > 0 {
+		p = port[0]
+	}
+	
+	// Check if DHT protocol config already exists
+	dhtConfig, exists := b.protocols[ProtocolDHT]
+	
+	if exists {
+		// If it exists, preserve the SeedNodes and only update the Port
+		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
+			seedNodes := dhtCfg.SeedNodes // Preserve existing seed nodes
+			b.protocols[ProtocolDHT] = &DHTConfig{
+				Port:      p,
+				SeedNodes: seedNodes,
+			}
+		}
+	} else {
+		// If it doesn't exist, create new config with empty seed nodes
+		b.protocols[ProtocolDHT] = &DHTConfig{
+			Port:      p,
+			SeedNodes: []string{}, // Empty slice instead of nil
+		}
+	}
+	
+	return b
+}
+
+// WithDHTSeedNodes sets seed nodes for the DHT protocol
+func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
+	// Handle nil seedNodes by converting to empty slice
+	if seedNodes == nil {
+		seedNodes = []string{}
+	}
+	
+	// Check if DHT protocol config exists
+	dhtConfig, exists := b.protocols[ProtocolDHT]
+	
+	if !exists {
+		// Create a new DHTConfig with default port if it doesn't exist
+		dhtConfig = &DHTConfig{
+			Port:      DefaultDHTPort,
+			SeedNodes: seedNodes,
+		}
+		b.protocols[ProtocolDHT] = dhtConfig
+	} else {
+		// Update existing DHT config's seed nodes
+		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
+			dhtCfg.SeedNodes = seedNodes
+		}
+	}
+	
+	return b
 }
 
 // WithLogger sets the logger for the server
