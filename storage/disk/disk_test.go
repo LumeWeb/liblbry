@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
 	"go.uber.org/zap"
 )
@@ -614,8 +615,9 @@ func TestDiskStore_List(t *testing.T) {
 
 	// Test with offset beyond available data
 	hashes, err = store.List(10, 5)
-	require.NoError(t, err)
-	assert.Empty(t, hashes)
+	require.Error(t, err)
+	assert.True(t, liblbryerrors.IsEndOfListError(err))
+	assert.Nil(t, hashes)
 
 	// Test error conditions
 	_, err = store.List(-1, 5)
@@ -728,19 +730,19 @@ func TestDiskStore_Delete(t *testing.T) {
 		store, _ := setupTestStore(t)
 		hash := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
 		data := []byte("test data 1")
-		
+
 		err := store.Put(hash, data)
 		require.NoError(t, err)
-		
+
 		// Verify blob exists
 		exists, err := store.Has(hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Delete the blob
 		err = store.Delete(hash)
 		require.NoError(t, err)
-		
+
 		// Verify blob is deleted
 		exists, err = store.Has(hash)
 		require.NoError(t, err)
@@ -752,19 +754,19 @@ func TestDiskStore_Delete(t *testing.T) {
 		store, _ := setupTestStore(t)
 		hash := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		data := []byte("test data 2")
-		
+
 		err := store.PutSD(hash, data)
 		require.NoError(t, err)
-		
+
 		// Verify blob exists
 		exists, err := store.Has(hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Delete the blob
 		err = store.Delete(hash)
 		require.NoError(t, err)
-		
+
 		// Verify blob is deleted
 		exists, err = store.Has(hash)
 		require.NoError(t, err)
@@ -777,22 +779,22 @@ func TestDiskStore_Delete(t *testing.T) {
 		hash := "212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1"
 		regularData := []byte("regular data")
 		sdData := []byte("sd data")
-		
+
 		err := store.Put(hash, regularData)
 		require.NoError(t, err)
-		
+
 		err = store.PutSD(hash, sdData)
 		require.NoError(t, err)
-		
+
 		// Verify blob exists
 		exists, err := store.Has(hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Delete the blob
 		err = store.Delete(hash)
 		require.NoError(t, err)
-		
+
 		// Verify blob is deleted
 		exists, err = store.Has(hash)
 		require.NoError(t, err)
@@ -803,11 +805,11 @@ func TestDiskStore_Delete(t *testing.T) {
 	t.Run("DeleteNonExistentBlob", func(t *testing.T) {
 		store, _ := setupTestStore(t)
 		hash := "09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57"
-		
+
 		// Delete non-existent blob (should be no-op)
 		err := store.Delete(hash)
 		require.NoError(t, err)
-		
+
 		// Verify blob still doesn't exist
 		exists, err := store.Has(hash)
 		require.NoError(t, err)
@@ -817,7 +819,7 @@ func TestDiskStore_Delete(t *testing.T) {
 	// Delete with invalid hash format (should return ErrInvalidHash)
 	t.Run("DeleteWithInvalidHash", func(t *testing.T) {
 		store, _ := setupTestStore(t)
-		
+
 		invalidHashes := []struct {
 			hash string
 			desc string
@@ -828,7 +830,7 @@ func TestDiskStore_Delete(t *testing.T) {
 			{"../abc123", "path traversal"},
 			{"abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd12345", "too long"},
 		}
-		
+
 		for _, tc := range invalidHashes {
 			t.Run(tc.desc, func(t *testing.T) {
 				err := store.Delete(tc.hash)
@@ -841,7 +843,7 @@ func TestDiskStore_Delete(t *testing.T) {
 	// Delete from empty store
 	t.Run("DeleteFromEmptyStore", func(t *testing.T) {
 		store, _ := setupTestStore(t)
-		
+
 		// Delete from empty store (should be no-op)
 		err := store.Delete("adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
 		require.NoError(t, err)
@@ -850,53 +852,53 @@ func TestDiskStore_Delete(t *testing.T) {
 	// Delete multiple blobs in sequence
 	t.Run("DeleteMultipleBlobs", func(t *testing.T) {
 		store, _ := setupTestStore(t)
-		
+
 		// Add multiple blobs
 		blob1 := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
 		blob2 := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		blob3 := "212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1"
-		
+
 		err := store.Put(blob1, []byte("data1"))
 		require.NoError(t, err)
-		
+
 		err = store.PutSD(blob2, []byte("data2"))
 		require.NoError(t, err)
-		
+
 		err = store.Put(blob3, []byte("data3"))
 		require.NoError(t, err)
-		
+
 		// Verify all blobs exist
 		exists, err := store.Has(blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		exists, err = store.Has(blob2)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		exists, err = store.Has(blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Delete blobs sequentially
 		err = store.Delete(blob1)
 		require.NoError(t, err)
-		
+
 		err = store.Delete(blob2)
 		require.NoError(t, err)
-		
+
 		err = store.Delete(blob3)
 		require.NoError(t, err)
-		
+
 		// Verify all blobs are deleted
 		exists, err = store.Has(blob1)
 		require.NoError(t, err)
 		assert.False(t, exists)
-		
+
 		exists, err = store.Has(blob2)
 		require.NoError(t, err)
 		assert.False(t, exists)
-		
+
 		exists, err = store.Has(blob3)
 		require.NoError(t, err)
 		assert.False(t, exists)
@@ -907,19 +909,19 @@ func TestDiskStore_Delete(t *testing.T) {
 		store, tempDir := setupTestStore(t)
 		hash := "09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57"
 		data := []byte("test data")
-		
+
 		err := store.Put(hash, data)
 		require.NoError(t, err)
-		
+
 		// Verify file exists before deletion
 		blobPath := filepath.Join(tempDir, hash[:2], hash)
 		_, err = os.Stat(blobPath)
 		require.NoError(t, err, "File should exist before deletion")
-		
+
 		// Delete the blob
 		err = store.Delete(hash)
 		require.NoError(t, err)
-		
+
 		// Verify file is actually deleted
 		_, err = os.Stat(blobPath)
 		assert.True(t, os.IsNotExist(err), "File should not exist after deletion")
@@ -928,47 +930,47 @@ func TestDiskStore_Delete(t *testing.T) {
 	// Verify Delete doesn't affect other blobs
 	t.Run("DeleteDoesntAffectOtherBlobs", func(t *testing.T) {
 		store, _ := setupTestStore(t)
-		
+
 		// Add multiple blobs
 		blob1 := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
 		blob2 := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		blob3 := "212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1"
-		
+
 		err := store.Put(blob1, []byte("data1"))
 		require.NoError(t, err)
-		
+
 		err = store.PutSD(blob2, []byte("data2"))
 		require.NoError(t, err)
-		
+
 		err = store.Put(blob3, []byte("data3"))
 		require.NoError(t, err)
-		
+
 		// Verify all blobs exist
 		exists, err := store.Has(blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		exists, err = store.Has(blob2)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		exists, err = store.Has(blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Delete one blob
 		err = store.Delete(blob2)
 		require.NoError(t, err)
-		
+
 		// Verify other blobs still exist
 		exists, err = store.Has(blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		exists, err = store.Has(blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
-		
+
 		// Verify deleted blob doesn't exist
 		exists, err = store.Has(blob2)
 		require.NoError(t, err)
@@ -978,53 +980,53 @@ func TestDiskStore_Delete(t *testing.T) {
 	// Test with both regular and SD blob directories
 	t.Run("TestBothRegularAndSDDirectories", func(t *testing.T) {
 		store, tempDir := setupTestStore(t)
-		
+
 		regularHash := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
 		sdHash := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
-		
+
 		regularData := []byte("regular data")
 		sdData := []byte("sd data")
-		
+
 		// Store blobs
 		err := store.Put(regularHash, regularData)
 		require.NoError(t, err)
-		
+
 		err = store.PutSD(sdHash, sdData)
 		require.NoError(t, err)
-		
+
 		// Verify directories exist
 		regularDir := filepath.Join(tempDir, regularHash[:2])
 		sdDir := filepath.Join(tempDir, "sd", sdHash[:2])
-		
+
 		_, err = os.Stat(regularDir)
 		require.NoError(t, err, "Regular blob directory should exist")
-		
+
 		_, err = os.Stat(sdDir)
 		require.NoError(t, err, "SD blob directory should exist")
-		
+
 		// Delete blobs
 		err = store.Delete(regularHash)
 		require.NoError(t, err)
-		
+
 		err = store.Delete(sdHash)
 		require.NoError(t, err)
-		
+
 		// Verify blobs are deleted
 		exists, err := store.Has(regularHash)
 		require.NoError(t, err)
 		assert.False(t, exists)
-		
+
 		exists, err = store.Has(sdHash)
 		require.NoError(t, err)
 		assert.False(t, exists)
-		
+
 		// Verify files are deleted (directories may remain)
 		regularPath := filepath.Join(regularDir, regularHash)
 		sdPath := filepath.Join(sdDir, sdHash)
-		
+
 		_, err = os.Stat(regularPath)
 		assert.True(t, os.IsNotExist(err), "Regular blob file should be deleted")
-		
+
 		_, err = os.Stat(sdPath)
 		assert.True(t, os.IsNotExist(err), "SD blob file should be deleted")
 	})

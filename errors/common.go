@@ -29,6 +29,7 @@ var (
 	ErrAcquisitionFailed = errors.New("failed to acquire blob from all transfer methods")
 	ErrInvalidOffset     = errors.New("offset must be non-negative")
 	ErrInvalidLimit      = errors.New("limit must be positive")
+	ErrEndOfList         = errors.New("end of list reached")
 )
 
 // IsBlobNotFoundError checks if an error represents a blob not found condition
@@ -39,6 +40,15 @@ func IsBlobNotFoundError(err error) bool {
 	}
 	errStr := err.Error()
 	return err == ErrBlobNotFound || errStr == ErrBlobNotFound.Error() || strings.Contains(errStr, "blob not found")
+}
+
+// IsEndOfListError checks if an error represents an end-of-list condition
+func IsEndOfListError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return err == ErrEndOfList || errStr == ErrEndOfList.Error() || strings.Contains(errStr, "end of list reached")
 }
 
 // IsKnownErrorType checks if an error is a known protocol error that shouldn't be wrapped
@@ -56,7 +66,8 @@ func IsKnownErrorType(err error) bool {
 		err == ErrInvalidConfig ||
 		err == ErrNoBlobData ||
 		err == ErrAlreadyConnected ||
-		err == ErrAcquisitionFailed
+		err == ErrAcquisitionFailed ||
+		err == ErrEndOfList
 }
 
 // DetectErrorType detects specific error types by string matching since errors come from different process

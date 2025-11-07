@@ -76,6 +76,7 @@ type DefaultPeerServer struct {
 	store             storage.BlobStore
 	protector         Protector
 	accessControl     storage.AccessControl
+	notifier          Notifier
 	connectionTimeout time.Duration
 	logger            *zap.Logger
 }
@@ -142,6 +143,13 @@ func WithPeerTimeout(timeout time.Duration) ServerOption {
 func WithPeerLogger(logger *zap.Logger) ServerOption {
 	return func(s *DefaultPeerServer) {
 		s.logger = logger
+	}
+}
+
+// WithPeerNotifier sets the notifier for the peer server
+func WithPeerNotifier(notifier Notifier) ServerOption {
+	return func(s *DefaultPeerServer) {
+		s.notifier = notifier
 	}
 }
 
@@ -423,6 +431,9 @@ func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string
 		BlobHash: blobHash,
 		Length:   len(data),
 	}
+
+	// Notify about blob availability if notifier is configured
+	NotifyBlob(p.notifier, p.logger, NOTIFY_BLOB_ADDED, blobHash)
 
 	return incomingBlob, data, nil
 }

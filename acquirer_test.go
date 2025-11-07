@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob/transfer"
 	transferMocks "go.lumeweb.com/liblbry/blob/transfer/mocks"
-	lbryerrors "go.lumeweb.com/liblbry/errors"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage/mocks"
 )
 
@@ -118,7 +118,7 @@ func TestBlobAcquirer_Acquire_AllMethodsFail(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, data)
-	assert.Equal(t, lbryerrors.ErrAcquisitionFailed, err)
+	assert.Equal(t, liblbryerrors.ErrAcquisitionFailed, err)
 }
 
 func TestBlobAcquirer_Acquire_StorageHasError(t *testing.T) {
@@ -175,7 +175,7 @@ func TestBlobAcquirer_Acquire_EmptyTransfersList(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, data)
-	assert.Equal(t, lbryerrors.ErrAcquisitionFailed, err)
+	assert.Equal(t, liblbryerrors.ErrAcquisitionFailed, err)
 }
 
 func TestBlobAcquirer_Acquire_StoragePutError(t *testing.T) {

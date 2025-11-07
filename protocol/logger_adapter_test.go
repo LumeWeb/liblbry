@@ -40,7 +40,7 @@ func TestZapToLogrusAdapter(t *testing.T) {
 
 	// Parse the JSON output
 	output := buffer.String()
-	var logEntry map[string]interface{}
+	var logEntry map[string]any
 	err := json.Unmarshal([]byte(output), &logEntry)
 	assert.NoError(t, err, "Failed to parse log output as JSON")
 
@@ -83,7 +83,7 @@ func TestZapHook(t *testing.T) {
 				hook.Fire(&logrus.Entry{
 					Level:   logrus.DebugLevel,
 					Message: "debug message",
-					Data:    map[string]interface{}{"key": "debug_value"},
+					Data:    map[string]any{"key": "debug_value"},
 				})
 			},
 			expected: "debug message",
@@ -94,7 +94,7 @@ func TestZapHook(t *testing.T) {
 				hook.Fire(&logrus.Entry{
 					Level:   logrus.InfoLevel,
 					Message: "info message",
-					Data:    map[string]interface{}{"key": "info_value"},
+					Data:    map[string]any{"key": "info_value"},
 				})
 			},
 			expected: "info message",
@@ -105,7 +105,7 @@ func TestZapHook(t *testing.T) {
 				hook.Fire(&logrus.Entry{
 					Level:   logrus.WarnLevel,
 					Message: "warn message",
-					Data:    map[string]interface{}{"key": "warn_value"},
+					Data:    map[string]any{"key": "warn_value"},
 				})
 			},
 			expected: "warn message",
@@ -116,7 +116,7 @@ func TestZapHook(t *testing.T) {
 				hook.Fire(&logrus.Entry{
 					Level:   logrus.ErrorLevel,
 					Message: "error message",
-					Data:    map[string]interface{}{"key": "error_value"},
+					Data:    map[string]any{"key": "error_value"},
 				})
 			},
 			expected: "error message",

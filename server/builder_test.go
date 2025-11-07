@@ -11,6 +11,100 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+// Test constants for protocol ports
+// These values are chosen to avoid conflicts with standard ports
+// and to clearly distinguish between different protocol types
+const (
+	testPortPeer      = 8080
+	testPortReflector = 9090
+	testPortDHT       = 4444
+	testPortPeer2     = 5567
+	testPortReflector2 = 5566
+	testPortDHT2      = 5555
+)
+
+// builderTestMocks holds all common mocks used in builder tests
+type builderTestMocks struct {
+	storage       *storageMocks.MockBlobStore
+	acquirer      *mocks.MockBlobAcquirer
+	accessControl *storageMocks.MockAccessControl
+	logger        *zap.Logger
+}
+
+// setupBuilderMocks initializes all standard mocks for builder testing
+func setupBuilderMocks(t *testing.T) *builderTestMocks {
+	return &builderTestMocks{
+		storage:       storageMocks.NewMockBlobStore(t),
+		acquirer:      mocks.NewMockBlobAcquirer(t),
+		accessControl: storageMocks.NewMockAccessControl(t),
+		logger:        zaptest.NewLogger(t),
+	}
+}
+
+// setupBuilderWithMocks creates a builder with all mocks configured
+func setupBuilderWithMocks(t *testing.T) (*ServerBuilder, *builderTestMocks) {
+	testMocks := setupBuilderMocks(t)
+	builder := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithAcquirer(testMocks.acquirer).
+		WithAccessControl(testMocks.accessControl).
+		WithLogger(testMocks.logger)
+	return builder, testMocks
+}
+
+// assertBuilderReturnsSame verifies that a builder method returns the same instance
+// This ensures method chaining works correctly and maintains immutability
+func assertBuilderReturnsSame(t *testing.T, originalBuilder *ServerBuilder, resultBuilder *ServerBuilder) {
+	assert.Same(t, originalBuilder, resultBuilder, "Builder method should return the same instance")
+}
+
+// assertProtocolConfig validates that a protocol is correctly configured with the expected port
+// This helper function ensures that protocol configurations are properly set during testing
+func assertProtocolConfig(t *testing.T, builder *ServerBuilder, protocolName string, expectedPort int) {
+	assert.Contains(t, builder.protocols, protocolName, "Protocol should be configured")
+	
+	switch protocolName {
+	case ProtocolPeer:
+		config := builder.protocols[protocolName].(*PeerConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	case ProtocolReflector:
+		config := builder.protocols[protocolName].(*ReflectorConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	case ProtocolDHT:
+		config := builder.protocols[protocolName].(*DHTConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	}
+}
+
+// assertServerProtocolConfig validates that a built server has the correct protocol configuration
+// This ensures that the server construction process properly applies protocol settings
+func assertServerProtocolConfig(t *testing.T, server *DefaultServer, protocolName string, expectedPort int) {
+	assert.Contains(t, server.protocols, protocolName, "Protocol should be configured")
+	
+	switch protocolName {
+	case ProtocolPeer:
+		config := server.protocols[protocolName].(*PeerConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	case ProtocolReflector:
+		config := server.protocols[protocolName].(*ReflectorConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	case ProtocolDHT:
+		config := server.protocols[protocolName].(*DHTConfig)
+		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
+	}
+}
+
+// assertBuildError verifies that server building fails with the expected error message
+// This helper ensures that validation logic in the builder properly rejects invalid configurations
+func assertBuildError(t *testing.T, builder *ServerBuilder, expectedError string) {
+	server, err := builder.Build()
+	assert.Error(t, err, "Build should return an error")
+	assert.Nil(t, server, "Server should be nil when build fails")
+	assert.Contains(t, err.Error(), expectedError, "Error message should contain expected text")
+}
+
+// TestNewServerBuilder verifies that a new server builder is properly initialized
+// This ensures the builder starts with clean state and default logger
 func TestNewServerBuilder(t *testing.T) {
 	builder := NewServerBuilder()
 
@@ -19,134 +113,146 @@ func TestNewServerBuilder(t *testing.T) {
 	assert.NotNil(t, builder.logger)
 }
 
+// TestServerBuilder_WithStorage verifies that storage can be properly set on the builder
+// This ensures the builder correctly stores and references the provided storage component
 func TestServerBuilder_WithStorage(t *testing.T) {
 	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
+	testMocks := setupBuilderMocks(t)
 
-	result := builder.WithStorage(mockStorage)
+	result := builder.WithStorage(testMocks.storage)
 
-	assert.Same(t, builder, result) // Should return the same builder instance
-	assert.Same(t, mockStorage, builder.storage)
+	assertBuilderReturnsSame(t, builder, result)
+	assert.Same(t, testMocks.storage, builder.storage)
 }
 
+// TestServerBuilder_WithAcquirer verifies that blob acquirer can be properly set on the builder
+// This ensures the builder correctly stores and references the provided acquirer component
 func TestServerBuilder_WithAcquirer(t *testing.T) {
 	builder := NewServerBuilder()
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
+	testMocks := setupBuilderMocks(t)
 
-	result := builder.WithAcquirer(mockAcquirer)
+	result := builder.WithAcquirer(testMocks.acquirer)
 
-	assert.Same(t, builder, result) // Should return the same builder instance
-	assert.Same(t, mockAcquirer, builder.acquirer)
+	assertBuilderReturnsSame(t, builder, result)
+	assert.Same(t, testMocks.acquirer, builder.acquirer)
 }
 
+// TestServerBuilder_WithAccessControl verifies that access control can be properly set on the builder
+// This ensures the builder correctly stores and references the provided access control component
 func TestServerBuilder_WithAccessControl(t *testing.T) {
 	builder := NewServerBuilder()
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
+	testMocks := setupBuilderMocks(t)
 
-	result := builder.WithAccessControl(mockAccessControl)
+	result := builder.WithAccessControl(testMocks.accessControl)
 
-	assert.Same(t, builder, result) // Should return the same builder instance
-	assert.Same(t, mockAccessControl, builder.accessControl)
+	assertBuilderReturnsSame(t, builder, result)
+	assert.Same(t, testMocks.accessControl, builder.accessControl)
 }
 
+// TestServerBuilder_WithLogger verifies that a custom logger can be properly set on the builder
+// This ensures the builder correctly stores and references the provided logger component
 func TestServerBuilder_WithLogger(t *testing.T) {
 	builder := NewServerBuilder()
-	logger := zaptest.NewLogger(t)
+	testMocks := setupBuilderMocks(t)
 
-	result := builder.WithLogger(logger)
+	result := builder.WithLogger(testMocks.logger)
 
-	assert.Same(t, builder, result) // Should return the same builder instance
-	assert.Same(t, logger, builder.logger)
+	assertBuilderReturnsSame(t, builder, result)
+	assert.Same(t, testMocks.logger, builder.logger)
 }
 
-func TestServerBuilder_WithPeer_DefaultPort(t *testing.T) {
-	builder := NewServerBuilder()
+// TestServerBuilder_WithPeer verifies peer protocol configuration with default and custom ports
+// This test ensures that peer protocols can be correctly configured with either default or custom ports
+func TestServerBuilder_WithPeer(t *testing.T) {
+	tests := []struct {
+		name        string
+		port        int
+		expectedPort int
+	}{
+		{"DefaultPort", 0, DefaultPeerPort},
+		{"CustomPort", testPortPeer, testPortPeer},
+	}
 
-	result := builder.WithPeer()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewServerBuilder()
+			
+			var result *ServerBuilder
+			if tt.port == 0 {
+				result = builder.WithPeer()
+			} else {
+				result = builder.WithPeer(tt.port)
+			}
 
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolPeer)
-
-	config := builder.protocols[ProtocolPeer].(*PeerConfig)
-	assert.Equal(t, DefaultPeerPort, config.Port)
+			assertBuilderReturnsSame(t, builder, result)
+			assertProtocolConfig(t, builder, ProtocolPeer, tt.expectedPort)
+		})
+	}
 }
 
-func TestServerBuilder_WithPeer_CustomPort(t *testing.T) {
-	builder := NewServerBuilder()
-	customPort := 8080
+// TestServerBuilder_WithReflector verifies reflector protocol configuration with default and custom ports
+// This test ensures that reflector protocols can be correctly configured with either default or custom ports
+func TestServerBuilder_WithReflector(t *testing.T) {
+	tests := []struct {
+		name        string
+		port        int
+		expectedPort int
+	}{
+		{"DefaultPort", 0, DefaultReflectorPort},
+		{"CustomPort", testPortReflector, testPortReflector},
+	}
 
-	result := builder.WithPeer(customPort)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewServerBuilder()
+			
+			var result *ServerBuilder
+			if tt.port == 0 {
+				result = builder.WithReflector()
+			} else {
+				result = builder.WithReflector(tt.port)
+			}
 
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolPeer)
-
-	config := builder.protocols[ProtocolPeer].(*PeerConfig)
-	assert.Equal(t, customPort, config.Port)
+			assertBuilderReturnsSame(t, builder, result)
+			assertProtocolConfig(t, builder, ProtocolReflector, tt.expectedPort)
+		})
+	}
 }
 
-func TestServerBuilder_WithReflector_DefaultPort(t *testing.T) {
-	builder := NewServerBuilder()
+// TestServerBuilder_WithDHT verifies DHT protocol configuration with default and custom ports
+// This test ensures that DHT protocols can be correctly configured with either default or custom ports
+func TestServerBuilder_WithDHT(t *testing.T) {
+	tests := []struct {
+		name        string
+		port        int
+		expectedPort int
+	}{
+		{"DefaultPort", 0, DefaultDHTPort},
+		{"CustomPort", testPortDHT, testPortDHT},
+	}
 
-	result := builder.WithReflector()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewServerBuilder()
+			
+			var result *ServerBuilder
+			if tt.port == 0 {
+				result = builder.WithDHT()
+			} else {
+				result = builder.WithDHT(tt.port)
+			}
 
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolReflector)
-
-	config := builder.protocols[ProtocolReflector].(*ReflectorConfig)
-	assert.Equal(t, DefaultReflectorPort, config.Port)
+			assertBuilderReturnsSame(t, builder, result)
+			assertProtocolConfig(t, builder, ProtocolDHT, tt.expectedPort)
+		})
+	}
 }
 
-func TestServerBuilder_WithReflector_CustomPort(t *testing.T) {
-	builder := NewServerBuilder()
-	customPort := 9090
-
-	result := builder.WithReflector(customPort)
-
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolReflector)
-
-	config := builder.protocols[ProtocolReflector].(*ReflectorConfig)
-	assert.Equal(t, customPort, config.Port)
-}
-
-func TestServerBuilder_WithDHT_DefaultPort(t *testing.T) {
-	builder := NewServerBuilder()
-
-	result := builder.WithDHT()
-
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-
-	config := builder.protocols[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, DefaultDHTPort, config.Port)
-}
-
-func TestServerBuilder_WithDHT_CustomPort(t *testing.T) {
-	builder := NewServerBuilder()
-	customPort := 8080
-
-	result := builder.WithDHT(customPort)
-
-	assert.Same(t, builder, result)
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-
-	config := builder.protocols[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, customPort, config.Port)
-}
-
+// TestServerBuilder_Build_Success verifies successful server building with valid configuration
+// This test ensures that a server can be properly constructed when all required components are provided
 func TestServerBuilder_Build_Success(t *testing.T) {
-	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	builder.
-		WithStorage(mockStorage).
-		WithAcquirer(mockAcquirer).
-		WithAccessControl(mockAccessControl).
-		WithPeer(5567).
-		WithLogger(logger)
+	builder, testMocks := setupBuilderWithMocks(t)
+	builder.WithPeer(testPortPeer2)
 
 	server, err := builder.Build()
 
@@ -156,22 +262,21 @@ func TestServerBuilder_Build_Success(t *testing.T) {
 	// Verify the server is of the correct type
 	defaultServer, ok := server.(*DefaultServer)
 	require.True(t, ok)
-	assert.Same(t, mockStorage, defaultServer.storage)
-	assert.Same(t, mockAcquirer, defaultServer.acquirer)
-	assert.Same(t, mockAccessControl, defaultServer.accessControl)
+	assert.Same(t, testMocks.storage, defaultServer.storage)
+	assert.Same(t, testMocks.acquirer, defaultServer.acquirer)
+	assert.Same(t, testMocks.accessControl, defaultServer.accessControl)
 	assert.Equal(t, "server", defaultServer.logger.Name())
 	assert.Contains(t, defaultServer.protocols, ProtocolPeer)
 }
 
+// TestServerBuilder_Build_MultipleProtocols verifies server building with multiple protocols
+// This test ensures that servers can be constructed with multiple protocols simultaneously
 func TestServerBuilder_Build_MultipleProtocols(t *testing.T) {
-	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
-
+	builder, _ := setupBuilderWithMocks(t)
 	builder.
-		WithStorage(mockStorage).
-		WithPeer(5567).
-		WithReflector(5566).
-		WithDHT(4444)
+		WithPeer(testPortPeer2).
+		WithReflector(testPortReflector2).
+		WithDHT(testPortDHT2)
 
 	server, err := builder.Build()
 
@@ -184,97 +289,119 @@ func TestServerBuilder_Build_MultipleProtocols(t *testing.T) {
 	assert.Contains(t, defaultServer.protocols, ProtocolDHT)
 }
 
-func TestServerBuilder_Build_Error_NoStorage(t *testing.T) {
-	builder := NewServerBuilder()
-	builder.WithPeer(5567) // Add protocol but no storage
+// TestServerBuilder_Build_Errors verifies that server building properly handles various error conditions
+// This test ensures that the builder correctly validates its configuration and provides helpful error messages
+func TestServerBuilder_Build_Errors(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupBuilder  func(t *testing.T) *ServerBuilder
+		expectedError string
+	}{
+		{
+			name: "NoStorage",
+			setupBuilder: func(t *testing.T) *ServerBuilder {
+				builder := NewServerBuilder()
+				builder.WithPeer(testPortPeer2)
+				return builder
+			},
+			expectedError: "storage is required",
+		},
+		{
+			name: "NoProtocols",
+			setupBuilder: func(t *testing.T) *ServerBuilder {
+				mocks := setupBuilderMocks(t)
+				builder := NewServerBuilder()
+				builder.WithStorage(mocks.storage)
+				return builder
+			},
+			expectedError: "at least one protocol must be configured",
+		},
+		{
+			name: "NoStorageAndNoProtocols",
+			setupBuilder: func(t *testing.T) *ServerBuilder {
+				return NewServerBuilder()
+			},
+			expectedError: "storage is required",
+		},
+	}
 
-	server, err := builder.Build()
-
-	assert.Error(t, err)
-	assert.Nil(t, server)
-	assert.Contains(t, err.Error(), "storage is required")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := tt.setupBuilder(t)
+			assertBuildError(t, builder, tt.expectedError)
+		})
+	}
 }
 
-func TestServerBuilder_Build_Error_NoProtocols(t *testing.T) {
-	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	builder.WithStorage(mockStorage) // Add storage but no protocols
-
-	server, err := builder.Build()
-
-	assert.Error(t, err)
-	assert.Nil(t, server)
-	assert.Contains(t, err.Error(), "at least one protocol must be configured")
-}
-
-func TestServerBuilder_Build_Error_NoStorageAndNoProtocols(t *testing.T) {
-	builder := NewServerBuilder() // No storage, no protocols
-
-	server, err := builder.Build()
-
-	assert.Error(t, err)
-	assert.Nil(t, server)
-	// Should return the first error encountered (storage check comes first)
-	assert.Contains(t, err.Error(), "storage is required")
-}
-
+// TestServerBuilder_ChainedMethods verifies that builder method chaining works correctly
+// This test ensures that all builder methods can be properly chained together for fluent API usage
 func TestServerBuilder_ChainedMethods(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+	testMocks := setupBuilderMocks(t)
 
 	// Test method chaining works correctly
 	server, err := NewServerBuilder().
-		WithStorage(mockStorage).
-		WithAcquirer(mockAcquirer).
-		WithAccessControl(mockAccessControl).
-		WithPeer(8080).
-		WithReflector(9090).
-		WithDHT(4444).
-		WithLogger(logger).
+		WithStorage(testMocks.storage).
+		WithAcquirer(testMocks.acquirer).
+		WithAccessControl(testMocks.accessControl).
+		WithPeer(testPortPeer).
+		WithReflector(testPortReflector).
+		WithDHT(testPortDHT).
+		WithLogger(testMocks.logger).
 		Build()
 
 	require.NoError(t, err)
 	assert.NotNil(t, server)
 }
 
+// TestServerBuilder_ProtocolOverwrite verifies that protocol configurations can be overwritten
+// This test ensures that later protocol configurations properly overwrite earlier ones
 func TestServerBuilder_ProtocolOverwrite(t *testing.T) {
-	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
+	tests := []struct {
+		name         string
+		protocolName string
+		setupFunc    func(*ServerBuilder)
+		expectedPort int
+	}{
+		{
+			name:         "PeerProtocol",
+			protocolName: ProtocolPeer,
+			setupFunc: func(b *ServerBuilder) {
+				b.WithPeer(testPortPeer2).WithPeer(testPortPeer)
+			},
+			expectedPort: testPortPeer,
+		},
+		{
+			name:         "ReflectorProtocol",
+			protocolName: ProtocolReflector,
+			setupFunc: func(b *ServerBuilder) {
+				b.WithReflector(testPortReflector2).WithReflector(testPortReflector)
+			},
+			expectedPort: testPortReflector,
+		},
+		{
+			name:         "DHTProtocol",
+			protocolName: ProtocolDHT,
+			setupFunc: func(b *ServerBuilder) {
+				b.WithDHT(testPortDHT2).WithDHT(testPortDHT)
+			},
+			expectedPort: testPortDHT,
+		},
+	}
 
-	// Add peer protocol twice with different ports
-	builder.
-		WithStorage(mockStorage).
-		WithPeer(5567).
-		WithPeer(8080) // This should overwrite the previous peer config
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testMocks := setupBuilderMocks(t)
+			builder := NewServerBuilder().WithStorage(testMocks.storage)
+			
+			tt.setupFunc(builder)
 
-	server, err := builder.Build()
+			server, err := builder.Build()
+			require.NoError(t, err)
 
-	require.NoError(t, err)
-
-	defaultServer := server.(*DefaultServer)
-	config := defaultServer.protocols[ProtocolPeer].(*PeerConfig)
-	assert.Equal(t, 8080, config.Port) // Should have the last port
-}
-
-func TestServerBuilder_DHTProtocolOverwrite(t *testing.T) {
-	builder := NewServerBuilder()
-	mockStorage := storageMocks.NewMockBlobStore(t)
-
-	// Add DHT protocol twice with different ports
-	builder.
-		WithStorage(mockStorage).
-		WithDHT(4444).
-		WithDHT(5555) // This should overwrite the previous DHT config
-
-	server, err := builder.Build()
-
-	require.NoError(t, err)
-
-	defaultServer := server.(*DefaultServer)
-	config := defaultServer.protocols[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, 5555, config.Port) // Should have the last port
+			defaultServer := server.(*DefaultServer)
+			assertServerProtocolConfig(t, defaultServer, tt.protocolName, tt.expectedPort)
+		})
+	}
 }
 
 func TestDefaultServer_InterfaceImplementation(t *testing.T) {
@@ -282,6 +409,8 @@ func TestDefaultServer_InterfaceImplementation(t *testing.T) {
 	var _ Server = &DefaultServer{}
 }
 
+// TestServerBuilder_DefaultLogger verifies that a default no-op logger is used when none is provided
+// This test ensures that the builder has a sensible fallback for logging when no custom logger is specified
 func TestServerBuilder_DefaultLogger(t *testing.T) {
 	builder := NewServerBuilder()
 

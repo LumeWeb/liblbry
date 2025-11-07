@@ -545,8 +545,8 @@ func (d *DiskStore) List(offset, limit int) ([]string, error) {
 
 	// Apply pagination
 	start := offset
-	if start >= len(allHashes) {
-		return []string{}, nil
+	if start > len(allHashes) {
+		return nil, liblbryerrors.ErrEndOfList
 	}
 
 	end := start + limit

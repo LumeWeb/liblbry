@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -13,24 +15,114 @@ import (
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
-func TestDefaultServer_Start_Success(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+// Test constants for blob data
+// These constants provide standardized test data for consistent testing across multiple test functions
+const (
+	// TestBlobHash is a standard test blob hash used across multiple tests
+	TestBlobHash = "68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3"
+	// TestBlobData is standard test blob data
+	TestBlobData = "test blob data"
+	// TestNotificationHash is the expected notification hash for TestBlobHash
+	TestNotificationHash = "bafksamdiyd7vf7fgnpbay43ojglhoygwg6gooovpjmfiody4efbekvrjvninyso24cydyvvjx737e4fc5xzq"
+)
 
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer: &PeerConfig{Port: 0}, // Use port 0 for automatic port assignment
-		},
-		logger: logger,
+// generateTestBlobHash generates a consistent test blob hash for a given index.
+// This ensures predictable test data generation for consistent testing.
+func generateTestBlobHash(index int) string {
+	return fmt.Sprintf("68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2ed%02x", index)
+}
+
+// generateTestBlobData generates test blob data with the specified prefix and index.
+// This ensures predictable test data generation for consistent testing.
+func generateTestBlobData(prefix string, index int) []byte {
+	return []byte(fmt.Sprintf("%s %d", prefix, index))
+}
+
+// generateSimpleTestBlobData generates simple test blob data with a standard prefix and index.
+// This ensures predictable test data generation for consistent testing.
+func generateSimpleTestBlobData(index int) []byte {
+	return generateTestBlobData("test blob data", index)
+}
+
+// generateNamedTestBlobHash generates a named test blob hash with the specified name and index.
+// This ensures predictable test data generation for consistent testing.
+func generateNamedTestBlobHash(name string, index int) string {
+	return fmt.Sprintf("%s_%02x", name, index)
+}
+
+// testMocks holds all common mocks used in tests
+type testMocks struct {
+	storage       *storageMocks.MockBlobStore
+	acquirer      *mocks.MockBlobAcquirer
+	accessControl *storageMocks.MockAccessControl
+	logger        *zap.Logger
+}
+
+// setupMocks initializes all standard mocks for testing
+func setupMocks(t *testing.T) *testMocks {
+	return &testMocks{
+		storage:       storageMocks.NewMockBlobStore(t),
+		acquirer:      mocks.NewMockBlobAcquirer(t),
+		accessControl: storageMocks.NewMockAccessControl(t),
+		logger:        zaptest.NewLogger(t),
 	}
+}
+
+// setupServer creates a server instance with the provided mocks and protocols
+func setupServer(t *testing.T, testMocks *testMocks, protocols map[string]any) *DefaultServer {
+	server := &DefaultServer{
+		storage:       testMocks.storage,
+		acquirer:      testMocks.acquirer,
+		accessControl: testMocks.accessControl,
+		protocols:     protocols,
+		logger:        testMocks.logger,
+		listeners:     make(map[string]net.Listener),
+		servers:       make(map[string]any),
+	}
+	// Initialize context to avoid nil pointer
+	server.ctx, server.cancel = context.WithCancel(context.Background())
+
+	// Register cleanup function to be called automatically when test completes
+	t.Cleanup(func() {
+		cleanupServer(server)
+	})
+
+	return server
+}
+
+// setupServerWithDefaults creates a server with common default protocols
+func setupServerWithDefaults(t *testing.T, testMocks *testMocks) *DefaultServer {
+	return setupServer(t, testMocks, map[string]any{
+		ProtocolPeer: &PeerConfig{Port: 0},
+	})
+}
+
+// cleanupServer handles common server cleanup patterns
+func cleanupServer(server *DefaultServer) {
+	if server.cancel != nil {
+		server.cancel()
+	}
+	for protocol, listener := range server.listeners {
+		if listener != nil {
+			listener.Close()
+			delete(server.listeners, protocol)
+		}
+	}
+	// Clean up DHT server if present
+	if dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode); ok && dhtNode != nil {
+		dhtNode.Shutdown()
+	}
+}
+
+func TestDefaultServer_Start_Success(t *testing.T) {
+	// Test that server starts successfully with minimal configuration
+	// This validates the core startup functionality works correctly
+	testMocks := setupMocks(t)
+	server := setupServerWithDefaults(t, testMocks)
 
 	ctx := context.Background()
 	err := server.Start(ctx)
@@ -41,28 +133,16 @@ func TestDefaultServer_Start_Success(t *testing.T) {
 	assert.NotNil(t, server.listeners)
 	assert.NotNil(t, server.servers)
 	assert.Contains(t, server.listeners, ProtocolPeer)
-
-	// Clean up
-	err = server.Stop(context.Background())
-	assert.NoError(t, err)
 }
 
 func TestDefaultServer_Start_MultipleProtocols(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer:      &PeerConfig{Port: 0},
-			ProtocolReflector: &ReflectorConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Test server startup with multiple protocols enabled
+	// Validates that the server can handle multiple concurrent protocols
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{
+		ProtocolPeer:      &PeerConfig{Port: 0},
+		ProtocolReflector: &ReflectorConfig{Port: 0},
+	})
 
 	ctx := context.Background()
 	err := server.Start(ctx)
@@ -70,56 +150,44 @@ func TestDefaultServer_Start_MultipleProtocols(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, server.listeners, ProtocolPeer)
 	assert.Contains(t, server.listeners, ProtocolReflector)
-
-	// Clean up
-	err = server.Stop(context.Background())
-	assert.NoError(t, err)
 }
 
 func TestDefaultServer_Start_WithDHT(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+	// Test server startup with DHT protocol enabled
+	// This validates DHT initialization and blob announcement functionality
+	testMocks := setupMocks(t)
 
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolDHT: &DHTConfig{Port: 0}, // Use port 0 for automatic port assignment
-		},
-		logger: logger,
-	}
+	// Setup mock expectations for List method (called during DHT blob announcement)
+	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+
+	server := setupServer(t, testMocks, map[string]any{
+		ProtocolDHT: &DHTConfig{Port: 0}, // Use port 0 for automatic port assignment
+	})
+	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize // Set default batch size
 
 	ctx := context.Background()
 	err := server.Start(ctx)
 
 	require.NoError(t, err)
 	assert.Contains(t, server.servers, ProtocolDHT)
-
-	// Clean up
-	err = server.Stop(context.Background())
-	assert.NoError(t, err)
 }
 
 func TestDefaultServer_Start_AllProtocols(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+	// Test server startup with all supported protocols enabled
+	// Validates comprehensive protocol initialization and resource management
+	testMocks := setupMocks(t)
 
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer:      &PeerConfig{Port: 0},
-			ProtocolReflector: &ReflectorConfig{Port: 0},
-			ProtocolDHT:       &DHTConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Setup mock expectations for List method (called during DHT blob announcement)
+	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+
+	server := setupServer(t, testMocks, map[string]any{
+		ProtocolPeer:      &PeerConfig{Port: 0},
+		ProtocolReflector: &ReflectorConfig{Port: 0},
+		ProtocolDHT:       &DHTConfig{Port: 0},
+	})
+	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize // Set default batch size
 
 	ctx := context.Background()
 	err := server.Start(ctx)
@@ -128,27 +196,15 @@ func TestDefaultServer_Start_AllProtocols(t *testing.T) {
 	assert.Contains(t, server.listeners, ProtocolPeer)
 	assert.Contains(t, server.listeners, ProtocolReflector)
 	assert.Contains(t, server.servers, ProtocolDHT)
-
-	// Clean up
-	err = server.Stop(context.Background())
-	assert.NoError(t, err)
 }
 
 func TestDefaultServer_Start_UnknownProtocol(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			"unknown": &PeerConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Test server startup with unknown protocol configuration
+	// Validates proper error handling for unsupported protocol types
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{
+		"unknown": &PeerConfig{Port: 0},
+	})
 
 	ctx := context.Background()
 	err := server.Start(ctx)
@@ -158,10 +214,9 @@ func TestDefaultServer_Start_UnknownProtocol(t *testing.T) {
 }
 
 func TestDefaultServer_Start_PortAlreadyInUse(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+	// Test server startup with port conflict scenario
+	// Validates proper error handling when attempting to bind to an in-use port
+	testMocks := setupMocks(t)
 
 	// Start a listener on a specific port first
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -173,15 +228,9 @@ func TestDefaultServer_Start_PortAlreadyInUse(t *testing.T) {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer: &PeerConfig{Port: port},
-		},
-		logger: logger,
-	}
+	server := setupServer(t, testMocks, map[string]any{
+		ProtocolPeer: &PeerConfig{Port: port},
+	})
 
 	ctx := context.Background()
 	err = server.Start(ctx)
@@ -191,20 +240,10 @@ func TestDefaultServer_Start_PortAlreadyInUse(t *testing.T) {
 }
 
 func TestDefaultServer_Stop_Success(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer: &PeerConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Test successful server shutdown
+	// Validates proper cleanup and resource release during server stop
+	testMocks := setupMocks(t)
+	server := setupServerWithDefaults(t, testMocks)
 
 	ctx := context.Background()
 
@@ -222,20 +261,10 @@ func TestDefaultServer_Stop_Success(t *testing.T) {
 }
 
 func TestDefaultServer_Stop_WithTimeout(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer: &PeerConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Test server shutdown with timeout constraint
+	// Validates graceful handling of timeout scenarios during server shutdown
+	testMocks := setupMocks(t)
+	server := setupServerWithDefaults(t, testMocks)
 
 	ctx := context.Background()
 
@@ -254,18 +283,10 @@ func TestDefaultServer_Stop_WithTimeout(t *testing.T) {
 }
 
 func TestDefaultServer_Stop_NotStarted(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-	}
+	// Test server stop when server hasn't been started
+	// Validates robustness against invalid state transitions
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
 
 	// Stop without starting should not panic
 	err := server.Stop(context.Background())
@@ -273,23 +294,10 @@ func TestDefaultServer_Stop_NotStarted(t *testing.T) {
 }
 
 func TestDefaultServer_startPeer(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-		listeners:     make(map[string]net.Listener),
-		servers:       make(map[string]interface{}),
-	}
-
-	// Initialize context to avoid nil pointer in startTCPProtocol
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+	// Test peer protocol initialization
+	// Validates that peer protocol can be successfully started and registered
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
 
 	config := &PeerConfig{Port: 0}
 	err := server.startPeer(config)
@@ -297,35 +305,13 @@ func TestDefaultServer_startPeer(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, server.listeners, ProtocolPeer)
 	assert.Contains(t, server.servers, ProtocolPeer)
-
-	// Clean up
-	if listener, exists := server.listeners[ProtocolPeer]; exists {
-		err := listener.Close()
-		require.NoError(t, err)
-	}
-
-	// Clean up context
-	server.cancel()
 }
 
 func TestDefaultServer_startReflector(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-		listeners:     make(map[string]net.Listener),
-		servers:       make(map[string]interface{}),
-	}
-
-	// Initialize context to avoid nil pointer in startTCPProtocol
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+	// Test reflector protocol initialization
+	// Validates that reflector protocol can be successfully started and registered
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
 
 	config := &ReflectorConfig{Port: 0}
 	err := server.startReflector(config)
@@ -333,35 +319,13 @@ func TestDefaultServer_startReflector(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, server.listeners, ProtocolReflector)
 	assert.Contains(t, server.servers, ProtocolReflector)
-
-	// Clean up
-	if listener, exists := server.listeners[ProtocolReflector]; exists {
-		err := listener.Close()
-		require.NoError(t, err)
-	}
-
-	// Clean up context
-	server.cancel()
 }
 
 func TestDefaultServer_startTCPProtocol(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-		listeners:     make(map[string]net.Listener),
-		servers:       make(map[string]interface{}),
-	}
-
-	// Initialize context to avoid nil pointer in startTCPProtocol
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+	// Test generic TCP protocol initialization
+	// Validates that TCP-based protocols can be successfully started and registered
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
 
 	// Create a mock connection handler
 	mockHandler := protocolMocks.NewMockConnectionHandler(t)
@@ -377,22 +341,12 @@ func TestDefaultServer_startTCPProtocol(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, server.listeners, protocolName)
 	assert.Contains(t, server.servers, protocolName)
-
-	// Clean up
-	if listener, exists := server.listeners[protocolName]; exists {
-		err := listener.Close()
-		require.NoError(t, err)
-	}
-
-	// Clean up context
-	server.cancel()
 }
 
 func TestDefaultServer_startTCPProtocol_PortInUse(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
+	// Test TCP protocol initialization with port conflict
+	// Validates proper error handling when attempting to bind to an in-use port
+	testMocks := setupMocks(t)
 
 	// Start a listener on a specific port first
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -404,18 +358,7 @@ func TestDefaultServer_startTCPProtocol_PortInUse(t *testing.T) {
 
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-		listeners:     make(map[string]net.Listener),
-		servers:       make(map[string]interface{}),
-	}
-
-	// Initialize context to avoid nil pointer in startTCPProtocol
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+	server := setupServer(t, testMocks, map[string]any{})
 
 	mockHandler := protocolMocks.NewMockConnectionHandler(t)
 	serverFactory := func() protocol.ConnectionHandler {
@@ -427,29 +370,13 @@ func TestDefaultServer_startTCPProtocol_PortInUse(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to listen")
-
-	// Clean up context
-	server.cancel()
 }
 
 func TestDefaultServer_startDHT(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols:     map[string]interface{}{},
-		logger:        logger,
-		listeners:     make(map[string]net.Listener),
-		servers:       make(map[string]interface{}),
-	}
-
-	// Initialize context to avoid nil pointer
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+	// Test DHT protocol initialization
+	// Validates that DHT node can be successfully started and properly typed
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
 
 	config := &DHTConfig{Port: 0}
 	err := server.startDHT(config)
@@ -461,29 +388,13 @@ func TestDefaultServer_startDHT(t *testing.T) {
 	dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode)
 	require.True(t, ok)
 	assert.NotNil(t, dhtNode)
-
-	// Clean up
-	if dhtNode != nil {
-		dhtNode.Shutdown()
-	}
-	server.cancel()
 }
 
 func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
-	mockStorage := storageMocks.NewMockBlobStore(t)
-	mockAcquirer := mocks.NewMockBlobAcquirer(t)
-	mockAccessControl := storageMocks.NewMockAccessControl(t)
-	logger := zaptest.NewLogger(t)
-
-	server := &DefaultServer{
-		storage:       mockStorage,
-		acquirer:      mockAcquirer,
-		accessControl: mockAccessControl,
-		protocols: map[string]interface{}{
-			ProtocolPeer: &PeerConfig{Port: 0},
-		},
-		logger: logger,
-	}
+	// Test concurrent server start and stop operations
+	// Validates thread safety and proper handling of concurrent operations
+	testMocks := setupMocks(t)
+	server := setupServerWithDefaults(t, testMocks)
 
 	var wg sync.WaitGroup
 	errors := make(chan error, 2)
@@ -523,14 +434,325 @@ func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
 
 func TestDefaultServer_ServerInterfaceImplementation(t *testing.T) {
 	// Verify that DefaultServer implements the Server interface
+	// Ensures compatibility with Server interface contract
 	var _ Server = &DefaultServer{}
 }
 
 func TestProtocolConstants(t *testing.T) {
+	// Verify protocol constant values are set correctly
+	// Ensures consistent protocol naming and default port assignments
 	assert.Equal(t, 5567, DefaultPeerPort)
 	assert.Equal(t, 5566, DefaultReflectorPort)
 	assert.Equal(t, 4444, DefaultDHTPort)
 	assert.Equal(t, "peer", ProtocolPeer)
 	assert.Equal(t, "reflector", ProtocolReflector)
 	assert.Equal(t, "dht", ProtocolDHT)
+}
+
+// TestDefaultServer_AddBlob_Success tests successful blob addition
+// Validates that blobs can be successfully stored in the blob store
+func TestDefaultServer_AddBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	blobData := []byte(TestBlobData)
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+
+	// Test successful blob addition
+	err := server.AddBlob(blobHash, blobData)
+	assert.NoError(t, err)
+}
+
+// TestDefaultServer_AddBlob_EmptyHash tests error handling for empty hash
+// Validates that blob addition properly rejects empty hash values
+func TestDefaultServer_AddBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobData := []byte(TestBlobData)
+
+	// Test with empty hash
+	err := server.AddBlob("", blobData)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+}
+
+// TestDefaultServer_AddBlob_EmptyData tests error handling for empty data
+// Validates that blob addition properly rejects empty data values
+func TestDefaultServer_AddBlob_EmptyData(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+
+	// Test with empty data
+	err := server.AddBlob(blobHash, []byte{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "blob data cannot be empty")
+}
+
+// TestDefaultServer_AddBlob_StorageFailure tests error handling when storage.Put fails
+// Validates that blob addition properly propagates storage errors
+func TestDefaultServer_AddBlob_StorageFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	blobData := []byte(TestBlobData)
+	storageError := errors.New("storage error")
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(storageError)
+
+	// Test storage failure
+	err := server.AddBlob(blobHash, blobData)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to store blob")
+	assert.Contains(t, err.Error(), blobHash)
+}
+
+// TestDefaultServer_AddBlob_WithNotifier tests that notification is sent
+// Validates that blob addition properly triggers notifications when notifier is configured
+func TestDefaultServer_AddBlob_WithNotifier(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	mockNotifier := protocolMocks.NewMockNotifier(t)
+	server := setupServer(t, testMocks, map[string]any{})
+	server.notifier = mockNotifier
+
+	blobHash := TestBlobHash
+	blobData := []byte(TestBlobData)
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_ADDED, TestNotificationHash).Return(nil)
+
+	// Test blob addition with notification
+	err := server.AddBlob(blobHash, blobData)
+	assert.NoError(t, err)
+}
+
+// TestDefaultServer_RemoveBlob_Success tests successful blob removal
+// Validates that blobs can be successfully removed from the blob store
+func TestDefaultServer_RemoveBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+
+	// Test successful blob removal
+	err := server.RemoveBlob(blobHash)
+	assert.NoError(t, err)
+}
+
+// TestDefaultServer_RemoveBlob_EmptyHash tests error handling for empty hash
+// Validates that blob removal properly rejects empty hash values
+func TestDefaultServer_RemoveBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	// Test with empty hash
+	err := server.RemoveBlob("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+}
+
+// TestDefaultServer_RemoveBlob_StorageFailure tests error handling when storage.Delete fails
+// Validates that blob removal properly propagates storage errors
+func TestDefaultServer_RemoveBlob_StorageFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	storageError := errors.New("storage error")
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Delete(blobHash).Return(storageError)
+
+	// Test storage failure
+	err := server.RemoveBlob(blobHash)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to delete blob")
+	assert.Contains(t, err.Error(), blobHash)
+}
+
+// TestDefaultServer_RemoveBlob_WithNotifier tests that notification is sent
+// Validates that blob removal properly triggers notifications when notifier is configured
+func TestDefaultServer_RemoveBlob_WithNotifier(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	mockNotifier := protocolMocks.NewMockNotifier(t)
+	server := setupServer(t, testMocks, map[string]any{})
+	server.notifier = mockNotifier
+
+	blobHash := TestBlobHash
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_REMOVED, TestNotificationHash).Return(nil)
+
+	// Test blob removal with notification
+	err := server.RemoveBlob(blobHash)
+	assert.NoError(t, err)
+}
+
+// TestDefaultServer_BlobManagerInterface verifies DefaultServer implements BlobManager
+// Validates that DefaultServer properly implements the BlobManager interface contract
+func TestDefaultServer_BlobManagerInterface(t *testing.T) {
+	t.Parallel()
+
+	// Verify that DefaultServer implements the BlobManager interface
+	var _ BlobManager = &DefaultServer{}
+}
+
+// TestDefaultServer_ConcurrentAddBlob tests concurrent AddBlob operations
+// Validates thread safety and concurrent operation handling for blob addition
+func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	var wg sync.WaitGroup
+	numGoroutines := 10
+	errors := make(chan error, numGoroutines)
+
+	// Test concurrent AddBlob operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			blobHash := generateTestBlobHash(index)
+			blobData := generateSimpleTestBlobData(index)
+
+			// Setup mock expectations for each goroutine
+			testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+
+			err := server.AddBlob(blobHash, blobData)
+			if err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Errorf("Concurrent AddBlob error: %v", err)
+	}
+}
+
+// TestDefaultServer_ConcurrentRemoveBlob tests concurrent RemoveBlob operations
+// Validates thread safety and concurrent operation handling for blob removal
+func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	var wg sync.WaitGroup
+	numGoroutines := 10
+	errors := make(chan error, numGoroutines)
+
+	// Test concurrent RemoveBlob operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			blobHash := generateTestBlobHash(index)
+
+			// Setup mock expectations for each goroutine
+			testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+
+			err := server.RemoveBlob(blobHash)
+			if err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Errorf("Concurrent RemoveBlob error: %v", err)
+	}
+}
+
+// TestDefaultServer_ConcurrentBlobOperations tests mixed concurrent blob operations
+// Validates thread safety and proper handling of mixed concurrent add/remove operations
+func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	var wg sync.WaitGroup
+	numOperations := 20 // 10 adds + 10 removes
+	errors := make(chan error, numOperations)
+
+	// Test concurrent Add and Remove operations
+	for i := 0; i < 10; i++ {
+		// Add operation
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			blobHash := generateNamedTestBlobHash("add_hash", index)
+			blobData := generateTestBlobData("add data", index)
+
+			testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+
+			err := server.AddBlob(blobHash, blobData)
+			if err != nil {
+				errors <- err
+			}
+		}(i)
+
+		// Remove operation
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			blobHash := generateNamedTestBlobHash("remove_hash", index)
+
+			testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+
+			err := server.RemoveBlob(blobHash)
+			if err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Errorf("Concurrent blob operation error: %v", err)
+	}
 }

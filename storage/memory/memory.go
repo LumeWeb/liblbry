@@ -172,8 +172,8 @@ func (m *MemoryStore) List(offset, limit int) ([]string, error) {
 
 	// Apply pagination
 	start := offset
-	if start >= len(hashSlice) {
-		return []string{}, nil
+	if start > len(hashSlice) {
+		return nil, liblbryerrors.ErrEndOfList
 	}
 
 	end := start + limit
@@ -199,7 +199,7 @@ func (m *MemoryStore) Delete(hash string) error {
 
 	// Delete from regular blobs if it exists
 	delete(m.blobs, hash)
-	
+
 	// Delete from SD blobs if it exists
 	delete(m.sdBlobs, hash)
 

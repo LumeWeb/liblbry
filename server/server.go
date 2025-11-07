@@ -7,9 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/workerpool"
 	"go.lumeweb.com/liblbry"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
+	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -22,12 +25,27 @@ const (
 	DefaultDHTPort       = 4444
 )
 
+// DHT announcer constants
+const (
+	DefaultDHTAnnouncerWorkers      = 10
+	DefaultDHTAnnouncementBatchSize = 1000
+	BlobAnnouncementLogInterval     = 1000
+)
+
 // Protocol names
 const (
 	ProtocolPeer      = "peer"
 	ProtocolReflector = "reflector"
 	ProtocolDHT       = "dht"
 )
+
+// BlobManager defines the interface for blob management operations
+type BlobManager interface {
+	// AddBlob stores a blob and notifies about the addition
+	AddBlob(hash string, data []byte) error
+	// RemoveBlob deletes a blob and notifies about the removal
+	RemoveBlob(hash string) error
+}
 
 // Server defines the interface for a liblbry server
 type Server interface {
@@ -52,15 +70,24 @@ type DHTConfig struct {
 
 // DefaultServer implements the Server interface
 type DefaultServer struct {
+	BlobManager // Embedded interface
+
 	storage       storage.BlobStore
 	acquirer      liblbry.BlobAcquirer
 	accessControl storage.AccessControl
-	protocols     map[string]interface{}
+	protocols     map[string]any
 	logger        *zap.Logger
+	dhtWorkers    int
+
+	// DHT management - kept at server level
+	dhtAnnouncer protocol.DHTAnnouncer
+	dhtNode      protocol.DHTNode
+	notifier     protocol.Notifier
+	dhtBatchSize int
 
 	// Runtime state
 	listeners map[string]net.Listener
-	servers   map[string]interface{} // protocol servers
+	servers   map[string]any // protocol servers
 	wg        sync.WaitGroup
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -70,7 +97,10 @@ type DefaultServer struct {
 func (s *DefaultServer) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.listeners = make(map[string]net.Listener)
-	s.servers = make(map[string]interface{})
+	s.servers = make(map[string]any)
+
+	// Initialize notifier system
+	s.createNotifier()
 
 	for name, config := range s.protocols {
 		var err error
@@ -97,6 +127,11 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 			}
 			return fmt.Errorf("failed to start %s protocol: %w", cases.Title(language.Und).String(name), err)
 		}
+	}
+
+	// Announce all blobs to DHT after all protocols are started
+	if s.dhtAnnouncer != nil && s.storage != nil {
+		s.announceBlobsToDHT(s.dhtWorkers, s.dhtBatchSize)
 	}
 
 	s.logger.Info("Server started successfully")
@@ -147,6 +182,7 @@ func (s *DefaultServer) startPeer(config *PeerConfig) error {
 		return protocol.NewPeerServer(s.storage,
 			protocol.WithPeerAccessControl(s.accessControl),
 			protocol.WithPeerLogger(s.logger.Named("peer")),
+			protocol.WithPeerNotifier(s.notifier),
 		)
 	})
 }
@@ -157,6 +193,7 @@ func (s *DefaultServer) startReflector(config *ReflectorConfig) error {
 		return protocol.NewReflectorServer(s.storage,
 			protocol.WithReflectorAccessControl(s.accessControl),
 			protocol.WithReflectorLogger(s.logger.Named("reflector")),
+			protocol.WithReflectorNotifier(s.notifier),
 		)
 	})
 }
@@ -179,8 +216,163 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 
 	// Store the DHT node in servers map for later access
 	s.servers[ProtocolDHT] = dhtNode
+	s.dhtNode = dhtNode
+
+	// Create DHT announcer
+	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
+
+	// Register DHT notifier with the existing group notifier
+	if s.notifier != nil {
+		if group, ok := s.notifier.(*protocol.GroupNotifier); ok {
+			group.AddNotifier(protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier")))
+		}
+	}
 
 	s.logger.Info("DHT protocol started", zap.Int("port", config.Port))
+	return nil
+}
+
+// createNotifier initializes the notifier system
+func (s *DefaultServer) createNotifier() {
+	// Create a GroupNotifier to manage multiple notifiers
+	groupNotifier := protocol.NewGroupNotifier()
+
+	// Add logging notifier
+	loggingNotifier := protocol.NewLoggingNotifier(s.logger.Named("notifier"))
+
+	// Add the logging notifier to the group
+	groupNotifier.AddNotifier(loggingNotifier)
+
+	s.notifier = groupNotifier
+}
+
+// announceBlobsToDHT enumerates all blobs from storage and announces them to the DHT
+func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
+	s.logger.Debug("Starting DHT blob announcement process")
+
+	offset := 0
+	totalAnnounced := 0
+
+	// Create a worker pool with configurable workers for concurrent blob announcements
+	pool := workerpool.New(workerCount)
+
+	for {
+		// Get a batch of blob hashes using pagination
+		blobHashes, err := s.storage.List(offset, batchSize)
+		if err != nil {
+			if liblbryerrors.IsEndOfListError(err) {
+				// Reached end of list, break the loop
+				break
+			}
+			s.logger.Error("Failed to list blobs from storage", zap.Error(err))
+			pool.StopWait()
+			return
+		}
+
+		if len(blobHashes) == 0 {
+			// No more blobs to process
+			break
+		}
+
+		s.logger.Debug("Processing batch of blobs",
+			zap.Int("batch_size", len(blobHashes)),
+			zap.Int("offset", offset))
+
+		// Submit all blob announcements in this batch to the worker pool
+		for i, hash := range blobHashes {
+			hash := hash // capture loop variable
+			globalIndex := offset + i
+
+			pool.Submit(func() {
+				// Convert LBRY hash to multihash for DHT announcement
+				multihash, err := stream.ToMultihash(hash)
+				if err != nil {
+					s.logger.Warn("Failed to convert blob hash to multihash for DHT announcement",
+						zap.String("hash", hash),
+						zap.Error(err),
+						zap.Int("global_index", globalIndex))
+					return
+				}
+
+				// Announce to DHT
+				err = s.dhtAnnouncer.AnnounceBlob(multihash)
+				if err != nil {
+					s.logger.Warn("Failed to announce blob to DHT",
+						zap.String("multihash", multihash),
+						zap.String("hash", hash),
+						zap.Error(err),
+						zap.Int("global_index", globalIndex))
+					return
+				}
+
+				// Log successful announcement every BlobAnnouncementLogInterval blobs
+				if globalIndex%BlobAnnouncementLogInterval == 0 {
+					s.logger.Debug("Announced blob to DHT",
+						zap.String("multihash", multihash),
+						zap.String("hash", hash),
+						zap.Int("global_index", globalIndex))
+				}
+			})
+		}
+
+		totalAnnounced += len(blobHashes)
+		offset += batchSize
+	}
+
+	// Wait for all jobs to complete
+	pool.StopWait()
+
+	s.logger.Debug("Completed DHT blob announcement process", zap.Int("total_announced", totalAnnounced))
+}
+
+// AddBlob stores a blob and notifies about the addition
+func (s *DefaultServer) AddBlob(hash string, data []byte) error {
+	// Validate hash
+	if hash == "" {
+		return fmt.Errorf("hash cannot be empty")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("blob data cannot be empty")
+	}
+
+	// Store the blob
+	err := s.storage.Put(hash, data)
+	if err != nil {
+		s.logger.Error("Failed to store blob",
+			zap.String("hash", hash),
+			zap.Error(err))
+		return fmt.Errorf("failed to store blob %s: %w", hash, err)
+	}
+
+	s.logger.Debug("Successfully stored blob", zap.String("hash", hash))
+
+	// Notify about blob addition
+	protocol.NotifyBlob(s.notifier, s.logger, protocol.NOTIFY_BLOB_ADDED, hash)
+
+	return nil
+}
+
+// RemoveBlob deletes a blob and notifies about the removal
+func (s *DefaultServer) RemoveBlob(hash string) error {
+	// Validate hash
+	if hash == "" {
+		return fmt.Errorf("hash cannot be empty")
+	}
+
+	// Delete the blob from storage
+	err := s.storage.Delete(hash)
+	if err != nil {
+		s.logger.Error("Failed to delete blob",
+			zap.String("hash", hash),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete blob %s: %w", hash, err)
+	}
+
+	s.logger.Debug("Successfully deleted blob", zap.String("hash", hash))
+
+	// Notify about blob removal
+	protocol.NotifyBlob(s.notifier, s.logger, protocol.NOTIFY_BLOB_REMOVED, hash)
+
 	return nil
 }
 

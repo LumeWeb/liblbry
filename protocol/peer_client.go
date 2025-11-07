@@ -422,7 +422,7 @@ func (c *DefaultPeerClient) wrapAndReturnContextError(ctx context.Context, err e
 
 // sendJSON sends a JSON message to the server
 // This method should only be called when the client is already locked
-func (c *DefaultPeerClient) sendJSON(v interface{}) error {
+func (c *DefaultPeerClient) sendJSON(v any) error {
 	// Create a background context for deadline setting in this helper
 	ctx := context.Background()
 	if err := c.setMinDeadline(ctx); err != nil {
@@ -440,7 +440,7 @@ func (c *DefaultPeerClient) sendJSON(v interface{}) error {
 
 // readJSON reads a JSON message from the server
 // This method should only be called when the client is already locked
-func (c *DefaultPeerClient) readJSON(v interface{}) error {
+func (c *DefaultPeerClient) readJSON(v any) error {
 	// Create a background context for deadline setting in this helper
 	ctx := context.Background()
 	if err := c.setMinDeadline(ctx); err != nil {
