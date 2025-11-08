@@ -53,6 +53,30 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 	return b
 }
 
+// getOrCreateDHTConfig retrieves the existing DHT config or creates a new one with default values
+func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
+	// Check if DHT protocol config already exists
+	dhtConfig, exists := b.protocols[ProtocolDHT]
+	
+	if exists {
+		// If it exists, return the existing config
+		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
+			return dhtCfg
+		}
+		// If it's not the right type, create a new one (shouldn't happen in practice)
+	}
+	
+	// If it doesn't exist, create new config with default values
+	newConfig := &DHTConfig{
+		Port:      DefaultDHTPort,
+		Address:   "",
+		SeedNodes: []string{}, // Empty slice instead of nil
+	}
+	b.protocols[ProtocolDHT] = newConfig
+	
+	return newConfig
+}
+
 // withProtocolConfig adds a protocol configuration with the specified port and default.
 // If multiple ports are provided, only the first is used.
 func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) any) *ServerBuilder {
@@ -86,25 +110,11 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 		p = port[0]
 	}
 	
-	// Check if DHT protocol config already exists
-	dhtConfig, exists := b.protocols[ProtocolDHT]
+	// Get or create DHT config
+	dhtConfig := b.getOrCreateDHTConfig()
 	
-	if exists {
-		// If it exists, preserve the SeedNodes and only update the Port
-		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
-			seedNodes := dhtCfg.SeedNodes // Preserve existing seed nodes
-			b.protocols[ProtocolDHT] = &DHTConfig{
-				Port:      p,
-				SeedNodes: seedNodes,
-			}
-		}
-	} else {
-		// If it doesn't exist, create new config with empty seed nodes
-		b.protocols[ProtocolDHT] = &DHTConfig{
-			Port:      p,
-			SeedNodes: []string{}, // Empty slice instead of nil
-		}
-	}
+	// Update the port while preserving existing values
+	dhtConfig.Port = p
 	
 	return b
 }
@@ -116,22 +126,22 @@ func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
 		seedNodes = []string{}
 	}
 	
-	// Check if DHT protocol config exists
-	dhtConfig, exists := b.protocols[ProtocolDHT]
+	// Get or create DHT config
+	dhtConfig := b.getOrCreateDHTConfig()
 	
-	if !exists {
-		// Create a new DHTConfig with default port if it doesn't exist
-		dhtConfig = &DHTConfig{
-			Port:      DefaultDHTPort,
-			SeedNodes: seedNodes,
-		}
-		b.protocols[ProtocolDHT] = dhtConfig
-	} else {
-		// Update existing DHT config's seed nodes
-		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
-			dhtCfg.SeedNodes = seedNodes
-		}
-	}
+	// Update seed nodes
+	dhtConfig.SeedNodes = seedNodes
+	
+	return b
+}
+
+// WithDHTAddress sets the DHT address
+func (b *ServerBuilder) WithDHTAddress(address string) *ServerBuilder {
+	// Get or create DHT config
+	dhtConfig := b.getOrCreateDHTConfig()
+	
+	// Update address
+	dhtConfig.Address = address
 	
 	return b
 }

@@ -10,6 +10,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// DefaultDHTAddress is the default address for DHT nodes
+const DefaultDHTAddress = "127.0.0.1:4444"
+
 // DHT abstracts the underlying dht.DHT implementation
 type DHT interface {
 	// Start begins listening for DHT connections
@@ -121,7 +124,7 @@ func validateDHTConfig(c *DHTConfig) error {
 // NewDHTConfig creates a default DHT configuration
 func NewDHTConfig() (*DHTConfig, error) {
 	cfg := &DHTConfig{
-		Address:          "0.0.0.0:4444",
+		Address:          DefaultDHTAddress,
 		SeedNodes:        []string{"lbrynet1.lbry.com:4444", "lbrynet2.lbry.com:4444", "lbrynet3.lbry.com:4444", "lbrynet4.lbry.com:4444"},
 		PeerProtocolPort: 3333,
 		ReannounceTime:   50 * time.Minute,

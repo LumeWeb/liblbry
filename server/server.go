@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
-	"go.lumeweb.com/liblbry/stream"
+
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -66,6 +67,7 @@ type ReflectorConfig struct {
 // DHTConfig contains configuration for DHT protocol
 type DHTConfig struct {
 	Port      int
+	Address   string
 	SeedNodes []string
 }
 
@@ -216,12 +218,20 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 
 	// Build options slice dynamically
 	var opts []protocol.DHTOption
+	
+	// Determine the address to use
+	address := config.Address
+	if address == "" {
+		// Use default host with specified port
+		address = fmt.Sprintf("%s:%d", strings.Split(protocol.DefaultDHTAddress, ":")[0], config.Port)
+	}
+	
 	opts = append(opts,
-		protocol.WithDHTAddress(fmt.Sprintf("0.0.0.0:%d", config.Port)),
+		protocol.WithDHTAddress(address),
 		protocol.WithDHTPeerProtocolPort(peerProtocolPort),
 		protocol.WithDHTLogger(s.logger.Named("dht")),
 	)
-	
+
 	// Conditionally add seed nodes if they exist
 	if len(config.SeedNodes) > 0 {
 		opts = append(opts, protocol.WithDHTSeedNodes(config.SeedNodes))
@@ -308,21 +318,11 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 			globalIndex := offset + i
 
 			pool.Submit(func() {
-				// Convert LBRY hash to multihash for DHT announcement
-				multihash, err := stream.ToMultihash(hash)
-				if err != nil {
-					s.logger.Warn("Failed to convert blob hash to multihash for DHT announcement",
-						zap.String("hash", hash),
-						zap.Error(err),
-						zap.Int("global_index", globalIndex))
-					return
-				}
-
-				// Announce to DHT
-				err = s.dhtAnnouncer.AnnounceBlob(multihash)
+				// Announce to DHT using the LBRY hash directly
+				// The DHT announcer expects LBRY hash format, not multihash
+				err := s.dhtAnnouncer.AnnounceBlob(hash)
 				if err != nil {
 					s.logger.Warn("Failed to announce blob to DHT",
-						zap.String("multihash", multihash),
 						zap.String("hash", hash),
 						zap.Error(err),
 						zap.Int("global_index", globalIndex))
@@ -332,7 +332,6 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 				// Log successful announcement every BlobAnnouncementLogInterval blobs
 				if globalIndex%BlobAnnouncementLogInterval == 0 {
 					s.logger.Debug("Announced blob to DHT",
-						zap.String("multihash", multihash),
 						zap.String("hash", hash),
 						zap.Int("global_index", globalIndex))
 				}
