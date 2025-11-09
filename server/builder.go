@@ -55,16 +55,24 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 }
 
 // getOrCreateDHTConfig retrieves the existing DHT config or creates a new one with default values
+// Returns nil if an existing DHT node (from WithExistingDHT) is already configured
 func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
 	// Check if DHT protocol config already exists
 	dhtConfig, exists := b.config[ProtocolDHT]
 
 	if exists {
-		// If it exists, return the existing config
+		// If it exists, check if it's a DHTNode (from WithExistingDHT)
+		if _, isNode := dhtConfig.(protocol.DHTNode); isNode {
+			// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
+			// and prioritize the existing DHT node
+			return nil
+		}
+
+		// If it's a *DHTConfig, return it
 		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
 			return dhtCfg
 		}
-		// If it's not the right type, create a new one (shouldn't happen in practice)
+		// If it's neither a *DHTConfig nor a DHTNode, create a new one (shouldn't happen in practice)
 	}
 
 	// If it doesn't exist, create new config with default values
@@ -114,6 +122,13 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
 
+	// Check if we're trying to configure DHT when an existing node was set
+	if dhtConfig == nil {
+		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
+		// and prioritize the existing DHT node
+		return b
+	}
+
 	// Update the port while preserving existing values
 	dhtConfig.Port = p
 
@@ -130,6 +145,13 @@ func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
 
+	// Check if we're trying to configure DHT when an existing node was set
+	if dhtConfig == nil {
+		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
+		// and prioritize the existing DHT node
+		return b
+	}
+
 	// Update seed nodes
 	dhtConfig.SeedNodes = seedNodes
 
@@ -140,6 +162,13 @@ func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
 func (b *ServerBuilder) WithDHTAddress(address string) *ServerBuilder {
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
+
+	// Check if we're trying to configure DHT when an existing node was set
+	if dhtConfig == nil {
+		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
+		// and prioritize the existing DHT node
+		return b
+	}
 
 	// Update address
 	dhtConfig.Address = address
