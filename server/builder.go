@@ -5,6 +5,7 @@ import (
 
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/storage/disk"
 	"go.lumeweb.com/liblbry/storage/memory"
@@ -16,7 +17,7 @@ type ServerBuilder struct {
 	storage       storage.BlobStore
 	acquirer      liblbry.BlobAcquirer
 	accessControl storage.AccessControl
-	protocols     map[string]any
+	config        map[string]any
 	logger        *zap.Logger
 	dhtWorkers    int
 	dhtBatchSize  int
@@ -28,7 +29,7 @@ func NewServerBuilder() *ServerBuilder {
 		storage:       nil,
 		acquirer:      nil,
 		accessControl: nil,
-		protocols:     make(map[string]any),
+		config:        make(map[string]any),
 		logger:        zap.NewNop(),                    // Default to no-op logger
 		dhtWorkers:    DefaultDHTAnnouncerWorkers,      // Default value
 		dhtBatchSize:  DefaultDHTAnnouncementBatchSize, // Default batch size
@@ -56,8 +57,8 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 // getOrCreateDHTConfig retrieves the existing DHT config or creates a new one with default values
 func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
 	// Check if DHT protocol config already exists
-	dhtConfig, exists := b.protocols[ProtocolDHT]
-	
+	dhtConfig, exists := b.config[ProtocolDHT]
+
 	if exists {
 		// If it exists, return the existing config
 		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
@@ -65,15 +66,15 @@ func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
 		}
 		// If it's not the right type, create a new one (shouldn't happen in practice)
 	}
-	
+
 	// If it doesn't exist, create new config with default values
 	newConfig := &DHTConfig{
 		Port:      DefaultDHTPort,
 		Address:   "",
 		SeedNodes: []string{}, // Empty slice instead of nil
 	}
-	b.protocols[ProtocolDHT] = newConfig
-	
+	b.config[ProtocolDHT] = newConfig
+
 	return newConfig
 }
 
@@ -84,7 +85,7 @@ func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int,
 	if len(port) > 0 {
 		p = port[0]
 	}
-	b.protocols[protocolName] = configFactory(p)
+	b.config[protocolName] = configFactory(p)
 	return b
 }
 
@@ -109,13 +110,13 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 	if len(port) > 0 {
 		p = port[0]
 	}
-	
+
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
-	
+
 	// Update the port while preserving existing values
 	dhtConfig.Port = p
-	
+
 	return b
 }
 
@@ -125,13 +126,13 @@ func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
 	if seedNodes == nil {
 		seedNodes = []string{}
 	}
-	
+
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
-	
+
 	// Update seed nodes
 	dhtConfig.SeedNodes = seedNodes
-	
+
 	return b
 }
 
@@ -139,11 +140,42 @@ func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
 func (b *ServerBuilder) WithDHTAddress(address string) *ServerBuilder {
 	// Get or create DHT config
 	dhtConfig := b.getOrCreateDHTConfig()
-	
+
 	// Update address
 	dhtConfig.Address = address
-	
+
 	return b
+}
+
+// WithFixedPeerPort adds a fixed peer port in addition to the regular peer port
+func (b *ServerBuilder) WithFixedPeerPort(port int) *ServerBuilder {
+	// Use the same pattern as other config methods - get or create the config
+	peerConfig := b.getOrCreatePeerConfig()
+	peerConfig.FixedPort = port
+	return b
+}
+
+// getOrCreatePeerConfig retrieves the existing PeerConfig or creates a new one with default values
+func (b *ServerBuilder) getOrCreatePeerConfig() *PeerConfig {
+	// Check if Peer protocol config already exists
+	peerConfig, exists := b.config[ProtocolPeer]
+
+	if exists {
+		// If it exists, return the existing config
+		if cfg, ok := peerConfig.(*PeerConfig); ok {
+			return cfg
+		}
+		// If it's not the right type, create a new one (shouldn't happen in practice)
+	}
+
+	// If it doesn't exist, create new config with default values
+	newConfig := &PeerConfig{
+		Port:      DefaultPeerPort,
+		FixedPort: 0, // Default to disabled
+	}
+	b.config[ProtocolPeer] = newConfig
+
+	return newConfig
 }
 
 // WithLogger sets the logger for the server
@@ -173,13 +205,29 @@ func (b *ServerBuilder) WithDHTBatchSize(batchSize int) *ServerBuilder {
 	return b
 }
 
+// WithExistingDHT configures the server to use an existing DHT node
+// This allows integration with externally managed DHT instances
+//
+// Example:
+//
+//	builder := NewServerBuilder().
+//	  WithExistingDHT(existingDHTNode).
+//	  WithStorage(storage).
+//	  WithAcquirer(acquirer)
+//
+// The existing DHT node will be used directly instead of creating a new one
+func (b *ServerBuilder) WithExistingDHT(dhtNode protocol.DHTNode) *ServerBuilder {
+	b.config[ProtocolDHT] = dhtNode
+	return b
+}
+
 // Build creates a Server instance from the builder configuration
 func (b *ServerBuilder) Build() (Server, error) {
 	if b.storage == nil {
 		return nil, errors.New("storage is required")
 	}
 
-	if len(b.protocols) == 0 {
+	if len(b.config) == 0 {
 		return nil, errors.New("at least one protocol must be configured")
 	}
 
@@ -193,7 +241,7 @@ func (b *ServerBuilder) Build() (Server, error) {
 		storage:       b.storage,
 		acquirer:      b.acquirer,
 		accessControl: b.accessControl,
-		protocols:     b.protocols,
+		config:        b.config,
 		logger:        b.logger.Named("server"),
 		dhtWorkers:    b.dhtWorkers,
 		dhtBatchSize:  b.dhtBatchSize,
@@ -254,7 +302,7 @@ func ProductionBuilderWithAccess(storagePath string, logger *zap.Logger, accessC
 }
 
 // TestBuilder creates a minimal server builder for testing with a default Peer protocol
-// Callers can add additional protocols using the builder methods if needed
+// Callers can add additional config using the builder methods if needed
 func TestBuilder() *ServerBuilder {
 	return baseMemoryBuilder().WithPeer()
 }
@@ -269,7 +317,7 @@ func ReflectorOnlyBuilder(port ...int) *ServerBuilder {
 	return baseMemoryBuilder().WithReflector(port...)
 }
 
-// AllProtocolsBuilder creates a server with all protocols enabled
+// AllProtocolsBuilder creates a server with all config enabled
 func AllProtocolsBuilder(peerPort, reflectorPort, dhtPort int) *ServerBuilder {
 	return baseMemoryBuilder().
 		WithPeer(peerPort).

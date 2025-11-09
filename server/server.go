@@ -55,8 +55,18 @@ type Server interface {
 }
 
 // PeerConfig contains configuration for Peer protocol
+//
+// Port specifies the main peer protocol port to listen on.
+// FixedPort specifies an optional fixed port for peer content (0 to disable, defaults to 5567 when enabled).
 type PeerConfig struct {
+	// Port specifies the main peer protocol port to listen on.
 	Port int
+	
+	// FixedPort specifies an optional fixed port for peer content.
+	// When set to 0, the fixed port feature is disabled.
+	// When set to a non-zero value, a separate peer server will be started on that port.
+	// Defaults to 5567 when enabled.
+	FixedPort int
 }
 
 // ReflectorConfig contains configuration for Reflector protocol
@@ -78,13 +88,12 @@ type DefaultServer struct {
 	storage       storage.BlobStore
 	acquirer      liblbry.BlobAcquirer
 	accessControl storage.AccessControl
-	protocols     map[string]any
+	config        map[string]any
 	logger        *zap.Logger
 	dhtWorkers    int
 
 	// DHT management - kept at server level
 	dhtAnnouncer protocol.DHTAnnouncer
-	dhtNode      protocol.DHTNode
 	notifier     protocol.Notifier
 	dhtBatchSize int
 
@@ -96,7 +105,7 @@ type DefaultServer struct {
 	cancel    context.CancelFunc
 }
 
-// Start starts the server and all configured protocols
+// Start starts the server and all configured config
 func (s *DefaultServer) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.listeners = make(map[string]net.Listener)
@@ -105,7 +114,7 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 	// Initialize notifier system
 	s.createNotifier()
 
-	for name, config := range s.protocols {
+	for name, config := range s.config {
 		var err error
 		switch name {
 		case ProtocolPeer:
@@ -113,7 +122,14 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 		case ProtocolReflector:
 			err = s.startReflector(config.(*ReflectorConfig))
 		case ProtocolDHT:
-			err = s.startDHT(config.(*DHTConfig))
+			// Check if this is an existing DHT node (from WithExistingDHT)
+			if dhtNode, ok := config.(protocol.DHTNode); ok {
+				// Handle existing DHT node directly
+				err = s.setupExistingDHTNode(dhtNode)
+			} else {
+				// Handle new DHT creation (old behavior)
+				err = s.startDHT(config.(*DHTConfig))
+			}
 		default:
 			if stopErr := s.Stop(context.Background()); stopErr != nil {
 				s.logger.Error("Error stopping server after startup failure", zap.Error(stopErr))
@@ -132,7 +148,7 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 		}
 	}
 
-	// Announce all blobs to DHT after all protocols are started
+	// Announce all blobs to DHT after all config are started
 	if s.dhtAnnouncer != nil && s.storage != nil {
 		s.announceBlobsToDHT(s.dhtWorkers, s.dhtBatchSize)
 	}
@@ -141,7 +157,7 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the server and all configured protocols gracefully
+// Stop stops the server and all configured config gracefully
 func (s *DefaultServer) Stop(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
@@ -181,13 +197,35 @@ func (s *DefaultServer) Stop(ctx context.Context) error {
 
 // startPeer starts the Peer protocol handler
 func (s *DefaultServer) startPeer(config *PeerConfig) error {
-	return s.startTCPProtocol(ProtocolPeer, config.Port, func() protocol.ConnectionHandler {
+	// Start the main peer server on the configured port
+	err := s.startTCPProtocol(ProtocolPeer, config.Port, func() protocol.ConnectionHandler {
 		return protocol.NewPeerServer(s.storage,
 			protocol.WithPeerAccessControl(s.accessControl),
 			protocol.WithPeerLogger(s.logger.Named("peer")),
 			protocol.WithPeerNotifier(s.notifier),
 		)
 	})
+	if err != nil {
+		return err
+	}
+
+	// If a fixed port is specified, start an additional peer server on that port
+	if config.FixedPort > 0 && config.FixedPort != config.Port {
+		fixedProtocolName := ProtocolPeer + "_fixed"
+		err := s.startTCPProtocol(fixedProtocolName, config.FixedPort, func() protocol.ConnectionHandler {
+			return protocol.NewPeerServer(s.storage,
+				protocol.WithPeerAccessControl(s.accessControl),
+				protocol.WithPeerLogger(s.logger.Named("peer-fixed")),
+				protocol.WithPeerNotifier(s.notifier),
+			)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to start fixed peer server on port %d: %w", config.FixedPort, err)
+		}
+		s.logger.Info("Fixed peer server started", zap.Int("port", config.FixedPort))
+	}
+
+	return nil
 }
 
 // startReflector starts the Reflector protocol handler
@@ -203,32 +241,60 @@ func (s *DefaultServer) startReflector(config *ReflectorConfig) error {
 
 // startDHT starts the DHT protocol handler
 func (s *DefaultServer) startDHT(config *DHTConfig) error {
+	// Check if an existing DHT node is already available
+	if dhtNode := s.getDhtNode(); dhtNode != nil {
+		return s.setupExistingDHTNode(dhtNode)
+	}
+
 	// Check if peer protocol is configured and get the port
 	var peerProtocolPort int
-	if peerConfig, ok := s.protocols[ProtocolPeer]; ok {
+	var fixedPeerPort int
+	if peerConfig, ok := s.config[ProtocolPeer]; ok {
 		if peerCfg, ok := peerConfig.(*PeerConfig); ok {
 			peerProtocolPort = peerCfg.Port
+			fixedPeerPort = peerCfg.FixedPort
 		}
 	}
 
-	// If no peer port was found, use a default
-	if peerProtocolPort == 0 {
-		peerProtocolPort = DefaultPeerPort
+	// Determine the peer protocol port to announce:
+	// 1. If fixed peer port is specified (> 0), use that
+	// 2. Otherwise, if peer protocol port is configured, use that
+	// 3. Finally, if DHT port is > 0, use that, otherwise use DefaultPeerPort
+	var announcePeerPort int
+	if fixedPeerPort > 0 {
+		announcePeerPort = fixedPeerPort
+	} else if peerProtocolPort > 0 {
+		announcePeerPort = peerProtocolPort
+	} else if config.Port > 0 {
+		announcePeerPort = config.Port
+	} else {
+		// Default to using the standard peer port when DHT port is 0
+		announcePeerPort = DefaultPeerPort
 	}
 
+	// Setup DHT node and related components
+	if err := s.setupDHTNode(config, announcePeerPort, fixedPeerPort); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// createDHTNode creates and configures a DHT node with the provided configuration
+func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (protocol.DHTNode, error) {
 	// Build options slice dynamically
 	var opts []protocol.DHTOption
-	
+
 	// Determine the address to use
 	address := config.Address
 	if address == "" {
 		// Use default host with specified port
 		address = fmt.Sprintf("%s:%d", strings.Split(protocol.DefaultDHTAddress, ":")[0], config.Port)
 	}
-	
+
 	opts = append(opts,
 		protocol.WithDHTAddress(address),
-		protocol.WithDHTPeerProtocolPort(peerProtocolPort),
+		protocol.WithDHTPeerProtocolPort(announcePeerPort),
 		protocol.WithDHTLogger(s.logger.Named("dht")),
 	)
 
@@ -240,19 +306,74 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 	// Create DHT node with all options at once
 	dhtNode, err := protocol.NewDHTNodeWithDefaults(opts...)
 	if err != nil {
-		return fmt.Errorf("failed to create DHT node: %w", err)
+		return nil, fmt.Errorf("failed to create DHT node: %w", err)
 	}
 
 	// Start the DHT node
 	if err := dhtNode.Start(); err != nil {
-		return fmt.Errorf("failed to start DHT node: %w", err)
+		return nil, fmt.Errorf("failed to start DHT node: %w", err)
+	}
+
+	return dhtNode, nil
+}
+
+// getDhtNode returns the DHT node from the servers map with proper type assertion
+func (s *DefaultServer) getDhtNode() protocol.DHTNode {
+	if dhtNode, ok := s.servers[ProtocolDHT].(protocol.DHTNode); ok {
+		return dhtNode
+	}
+	return nil
+}
+
+// setupDHTNode sets up the DHT node and related components
+func (s *DefaultServer) setupDHTNode(config *DHTConfig, announcePeerPort int, fixedPeerPort int) error {
+	// Create DHT node using the helper method
+	dhtNode, err := s.createDHTNode(config, announcePeerPort)
+	if err != nil {
+		return err
 	}
 
 	// Store the DHT node in servers map for later access
-	s.servers[ProtocolDHT] = dhtNode
-	s.dhtNode = dhtNode
+	s.storeServer(ProtocolDHT, dhtNode)
 
-	// Create DHT announcer
+	// Create DHT announcer using the helper method
+	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(s.getDhtNode())
+
+	// Register DHT notifier with the existing group notifier
+	s.setupDHTAnnouncerAndNotifier(s.getDhtNode())
+
+	s.logger.Info("DHT protocol started", zap.Int("port", config.Port), zap.Int("peer_port", announcePeerPort), zap.Int("fixed_peer_port", fixedPeerPort))
+	return nil
+}
+
+// storeServer stores a server in the servers map
+func (s *DefaultServer) storeServer(protocolName string, server any) {
+	s.servers[protocolName] = server
+}
+
+// setupExistingDHTNode handles setup of an existing DHT node
+func (s *DefaultServer) setupExistingDHTNode(dhtNode protocol.DHTNode) error {
+	// Store the DHT node in servers map for later access
+	s.storeServer(ProtocolDHT, dhtNode)
+
+	// Start the existing DHT node
+	if err := dhtNode.Start(); err != nil {
+		return fmt.Errorf("failed to start existing DHT node: %w", err)
+	}
+
+	// Set up DHT announcer and notifier
+	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
+
+	// Register DHT notifier with the existing group notifier
+	s.setupDHTAnnouncerAndNotifier(dhtNode)
+
+	s.logger.Info("Using existing DHT node", zap.String("protocol", ProtocolDHT))
+	return nil
+}
+
+// setupDHTAnnouncerAndNotifier sets up the DHT announcer and notifier
+func (s *DefaultServer) setupDHTAnnouncerAndNotifier(dhtNode protocol.DHTNode) {
+	// Set up DHT announcer and notifier
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
 
 	// Register DHT notifier with the existing group notifier
@@ -261,9 +382,6 @@ func (s *DefaultServer) startDHT(config *DHTConfig) error {
 			group.AddNotifier(protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier")))
 		}
 	}
-
-	s.logger.Info("DHT protocol started", zap.Int("port", config.Port), zap.Int("peer_port", peerProtocolPort))
-	return nil
 }
 
 // createNotifier initializes the notifier system
@@ -411,7 +529,7 @@ func (s *DefaultServer) startTCPProtocol(protocolName string, port int, serverFa
 
 	// Create protocol server
 	server := serverFactory()
-	s.servers[protocolName] = server
+	s.storeServer(protocolName, server)
 
 	// Start handling connections
 	s.wg.Add(1)
