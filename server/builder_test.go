@@ -1,13 +1,16 @@
 package server
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/mocks"
-	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
+	"go.lumeweb.com/liblbry/protocol"
+	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
 	"go.lumeweb.com/liblbry/storage/memory"
+	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -16,12 +19,12 @@ import (
 // These values are chosen to avoid conflicts with standard ports
 // and to clearly distinguish between different protocol types
 const (
-	testPortPeer      = 8080
-	testPortReflector = 9090
-	testPortDHT       = 4444
-	testPortPeer2     = 5567
+	testPortPeer       = 8080
+	testPortReflector  = 9090
+	testPortDHT        = 4444
+	testPortPeer2      = 5567
 	testPortReflector2 = 5566
-	testPortDHT2      = 5555
+	testPortDHT2       = 5555
 )
 
 // builderTestMocks holds all common mocks used in builder tests
@@ -62,17 +65,17 @@ func assertBuilderReturnsSame(t *testing.T, originalBuilder *ServerBuilder, resu
 // assertProtocolConfig validates that a protocol is correctly configured with the expected port
 // This helper function ensures that protocol configurations are properly set during testing
 func assertProtocolConfig(t *testing.T, builder *ServerBuilder, protocolName string, expectedPort int) {
-	assert.Contains(t, builder.protocols, protocolName, "Protocol should be configured")
-	
+	assert.Contains(t, builder.config, protocolName, "Protocol should be configured")
+
 	switch protocolName {
 	case ProtocolPeer:
-		config := builder.protocols[protocolName].(*PeerConfig)
+		config := builder.config[protocolName].(*PeerConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	case ProtocolReflector:
-		config := builder.protocols[protocolName].(*ReflectorConfig)
+		config := builder.config[protocolName].(*ReflectorConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	case ProtocolDHT:
-		config := builder.protocols[protocolName].(*DHTConfig)
+		config := builder.config[protocolName].(*DHTConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	}
 }
@@ -80,17 +83,17 @@ func assertProtocolConfig(t *testing.T, builder *ServerBuilder, protocolName str
 // assertServerProtocolConfig validates that a built server has the correct protocol configuration
 // This ensures that the server construction process properly applies protocol settings
 func assertServerProtocolConfig(t *testing.T, server *DefaultServer, protocolName string, expectedPort int) {
-	assert.Contains(t, server.protocols, protocolName, "Protocol should be configured")
-	
+	assert.Contains(t, server.config, protocolName, "Protocol should be configured")
+
 	switch protocolName {
 	case ProtocolPeer:
-		config := server.protocols[protocolName].(*PeerConfig)
+		config := server.config[protocolName].(*PeerConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	case ProtocolReflector:
-		config := server.protocols[protocolName].(*ReflectorConfig)
+		config := server.config[protocolName].(*ReflectorConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	case ProtocolDHT:
-		config := server.protocols[protocolName].(*DHTConfig)
+		config := server.config[protocolName].(*DHTConfig)
 		assert.Equal(t, expectedPort, config.Port, "Port should match expected value")
 	}
 }
@@ -110,7 +113,7 @@ func TestNewServerBuilder(t *testing.T) {
 	builder := NewServerBuilder()
 
 	assert.NotNil(t, builder)
-	assert.Empty(t, builder.protocols)
+	assert.Empty(t, builder.config)
 	assert.NotNil(t, builder.logger)
 }
 
@@ -163,11 +166,11 @@ func TestServerBuilder_WithLogger(t *testing.T) {
 }
 
 // TestServerBuilder_WithPeer verifies peer protocol configuration with default and custom ports
-// This test ensures that peer protocols can be correctly configured with either default or custom ports
+// This test ensures that peer config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithPeer(t *testing.T) {
 	tests := []struct {
-		name        string
-		port        int
+		name         string
+		port         int
 		expectedPort int
 	}{
 		{"DefaultPort", 0, DefaultPeerPort},
@@ -177,7 +180,7 @@ func TestServerBuilder_WithPeer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := NewServerBuilder()
-			
+
 			var result *ServerBuilder
 			if tt.port == 0 {
 				result = builder.WithPeer()
@@ -192,11 +195,11 @@ func TestServerBuilder_WithPeer(t *testing.T) {
 }
 
 // TestServerBuilder_WithReflector verifies reflector protocol configuration with default and custom ports
-// This test ensures that reflector protocols can be correctly configured with either default or custom ports
+// This test ensures that reflector config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithReflector(t *testing.T) {
 	tests := []struct {
-		name        string
-		port        int
+		name         string
+		port         int
 		expectedPort int
 	}{
 		{"DefaultPort", 0, DefaultReflectorPort},
@@ -206,7 +209,7 @@ func TestServerBuilder_WithReflector(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := NewServerBuilder()
-			
+
 			var result *ServerBuilder
 			if tt.port == 0 {
 				result = builder.WithReflector()
@@ -221,11 +224,11 @@ func TestServerBuilder_WithReflector(t *testing.T) {
 }
 
 // TestServerBuilder_WithDHT verifies DHT protocol configuration with default and custom ports
-// This test ensures that DHT protocols can be correctly configured with either default or custom ports
+// This test ensures that DHT config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithDHT(t *testing.T) {
 	tests := []struct {
-		name        string
-		port        int
+		name         string
+		port         int
 		expectedPort int
 	}{
 		{"DefaultPort", 0, DefaultDHTPort},
@@ -235,7 +238,7 @@ func TestServerBuilder_WithDHT(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := NewServerBuilder()
-			
+
 			var result *ServerBuilder
 			if tt.port == 0 {
 				result = builder.WithDHT()
@@ -267,11 +270,11 @@ func TestServerBuilder_Build_Success(t *testing.T) {
 	assert.Same(t, testMocks.acquirer, defaultServer.acquirer)
 	assert.Same(t, testMocks.accessControl, defaultServer.accessControl)
 	assert.Equal(t, "server", defaultServer.logger.Name())
-	assert.Contains(t, defaultServer.protocols, ProtocolPeer)
+	assert.Contains(t, defaultServer.config, ProtocolPeer)
 }
 
-// TestServerBuilder_Build_MultipleProtocols verifies server building with multiple protocols
-// This test ensures that servers can be constructed with multiple protocols simultaneously
+// TestServerBuilder_Build_MultipleProtocols verifies server building with multiple config
+// This test ensures that servers can be constructed with multiple config simultaneously
 func TestServerBuilder_Build_MultipleProtocols(t *testing.T) {
 	builder, _ := setupBuilderWithMocks(t)
 	builder.
@@ -285,9 +288,9 @@ func TestServerBuilder_Build_MultipleProtocols(t *testing.T) {
 	assert.NotNil(t, server)
 
 	defaultServer := server.(*DefaultServer)
-	assert.Contains(t, defaultServer.protocols, ProtocolPeer)
-	assert.Contains(t, defaultServer.protocols, ProtocolReflector)
-	assert.Contains(t, defaultServer.protocols, ProtocolDHT)
+	assert.Contains(t, defaultServer.config, ProtocolPeer)
+	assert.Contains(t, defaultServer.config, ProtocolReflector)
+	assert.Contains(t, defaultServer.config, ProtocolDHT)
 }
 
 // TestServerBuilder_Build_Errors verifies that server building properly handles various error conditions
@@ -393,7 +396,7 @@ func TestServerBuilder_ProtocolOverwrite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testMocks := setupBuilderMocks(t)
 			builder := NewServerBuilder().WithStorage(testMocks.storage)
-			
+
 			tt.setupFunc(builder)
 
 			server, err := builder.Build()
@@ -425,28 +428,28 @@ func TestServerBuilder_DefaultLogger(t *testing.T) {
 // TestServerBuilder_WithDHTSeedNodes verifies that WithDHTSeedNodes correctly sets seed nodes on the DHT config
 func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 	tests := []struct {
-		name           string
-		seedNodes      []string
+		name              string
+		seedNodes         []string
 		expectedSeedNodes []string
 	}{
 		{
-			name:           "SingleSeedNode",
-			seedNodes:      []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
+			name:              "SingleSeedNode",
+			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
 			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
 		},
 		{
-			name:           "MultipleSeedNodes",
-			seedNodes:      []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
+			name:              "MultipleSeedNodes",
+			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
 			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
 		},
 		{
-			name:           "EmptySeedNodes",
-			seedNodes:      []string{},
+			name:              "EmptySeedNodes",
+			seedNodes:         []string{},
 			expectedSeedNodes: []string{},
 		},
 		{
-			name:           "NilSeedNodes",
-			seedNodes:      nil,
+			name:              "NilSeedNodes",
+			seedNodes:         nil,
 			expectedSeedNodes: []string{},
 		},
 	}
@@ -454,17 +457,17 @@ func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := NewServerBuilder()
-			
+
 			// Configure DHT with seed nodes
 			result := builder.WithDHTSeedNodes(tt.seedNodes...)
-			
+
 			// Verify builder returns same instance
 			assertBuilderReturnsSame(t, builder, result)
-			
+
 			// Verify DHT config exists and has correct seed nodes
-			assert.Contains(t, builder.protocols, ProtocolDHT)
-			
-			dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+			assert.Contains(t, builder.config, ProtocolDHT)
+
+			dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 			assert.Equal(t, tt.expectedSeedNodes, dhtConfig.SeedNodes)
 		})
 	}
@@ -473,49 +476,49 @@ func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 // TestServerBuilder_WithDHTSeedNodesBeforeWithDHT verifies that calling WithDHTSeedNodes before WithDHT works correctly
 func TestServerBuilder_WithDHTSeedNodesBeforeWithDHT(t *testing.T) {
 	builder := NewServerBuilder()
-	
+
 	// Call WithDHTSeedNodes before WithDHT - should not crash
 	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
 	result := builder.WithDHTSeedNodes(seedNodes...)
-	
+
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
-	
+
 	// Verify DHT config exists and has correct seed nodes
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-	
-	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Contains(t, builder.config, ProtocolDHT)
+
+	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
-	
+
 	// Now configure DHT - should not overwrite seed nodes
 	builder.WithDHT()
-	
+
 	// Verify seed nodes are still there
-	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
 }
 
 // TestServerBuilder_WithDHTSeedNodesAfterWithDHT verifies that calling WithDHTSeedNodes after WithDHT works correctly
 func TestServerBuilder_WithDHTSeedNodesAfterWithDHT(t *testing.T) {
 	builder := NewServerBuilder()
-	
+
 	// First configure DHT
 	builder.WithDHT()
-	
+
 	// Verify DHT config exists with empty seed nodes initially
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Contains(t, builder.config, ProtocolDHT)
+	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Empty(t, dhtConfig.SeedNodes)
-	
+
 	// Then set seed nodes
 	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
 	result := builder.WithDHTSeedNodes(seedNodes...)
-	
+
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
-	
+
 	// Verify seed nodes were set correctly
-	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
 }
 
@@ -525,33 +528,33 @@ func TestServerBuilder_WithDHTAddress(t *testing.T) {
 	builder := NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
 		WithDHT()
-	
+
 	// Configure DHT with custom address
 	result := builder.WithDHTAddress("192.168.1.100:4444")
-	
+
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
-	
+
 	// Verify DHT config exists and has correct address
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-	
-	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Contains(t, builder.config, ProtocolDHT)
+
+	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, "192.168.1.100:4444", dhtConfig.Address, "DHT address should match custom address")
-	
+
 	// Test default behavior (no custom address)
 	builder2 := NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
 		WithDHT()
-	
+
 	// Build without setting address - should use default empty string
 	server2, err := builder2.Build()
 	assert.NoError(t, err)
 	assert.NotNil(t, server2)
-	
+
 	// Verify default DHT address is empty (will be set to default in startDHT)
-	dhtConfig2, exists2 := builder2.protocols[ProtocolDHT]
+	dhtConfig2, exists2 := builder2.config[ProtocolDHT]
 	assert.True(t, exists2, "DHT protocol should be configured")
-	
+
 	if dhtConfig2 != nil {
 		dhtCfg2, ok := dhtConfig2.(*DHTConfig)
 		assert.True(t, ok, "DHT config should be of correct type")
@@ -560,32 +563,311 @@ func TestServerBuilder_WithDHTAddress(t *testing.T) {
 	}
 }
 
+// TestServerBuilder_WithFixedPeerPort verifies that WithFixedPeerPort correctly sets the fixed peer port
+func TestServerBuilder_WithFixedPeerPort(t *testing.T) {
+	t.Run("FixedPeerPort with existing peer config", func(t *testing.T) {
+		builder := NewServerBuilder().
+			WithPeer(testPortPeer).
+			WithFixedPeerPort(testPortPeer2).
+			WithStorage(memory.NewMemoryStore())
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		defaultServer := server.(*DefaultServer)
+		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
+		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be preserved")
+		assert.Equal(t, testPortPeer2, peerConfig.FixedPort, "Fixed peer port should be set")
+	})
+
+	t.Run("FixedPeerPort without existing peer config", func(t *testing.T) {
+		builder := NewServerBuilder().
+			WithFixedPeerPort(testPortPeer2).
+			WithStorage(memory.NewMemoryStore())
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		defaultServer := server.(*DefaultServer)
+		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
+		assert.Equal(t, DefaultPeerPort, peerConfig.Port, "Default peer port should be used")
+		assert.Equal(t, testPortPeer2, peerConfig.FixedPort, "Fixed peer port should be set")
+	})
+
+	t.Run("Multiple FixedPeerPort calls", func(t *testing.T) {
+		builder := NewServerBuilder().
+			WithPeer(testPortPeer).
+			WithFixedPeerPort(testPortPeer2).
+			WithFixedPeerPort(testPortDHT2).
+			WithStorage(memory.NewMemoryStore())
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		defaultServer := server.(*DefaultServer)
+		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
+		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be preserved")
+		assert.Equal(t, testPortDHT2, peerConfig.FixedPort, "Last fixed peer port should be used")
+	})
+}
+
 // TestServerBuilder_WithDHTSeedNodesMultipleCalls verifies that calling WithDHTSeedNodes multiple times overwrites previous values
 func TestServerBuilder_WithDHTSeedNodesMultipleCalls(t *testing.T) {
 	builder := NewServerBuilder()
-	
+
 	// First call
 	seedNodes1 := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
 	builder.WithDHTSeedNodes(seedNodes1...)
-	
+
 	// Verify first seed nodes
-	assert.Contains(t, builder.protocols, ProtocolDHT)
-	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Contains(t, builder.config, ProtocolDHT)
+	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes1, dhtConfig.SeedNodes)
-	
+
 	// Second call - should overwrite
 	seedNodes2 := []string{"/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"}
 	builder.WithDHTSeedNodes(seedNodes2...)
-	
+
 	// Verify second seed nodes
-	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes2, dhtConfig.SeedNodes)
-	
+
 	// Third call - should overwrite again
 	seedNodes3 := []string{"/ip4/127.0.0.1/tcp/4446/p2p/QmSeedNode3"}
 	builder.WithDHTSeedNodes(seedNodes3...)
-	
+
 	// Verify third seed nodes
-	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
+	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes3, dhtConfig.SeedNodes)
+}
+
+// TestServerBuilder_WithExistingDHT_Tests tests the WithExistingDHT functionality
+func TestServerBuilder_WithExistingDHT_Tests(t *testing.T) {
+	t.Run("WithExistingDHT_stores_DHT_instance", func(t *testing.T) {
+		// Test that WithExistingDHT properly stores the DHT instance in the config map
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Create a server builder with existing DHT
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Verify that the DHT node is stored in config
+		defaultServer := server.(*DefaultServer)
+		_, exists := defaultServer.config[ProtocolDHT]
+		assert.True(t, exists, "DHT protocol should be present in config map")
+	})
+
+	t.Run("WithExistingDHT_uses_existing_DHT_instance", func(t *testing.T) {
+		// Test that the server uses the existing DHT instance instead of creating a new one
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Setup mock expectations for DHT node methods
+		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Shutdown().Return()
+
+		// Create a server builder with existing DHT
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Setup mock expectations for storage.List to avoid unexpected calls
+		mocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
+
+		// Start the server to trigger proper initialization
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Verify that the server uses the existing DHT node
+		defaultServer := server.(*DefaultServer)
+
+		// Check that the DHT node is properly stored in servers map after Start
+		dhtNode, ok := defaultServer.servers[ProtocolDHT].(protocol.DHTNode)
+		assert.True(t, ok, "DHT node should be properly stored in servers map")
+		assert.Equal(t, mockDHTNode, dhtNode, "Should use the existing DHT node")
+
+		// Stop the server to trigger Shutdown
+		err = server.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("WithExistingDHT_integration_with_announcer_and_notifier", func(t *testing.T) {
+		// Test that the existing DHT instance is properly integrated with announcer and notifier
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Setup mock expectations for DHT node methods
+		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Shutdown().Return()
+
+		// Create a server builder with existing DHT
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Setup mock expectations for storage.List to avoid unexpected calls
+		mocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
+
+		// Start the server to trigger proper initialization
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Verify that the server has the DHT announcer set up
+		defaultServer := server.(*DefaultServer)
+
+		// Check that the DHT announcer is created
+		assert.NotNil(t, defaultServer.dhtAnnouncer, "DHT announcer should be created")
+
+		// Verify that the notifier is set up
+		assert.NotNil(t, defaultServer.notifier, "Notifier should be set up")
+
+		// Stop the server to trigger Shutdown
+		err = server.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("WithExistingDHT_server_lifecycle", func(t *testing.T) {
+		// Test that the existing DHT instance works correctly with the server lifecycle (Start/Stop)
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Setup mock expectations for DHT node methods
+		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Shutdown().Return()
+
+		// Create a server builder with existing DHT
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Setup mock expectations for storage.List to avoid unexpected calls
+		mocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
+
+		// Test Start
+		ctx := context.Background()
+
+		// Start the server
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Verify the DHT node is now in the servers map
+		defaultServer := server.(*DefaultServer)
+		dhtNode, ok := defaultServer.servers[ProtocolDHT].(protocol.DHTNode)
+		assert.True(t, ok, "DHT node should be in servers map after Start")
+		assert.Equal(t, mockDHTNode, dhtNode, "Should use the existing DHT node")
+
+		// Test Stop
+		err = server.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("WithExistingDHT_with_other_protocols", func(t *testing.T) {
+		// Test WithExistingDHT with different config
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Setup mock expectations for DHT node methods
+		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Shutdown().Return()
+
+		// Create a server builder with existing DHT and other config
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithPeer(testPortPeer).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Setup mock expectations for storage.List to avoid unexpected calls
+		mocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
+
+		// Start the server to trigger proper initialization
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		// Verify that the server has the expected config
+		defaultServer := server.(*DefaultServer)
+		_, hasPeer := defaultServer.config[ProtocolPeer]
+		_, hasDHT := defaultServer.config[ProtocolDHT]
+
+		// Both should be present - peer protocol and DHT (existing node)
+		assert.True(t, hasPeer, "Peer protocol should be present")
+		assert.True(t, hasDHT, "DHT protocol should be present")
+
+		// Verify the DHT node is now in the servers map
+		dhtNode, ok := defaultServer.servers[ProtocolDHT].(protocol.DHTNode)
+		assert.True(t, ok, "DHT node should be in servers map after Start")
+		assert.Equal(t, mockDHTNode, dhtNode, "Should use the existing DHT node")
+
+		// Stop the server to trigger Shutdown
+		err = server.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("WithExistingDHT_error_handling", func(t *testing.T) {
+		// Test error handling when existing DHT is provided alongside DHT configuration
+		mocks := setupBuilderMocks(t)
+
+		// Create a mock DHT node
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Create a server builder with both existing DHT and DHT config
+		builder := NewServerBuilder().
+			WithExistingDHT(mockDHTNode).
+			WithDHT(testPortDHT).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer).
+			WithAccessControl(mocks.accessControl)
+
+		// Build the server - this should work as WithExistingDHT should take precedence
+		// or the builder should handle the conflict properly
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		// Verify the server was built successfully
+		assert.NotNil(t, server)
+	})
 }

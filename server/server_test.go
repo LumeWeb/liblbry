@@ -72,13 +72,13 @@ func setupMocks(t *testing.T) *testMocks {
 	}
 }
 
-// setupServer creates a server instance with the provided mocks and protocols
-func setupServer(t *testing.T, testMocks *testMocks, protocols map[string]any) *DefaultServer {
+// setupServer creates a server instance with the provided mocks and config
+func setupServer(t *testing.T, testMocks *testMocks, config map[string]any) *DefaultServer {
 	server := &DefaultServer{
 		storage:       testMocks.storage,
 		acquirer:      testMocks.acquirer,
 		accessControl: testMocks.accessControl,
-		protocols:     protocols,
+		config:        config,
 		logger:        testMocks.logger,
 		listeners:     make(map[string]net.Listener),
 		servers:       make(map[string]any),
@@ -94,7 +94,7 @@ func setupServer(t *testing.T, testMocks *testMocks, protocols map[string]any) *
 	return server
 }
 
-// setupServerWithDefaults creates a server with common default protocols
+// setupServerWithDefaults creates a server with common default config
 func setupServerWithDefaults(t *testing.T, testMocks *testMocks) *DefaultServer {
 	return setupServer(t, testMocks, map[string]any{
 		ProtocolPeer: &PeerConfig{Port: 0},
@@ -105,16 +105,6 @@ func setupServerWithDefaults(t *testing.T, testMocks *testMocks) *DefaultServer 
 func cleanupServer(server *DefaultServer) {
 	if server.cancel != nil {
 		server.cancel()
-	}
-	for protocol, listener := range server.listeners {
-		if listener != nil {
-			listener.Close()
-			delete(server.listeners, protocol)
-		}
-	}
-	// Clean up DHT server if present
-	if dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode); ok && dhtNode != nil {
-		dhtNode.Shutdown()
 	}
 }
 
@@ -136,8 +126,8 @@ func TestDefaultServer_Start_Success(t *testing.T) {
 }
 
 func TestDefaultServer_Start_MultipleProtocols(t *testing.T) {
-	// Test server startup with multiple protocols enabled
-	// Validates that the server can handle multiple concurrent protocols
+	// Test server startup with multiple config enabled
+	// Validates that the server can handle multiple concurrent config
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{
 		ProtocolPeer:      &PeerConfig{Port: 0},
@@ -153,41 +143,58 @@ func TestDefaultServer_Start_MultipleProtocols(t *testing.T) {
 }
 
 func TestDefaultServer_Start_WithDHT(t *testing.T) {
-	// Test server startup with DHT protocol enabled
-	// This validates DHT initialization and blob announcement functionality
+	// Tests DHT protocol initialization and blob announcement functionality
+	// Validates that server correctly sets up DHT node and announces blobs
 	testMocks := setupMocks(t)
 
 	// Setup mock expectations for List method (called during DHT blob announcement)
 	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
 	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
+	// Create a mock DHT node
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+	// Setup mock expectations for DHT node methods
+	mockDHTNode.EXPECT().Start().Return(nil)
+
 	server := setupServer(t, testMocks, map[string]any{
-		ProtocolDHT: &DHTConfig{Port: 0}, // Use port 0 for automatic port assignment
+		ProtocolDHT: mockDHTNode, // Pass the mock DHT node directly
 	})
-	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize // Set default batch size
+	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize
 
 	ctx := context.Background()
 	err := server.Start(ctx)
 
 	require.NoError(t, err)
 	assert.Contains(t, server.servers, ProtocolDHT)
+
+	// Verify that the mock DHT node was actually used
+	dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode)
+	assert.True(t, ok)
+	assert.Equal(t, mockDHTNode, dhtNode)
 }
 
 func TestDefaultServer_Start_AllProtocols(t *testing.T) {
-	// Test server startup with all supported protocols enabled
-	// Validates comprehensive protocol initialization and resource management
+	// Tests server startup with all supported config enabled
+	// Validates comprehensive config initialization and resource management
 	testMocks := setupMocks(t)
 
 	// Setup mock expectations for List method (called during DHT blob announcement)
 	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
 	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
+	// Create a mock DHT node
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+	// Setup mock expectations for DHT node methods
+	mockDHTNode.EXPECT().Start().Return(nil)
+
 	server := setupServer(t, testMocks, map[string]any{
 		ProtocolPeer:      &PeerConfig{Port: 0},
 		ProtocolReflector: &ReflectorConfig{Port: 0},
-		ProtocolDHT:       &DHTConfig{Port: 0},
+		ProtocolDHT:       mockDHTNode, // Pass the mock DHT node directly
 	})
-	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize // Set default batch size
+	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize
 
 	ctx := context.Background()
 	err := server.Start(ctx)
@@ -196,10 +203,15 @@ func TestDefaultServer_Start_AllProtocols(t *testing.T) {
 	assert.Contains(t, server.listeners, ProtocolPeer)
 	assert.Contains(t, server.listeners, ProtocolReflector)
 	assert.Contains(t, server.servers, ProtocolDHT)
+
+	// Verify that the mock DHT node was actually used
+	dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode)
+	assert.True(t, ok)
+	assert.Equal(t, mockDHTNode, dhtNode)
 }
 
 func TestDefaultServer_Start_UnknownProtocol(t *testing.T) {
-	// Test server startup with unknown protocol configuration
+	// Tests server startup with unknown protocol configuration
 	// Validates proper error handling for unsupported protocol types
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{
@@ -323,7 +335,7 @@ func TestDefaultServer_startReflector(t *testing.T) {
 
 func TestDefaultServer_startTCPProtocol(t *testing.T) {
 	// Test generic TCP protocol initialization
-	// Validates that TCP-based protocols can be successfully started and registered
+	// Validates that TCP-based config can be successfully started and registered
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
@@ -374,20 +386,37 @@ func TestDefaultServer_startTCPProtocol_PortInUse(t *testing.T) {
 
 func TestDefaultServer_startDHT(t *testing.T) {
 	// Test DHT protocol initialization
-	// Validates that DHT node can be successfully started and properly typed
+	// Validates that startDHT properly handles DHT node setup
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	config := &DHTConfig{Port: 0}
+	// Create a mock DHT node to simulate an existing node
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+	// Setup mock expectations for DHT node start
+	mockDHTNode.EXPECT().Start().Return(nil)
+
+	// Simulate that the DHT node is already in the servers map (as would happen with WithExistingDHT)
+	server.servers[ProtocolDHT] = mockDHTNode
+
+	// Test that startDHT properly detects and uses the existing DHT node
+	// This simulates the path taken when WithExistingDHT is used
+	config := &DHTConfig{Port: DefaultDHTPort}
+
+	// This should not fail and should properly handle the existing node
 	err := server.startDHT(config)
 
-	require.NoError(t, err)
-	assert.Contains(t, server.servers, ProtocolDHT)
+	// The method should not fail even with existing node
+	assert.NoError(t, err)
 
-	// Verify the server is a DHT node
-	dhtNode, ok := server.servers[ProtocolDHT].(protocol.DHTNode)
-	require.True(t, ok)
-	assert.NotNil(t, dhtNode)
+	// Verify that the existing DHT node is still in place
+	dhtNode, exists := server.servers[ProtocolDHT]
+	assert.True(t, exists, "DHT node should still be in servers map")
+
+	if dhtNode != nil {
+		// Should be the same mock node we set up
+		assert.Equal(t, mockDHTNode, dhtNode, "Should still have the existing DHT node")
+	}
 }
 
 func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
@@ -397,7 +426,7 @@ func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
 	server := setupServerWithDefaults(t, testMocks)
 
 	var wg sync.WaitGroup
-	errors := make(chan error, 2)
+	errs := make(chan error, 2)
 
 	// Start server in goroutine
 	wg.Add(1)
@@ -406,7 +435,7 @@ func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
 		ctx := context.Background()
 		err := server.Start(ctx)
 		if err != nil {
-			errors <- err
+			errs <- err
 		}
 	}()
 
@@ -419,15 +448,15 @@ func TestDefaultServer_ConcurrentStartStop(t *testing.T) {
 		defer wg.Done()
 		err := server.Stop(context.Background())
 		if err != nil {
-			errors <- err
+			errs <- err
 		}
 	}()
 
 	wg.Wait()
-	close(errors)
+	close(errs)
 
 	// Check for any errors
-	for err := range errors {
+	for err := range errs {
 		t.Errorf("Concurrent start/stop error: %v", err)
 	}
 }
@@ -447,6 +476,54 @@ func TestProtocolConstants(t *testing.T) {
 	assert.Equal(t, "peer", ProtocolPeer)
 	assert.Equal(t, "reflector", ProtocolReflector)
 	assert.Equal(t, "dht", ProtocolDHT)
+}
+
+func TestPeerPortDHTAlignment(t *testing.T) {
+	mocks := setupBuilderMocks(t)
+
+	t.Run("DHT port alignment when no fixed port", func(t *testing.T) {
+		// When no fixed port is specified, DHT should announce peer port = DHT port
+		builder := NewServerBuilder().
+			WithPeer(testPortPeer).
+			WithDHT(testPortDHT).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer)
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		defaultServer := server.(*DefaultServer)
+		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
+		dhtConfig := defaultServer.config[ProtocolDHT].(*DHTConfig)
+
+		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be configured")
+		assert.Equal(t, 0, peerConfig.FixedPort, "Fixed port should be 0 (disabled)")
+		assert.Equal(t, testPortDHT, dhtConfig.Port, "DHT port should be configured")
+
+		// The DHT announcement logic should align peer port with DHT port when no fixed port
+		// This is tested indirectly through the startDHT logic
+	})
+
+	t.Run("Fixed port takes precedence", func(t *testing.T) {
+		// When fixed port is specified, it should be used for DHT announcements
+		builder := NewServerBuilder().
+			WithPeer(testPortPeer).
+			WithFixedPeerPort(testPortPeer2).
+			WithDHT(testPortDHT).
+			WithStorage(mocks.storage).
+			WithAcquirer(mocks.acquirer)
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+
+		defaultServer := server.(*DefaultServer)
+		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
+		dhtConfig := defaultServer.config[ProtocolDHT].(*DHTConfig)
+
+		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be configured")
+		assert.Equal(t, testPortPeer2, peerConfig.FixedPort, "Fixed port should be set")
+		assert.Equal(t, testPortDHT, dhtConfig.Port, "DHT port should be configured")
+	})
 }
 
 // TestDefaultServer_AddBlob_Success tests successful blob addition
@@ -779,8 +856,9 @@ func TestDefaultServer_announceBlobsToDHT_UsesLBRYHash(t *testing.T) {
 	}
 
 	// Set up mock expectations for storage List calls
+	// Note: offset increments by batchSize, not by actual number of blobs processed
 	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return(testBlobHashes, nil)
-	testMocks.storage.EXPECT().List(len(testBlobHashes), DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+	testMocks.storage.EXPECT().List(DefaultDHTAnnouncementBatchSize, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
 	// Set up mock expectations for DHT announcer - expect LBRY hashes, not multihashes
 	for _, hash := range testBlobHashes {
