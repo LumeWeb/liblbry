@@ -11,6 +11,8 @@ import (
 )
 
 // DefaultDHTAddress is the default address for DHT nodes
+// Uses 127.0.0.1 (localhost) by default because 0.0.0.0 cannot be used for DHT broadcasting.
+// Production deployments must explicitly set their external IP using WithDHTAddress().
 const DefaultDHTAddress = "127.0.0.1:4444"
 
 // DHT abstracts the underlying dht.DHT implementation
@@ -68,7 +70,7 @@ type DHTNode interface {
 	// State Management
 	IsJoined() bool
 	GetRoutingTableInfo() string
-	
+
 	// Restart restarts a stopped DHT node
 	Restart() error
 }
