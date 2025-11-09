@@ -756,3 +756,44 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 		t.Errorf("Concurrent blob operation error: %v", err)
 	}
 }
+
+// TestDefaultServer_announceBlobsToDHT_UsesLBRYHash tests that DHT blob announcements
+// use LBRY hash format directly, not multihash format. This is a regression test
+// for a bug where LBRY hashes were incorrectly converted to multihash before
+// being passed to the DHT announcer, causing "invalid hash format" errors.
+func TestDefaultServer_announceBlobsToDHT_UsesLBRYHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	// Create a mock DHT announcer to capture the hash format
+	mockDHTAnnouncer := protocolMocks.NewMockDHTAnnouncer(t)
+	server.dhtAnnouncer = mockDHTAnnouncer
+
+	// Test blob hashes (valid LBRY SHA-384 hashes)
+	testBlobHashes := []string{
+		"68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3",
+		"e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26",
+		"38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b",
+	}
+
+	// Set up mock expectations for storage List calls
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return(testBlobHashes, nil)
+	testMocks.storage.EXPECT().List(len(testBlobHashes), DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+
+	// Set up mock expectations for DHT announcer - expect LBRY hashes, not multihashes
+	for _, hash := range testBlobHashes {
+		mockDHTAnnouncer.EXPECT().AnnounceBlob(hash).Return(nil)
+	}
+
+	// Set batch size to ensure all blobs are processed in one batch
+	server.dhtBatchSize = DefaultDHTAnnouncementBatchSize
+
+	// Call announceBlobsToDHT with default worker count and batch size
+	server.announceBlobsToDHT(DefaultDHTAnnouncerWorkers, DefaultDHTAnnouncementBatchSize)
+
+	// Verify all mock expectations were met
+	// This ensures that LBRY hashes were passed directly to AnnounceBlob,
+	// not converted to multihash format first
+}

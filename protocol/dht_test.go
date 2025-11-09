@@ -16,8 +16,8 @@ func TestNewDHTConfig(t *testing.T) {
 	cfg, err := NewDHTConfig()
 	require.NoError(t, err, "Failed to create DHT config")
 
-	if cfg.Address != "0.0.0.0:4444" {
-		t.Errorf("Expected default address '0.0.0.0:4444', got '%s'", cfg.Address)
+	if cfg.Address != "127.0.0.1:4444" {
+		t.Errorf("Expected default address '127.0.0.1:4444', got '%s'", cfg.Address)
 	}
 
 	if len(cfg.SeedNodes) != 4 {

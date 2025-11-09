@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/mocks"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
+	"go.lumeweb.com/liblbry/storage/memory"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -516,6 +517,47 @@ func TestServerBuilder_WithDHTSeedNodesAfterWithDHT(t *testing.T) {
 	// Verify seed nodes were set correctly
 	dhtConfig = builder.protocols[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+}
+
+// TestServerBuilder_WithDHTAddress verifies that WithDHTAddress correctly sets the DHT address
+func TestServerBuilder_WithDHTAddress(t *testing.T) {
+	// Test with custom DHT address
+	builder := NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithDHT()
+	
+	// Configure DHT with custom address
+	result := builder.WithDHTAddress("192.168.1.100:4444")
+	
+	// Verify builder returns same instance
+	assertBuilderReturnsSame(t, builder, result)
+	
+	// Verify DHT config exists and has correct address
+	assert.Contains(t, builder.protocols, ProtocolDHT)
+	
+	dhtConfig := builder.protocols[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, "192.168.1.100:4444", dhtConfig.Address, "DHT address should match custom address")
+	
+	// Test default behavior (no custom address)
+	builder2 := NewServerBuilder().
+		WithStorage(memory.NewMemoryStore()).
+		WithDHT()
+	
+	// Build without setting address - should use default empty string
+	server2, err := builder2.Build()
+	assert.NoError(t, err)
+	assert.NotNil(t, server2)
+	
+	// Verify default DHT address is empty (will be set to default in startDHT)
+	dhtConfig2, exists2 := builder2.protocols[ProtocolDHT]
+	assert.True(t, exists2, "DHT protocol should be configured")
+	
+	if dhtConfig2 != nil {
+		dhtCfg2, ok := dhtConfig2.(*DHTConfig)
+		assert.True(t, ok, "DHT config should be of correct type")
+		// Default address should be empty string
+		assert.Equal(t, "", dhtCfg2.Address, "DHT address should be empty by default")
+	}
 }
 
 // TestServerBuilder_WithDHTSeedNodesMultipleCalls verifies that calling WithDHTSeedNodes multiple times overwrites previous values
