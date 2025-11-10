@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/liblbry/blob"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
+	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/storage/memory"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 	"go.uber.org/zap"
@@ -235,9 +236,23 @@ func TestReflectorClientSendBlob_DuplicateHandling(t *testing.T) {
 	}
 }
 
-// TestReflectorClientSendSDBlob_DuplicateHandling tests SD blob duplicate scenarios
-// when the store does NOT implement NeededBlobChecker (like MemoryStore)
-func TestReflectorClientSendSDBlob_DuplicateHandling(t *testing.T) {
+// TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobChecker tests SD blob duplicate scenarios
+// when the store does NOT implement NeededBlobChecker (like MemoryStore).
+// This test specifically verifies behavior when MemoryStore doesn't implement NeededBlobChecker,
+// which is an implementation detail that could change in the future.
+func TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobChecker(t *testing.T) {
+	// Verify that MemoryStore doesn't implement NeededBlobChecker
+	// This is a critical assumption for this test's behavior
+	_, _, _, _ = setupReflectorIntegrationTest(t)
+	
+	// Runtime check to ensure the test's assumption holds
+	// If this check fails, the test needs to be updated or reconsidered
+	store, _, _, _ := setupReflectorIntegrationTest(t)
+	_, implementsNeededBlobChecker := interface{}(store).(storage.NeededBlobChecker)
+	if implementsNeededBlobChecker {
+		t.Skip("Skipping test as MemoryStore now implements NeededBlobChecker - test assumption no longer valid")
+	}
+
 	// Create a fresh server for SD blob test to avoid conflicts
 	sdStore, logger, _, sdAddr := setupReflectorIntegrationTest(t)
 
