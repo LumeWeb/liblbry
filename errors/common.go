@@ -93,6 +93,26 @@ func DetectErrorType(errorMsg string) error {
 	}
 }
 
+// Storage operation errors
+var (
+	ErrFailedToCheckBlobExistence = errors.New("failed to check blob existence")
+	ErrFailedToCheckNeededBlobs   = errors.New("failed to check needed blobs")
+)
+
+// Network and I/O operation errors
+var (
+	ErrFailedToParsePeerAddress        = errors.New("failed to parse peer address")
+	ErrFailedToStoreBlob               = errors.New("failed to store blob")
+	ErrFailedToMarshalBlobResponse     = errors.New("failed to marshal blob response")
+	ErrFailedToMarshalTransferResponse = errors.New("failed to marshal transfer response")
+	ErrFailedToSetReadDeadline         = errors.New("failed to set read deadline")
+	ErrFailedToReadBlobData            = errors.New("failed to read blob data")
+	ErrFailedToDecodeJSON              = errors.New("failed to decode JSON")
+	ErrFailedToMarshalJSON             = errors.New("failed to marshal JSON")
+	ErrFailedToSetWriteDeadline        = errors.New("failed to set write deadline")
+	ErrFailedToWriteData               = errors.New("failed to write data")
+)
+
 // Stream-specific errors (added from lbry.go)
 var (
 	ErrBlobTooBig             = errors.New("blob must be at most 2097152 bytes")
