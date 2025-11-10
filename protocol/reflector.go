@@ -279,11 +279,13 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 	var err error
 
 	// Check if store implements Blocklister interface
+	var decidedByBlocklister bool
 	if blocklister, ok := r.store.(storage.Blocklister); ok {
 		wantsBlob, err = blocklister.Wants(blobHash)
 		if err != nil {
 			return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckBlobExistence, err)
 		}
+		decidedByBlocklister = true
 	} else {
 		// Fall back to Has() method
 		blobExists, err := r.store.Has(blobHash)
@@ -291,6 +293,7 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 			return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckBlobExistence, err)
 		}
 		wantsBlob = !blobExists
+		decidedByBlocklister = false
 	}
 
 	var neededBlobs []string
@@ -305,7 +308,10 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 		} else {
 			// If we can't check for blobs in a stream, we have to say that SD blob is missing
 			// If we say we have SD blob, they won't try to send any content blobs
-			wantsBlob = true
+			// Only override the decision if it came from the legacy Has() path, not from Blocklister
+			if !decidedByBlocklister {
+				wantsBlob = true
+			}
 		}
 	}
 
