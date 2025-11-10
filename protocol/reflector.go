@@ -282,7 +282,7 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 	if blocklister, ok := r.store.(storage.Blocklister); ok {
 		wantsBlob, err = blocklister.Wants(blobHash)
 		if err != nil {
-			return false, nil, err
+			return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckBlobExistence, err)
 		}
 	} else {
 		// Fall back to Has() method
