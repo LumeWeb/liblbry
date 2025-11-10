@@ -22,6 +22,7 @@ import (
 
 	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/crypto"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
@@ -172,7 +173,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 
 	peerIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
-		return fmt.Errorf("failed to parse peer address: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToParsePeerAddress, err)
 	}
 
 	// Check if we want this blob
@@ -219,7 +220,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 		err = r.store.Put(blobHash, blobData)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), err)
+		return fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), errors.Join(liblbryerrors.ErrFailedToStoreBlob, err))
 	}
 
 	// Notify about blob addition
@@ -233,7 +234,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Reader) (int, string, bool, error) {
 	var request SendBlobRequest
 	if err := r.readJSON(conn, reader, &request); err != nil {
-		return 0, "", false, fmt.Errorf("%w: %v", ErrInvalidBlobRequest, err)
+		return 0, "", false, errors.Join(ErrInvalidBlobRequest, err)
 	}
 
 	var blobHash string
@@ -252,7 +253,7 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Re
 		return blobSize, blobHash, isSdBlob, ErrBlobHashEmpty
 	}
 	if !ValidateBlobHash(blobHash) {
-		return blobSize, blobHash, isSdBlob, fmt.Errorf("%w: invalid blob hash", ErrInvalidBlobRequest)
+		return blobSize, blobHash, isSdBlob, errors.Join(ErrInvalidBlobRequest, fmt.Errorf("invalid blob hash"))
 	}
 	if blobSize > MaxBlobSize {
 		return blobSize, blobHash, isSdBlob, ErrBlobTooBig
@@ -274,33 +275,41 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 		return false, []string{}, nil
 	}
 
-	// Check if blob already exists
-	blobExists, err := r.store.Has(blobHash)
-	if err != nil {
-		return false, nil, fmt.Errorf("failed to check blob existence: %w", err)
-	}
+	var wantsBlob bool
+	var err error
 
-	if blobExists {
-		return false, nil, nil // Already have this blob
+	// Check if store implements Blocklister interface
+	if blocklister, ok := r.store.(storage.Blocklister); ok {
+		wantsBlob, err = blocklister.Wants(blobHash)
+		if err != nil {
+			return false, nil, err
+		}
+	} else {
+		// Fall back to Has() method
+		blobExists, err := r.store.Has(blobHash)
+		if err != nil {
+			return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckBlobExistence, err)
+		}
+		wantsBlob = !blobExists
 	}
 
 	var neededBlobs []string
 
-	// For SD blobs, check if we need any blobs from the stream
-	if isSdBlob {
-		// Try to get needed blobs if store supports it
-		if neededChecker, ok := r.store.(interface {
-			MissingBlobsForKnownStream(string) ([]string, error)
-		}); ok {
+	// For SD blobs that we don't want, check if we need any blobs from the stream
+	if isSdBlob && !wantsBlob {
+		if neededChecker, ok := r.store.(storage.NeededBlobChecker); ok {
 			neededBlobs, err = neededChecker.MissingBlobsForKnownStream(blobHash)
 			if err != nil {
-				return false, nil, fmt.Errorf("failed to check needed blobs: %w", err)
+				return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckNeededBlobs, err)
 			}
+		} else {
+			// If we can't check for blobs in a stream, we have to say that SD blob is missing
+			// If we say we have SD blob, they won't try to send any content blobs
+			wantsBlob = true
 		}
-		// If we can't check needed blobs, we'll accept the SD blob anyway
 	}
 
-	return true, neededBlobs, nil
+	return wantsBlob, neededBlobs, nil
 }
 
 // sendBlobResponse sends a response to a blob request
@@ -317,7 +326,7 @@ func (r *DefaultReflectorServer) sendBlobResponse(conn net.Conn, shouldSend, isS
 		response, err = json.Marshal(SendBlobResponse{SendBlob: shouldSend})
 	}
 	if err != nil {
-		return fmt.Errorf("failed to marshal blob response: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToMarshalBlobResponse, err)
 	}
 
 	return r.writeData(conn, response)
@@ -334,7 +343,7 @@ func (r *DefaultReflectorServer) sendTransferResponse(conn net.Conn, receivedBlo
 		response, err = json.Marshal(BlobTransferResponse{ReceivedBlob: receivedBlob})
 	}
 	if err != nil {
-		return fmt.Errorf("failed to marshal transfer response: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToMarshalTransferResponse, err)
 	}
 
 	return r.writeData(conn, response)
@@ -363,13 +372,13 @@ func (r *DefaultReflectorServer) calculateTimeout(blobSize int) time.Duration {
 // slower connections transferring larger blobs.
 func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, reader *bufio.Reader, blobSize int) ([]byte, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(r.calculateTimeout(blobSize))); err != nil {
-		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+		return nil, errors.Join(liblbryerrors.ErrFailedToSetReadDeadline, err)
 	}
 
 	blob := make([]byte, blobSize)
 	_, err := io.ReadFull(reader, blob)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read blob data: %w", err)
+		return nil, errors.Join(liblbryerrors.ErrFailedToReadBlobData, err)
 	}
 
 	return blob, nil
@@ -378,16 +387,16 @@ func (r *DefaultReflectorServer) readRawBlob(conn net.Conn, reader *bufio.Reader
 // readJSON reads and unmarshals JSON from the connection with timeout
 func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v any) error {
 	if err := conn.SetReadDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
-		return fmt.Errorf("failed to set read deadline: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToSetReadDeadline, err)
 	}
 
 	dec := json.NewDecoder(reader)
 	if err := dec.Decode(v); err != nil {
 		data, _ := io.ReadAll(dec.Buffered())
 		if len(data) > 0 {
-			return fmt.Errorf("failed to decode JSON: %w; data=%s", err, hex.EncodeToString(data))
+			return errors.Join(liblbryerrors.ErrFailedToDecodeJSON, fmt.Errorf("failed to decode JSON; data=%s: %w", hex.EncodeToString(data), err))
 		}
-		return fmt.Errorf("failed to decode JSON: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToDecodeJSON, err)
 	}
 	return nil
 }
@@ -396,7 +405,7 @@ func (r *DefaultReflectorServer) readJSON(conn net.Conn, reader *bufio.Reader, v
 func (r *DefaultReflectorServer) writeJSON(conn net.Conn, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToMarshalJSON, err)
 	}
 
 	return r.writeData(conn, data)
@@ -405,7 +414,7 @@ func (r *DefaultReflectorServer) writeJSON(conn net.Conn, v any) error {
 // writeData writes raw data to the connection
 func (r *DefaultReflectorServer) writeData(conn net.Conn, data []byte) error {
 	if err := conn.SetWriteDeadline(time.Now().Add(r.connectionTimeout)); err != nil {
-		return fmt.Errorf("failed to set write deadline: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToSetWriteDeadline, err)
 	}
 
 	n, err := conn.Write(data)
@@ -413,7 +422,7 @@ func (r *DefaultReflectorServer) writeData(conn net.Conn, data []byte) error {
 		err = io.ErrShortWrite
 	}
 	if err != nil {
-		return fmt.Errorf("failed to write data: %w", err)
+		return errors.Join(liblbryerrors.ErrFailedToWriteData, err)
 	}
 
 	return nil

@@ -205,8 +205,8 @@ func TestReflectorClientConnectAndClose(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestReflectorClientSendBlob tests blob sending functionality
-func TestReflectorClientSendBlob(t *testing.T) {
+// TestReflectorClientSendBlob_DuplicateHandling tests regular blob duplicate scenarios
+func TestReflectorClientSendBlob_DuplicateHandling(t *testing.T) {
 	store, logger, _, addr := setupReflectorIntegrationTest(t)
 
 	testData := []byte("test blob data")
@@ -232,20 +232,23 @@ func TestReflectorClientSendBlob(t *testing.T) {
 	} else if err.Error() != liblbryerrors.ErrBlobExists.Error() {
 		t.Errorf("expected ErrBlobExists message, got %v", err.Error())
 	}
+}
 
+// TestReflectorClientSendSDBlob_DuplicateHandling tests SD blob duplicate scenarios
+func TestReflectorClientSendSDBlob_DuplicateHandling(t *testing.T) {
 	// Create a fresh server for SD blob test to avoid conflicts
-	sdStore, logger2, _, sdAddr := setupReflectorIntegrationTest(t)
+	sdStore, logger, _, sdAddr := setupReflectorIntegrationTest(t)
 	
 	// Test SendSDBlob with different data
 	sdBlobData := []byte("test sd blob data")
 	sdTestBlob, sdBlobHash, _, _ := createReflectorTestBlob(t, sdBlobData)
 	
-	sdClient := setupReflectorTestClient(t, sdAddr, logger2)
+	sdClient := setupReflectorTestClient(t, sdAddr, logger)
 	defer func(client ReflectorClient) {
 		_ = client.Close()
 	}(sdClient)
 
-	err = sdClient.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
+	err := sdClient.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
 	require.NoError(t, err)
 
 	// Store SD blob to test duplicate handling

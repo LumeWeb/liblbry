@@ -9,3 +9,12 @@ type StoreFactory interface {
 	CreateStore(config *koanf.Koanf) (BlobStore, error)
 	Name() string
 }
+
+type DummyMissingBlobStore interface {
+	BlobStore
+	NeededBlobChecker
+}
+type DummyBlocklistBlobStore interface {
+	BlobStore
+	Blocklister
+}
