@@ -16,6 +16,7 @@ import (
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/storage/memory"
+	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -211,7 +212,7 @@ func TestReflectorClientSendBlob_DuplicateHandling(t *testing.T) {
 
 	testData := []byte("test blob data")
 	testBlob, blobHash, _, _ := createReflectorTestBlob(t, testData)
-	
+
 	client := setupReflectorTestClient(t, addr, logger)
 	defer func(client ReflectorClient) {
 		_ = client.Close()
@@ -229,20 +230,21 @@ func TestReflectorClientSendBlob_DuplicateHandling(t *testing.T) {
 	err = client.SendBlob(blobHash, testBlob.ToBytes())
 	if err == nil {
 		t.Error("expected error but got nil")
-	} else if err.Error() != liblbryerrors.ErrBlobExists.Error() {
-		t.Errorf("expected ErrBlobExists message, got %v", err.Error())
+	} else if !liblbryerrors.Is(err, liblbryerrors.ErrBlobExists) {
+		t.Errorf("expected ErrBlobExists, got %v", err)
 	}
 }
 
 // TestReflectorClientSendSDBlob_DuplicateHandling tests SD blob duplicate scenarios
+// when the store does NOT implement NeededBlobChecker (like MemoryStore)
 func TestReflectorClientSendSDBlob_DuplicateHandling(t *testing.T) {
 	// Create a fresh server for SD blob test to avoid conflicts
 	sdStore, logger, _, sdAddr := setupReflectorIntegrationTest(t)
-	
+
 	// Test SendSDBlob with different data
 	sdBlobData := []byte("test sd blob data")
 	sdTestBlob, sdBlobHash, _, _ := createReflectorTestBlob(t, sdBlobData)
-	
+
 	sdClient := setupReflectorTestClient(t, sdAddr, logger)
 	defer func(client ReflectorClient) {
 		_ = client.Close()
@@ -255,12 +257,51 @@ func TestReflectorClientSendSDBlob_DuplicateHandling(t *testing.T) {
 	err = sdStore.Put(sdBlobHash, sdTestBlob)
 	require.NoError(t, err)
 
-	// Second SD blob upload should return ErrBlobExists
+	// Second SD blob upload should succeed (not return error) because MemoryStore
+	// doesn't implement NeededBlobChecker, so the server accepts duplicate SD blobs
+	// to ensure content blobs can still be uploaded
+	err = sdClient.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
+	assert.NoError(t, err, "Expected duplicate SD blob upload to succeed when store doesn't implement NeededBlobChecker")
+}
+
+// TestReflectorClientSendSDBlob_DuplicateHandling_WithNeededBlobChecker tests SD blob duplicate scenarios
+// when the store DOES implement NeededBlobChecker
+func TestReflectorClientSendSDBlob_DuplicateHandling_WithNeededBlobChecker(t *testing.T) {
+	// Create a mock store that implements NeededBlobChecker
+	mockStore := storageMocks.NewMockDummyMissingBlobStore(t)
+	logger := zaptest.NewLogger(t)
+	server := NewReflectorServer(mockStore, WithReflectorLogger(logger))
+
+	// Start server on random port
+	addr := setupReflectorIntegrationTestServer(t, server)
+
+	// Test SendSDBlob with different data
+	sdBlobData := []byte("test sd blob data")
+	sdTestBlob, sdBlobHash, _, _ := createReflectorTestBlob(t, sdBlobData)
+
+	sdClient := setupReflectorTestClient(t, addr, logger)
+	defer func(client ReflectorClient) {
+		_ = client.Close()
+	}(sdClient)
+
+	// Mock the store methods - first upload should succeed
+	mockStore.On("Has", sdBlobHash).Return(false, nil).Once()
+	mockStore.On("PutSD", sdBlobHash, sdTestBlob.ToBytes()).Return(nil).Once()
+
+	err := sdClient.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
+	require.NoError(t, err)
+
+	// Mock the store methods - second upload should find the blob exists
+	mockStore.On("Has", sdBlobHash).Return(true, nil).Once()
+	mockStore.On("MissingBlobsForKnownStream", sdBlobHash).Return([]string{}, nil).Once()
+
+	// Second SD blob upload should return ErrBlobExists because the store
+	// implements NeededBlobChecker and can properly detect duplicates
 	err = sdClient.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
 	if err == nil {
 		t.Error("expected error but got nil")
-	} else if err.Error() != liblbryerrors.ErrBlobExists.Error() {
-		t.Errorf("expected ErrBlobExists message, got %v", err.Error())
+	} else if !liblbryerrors.Is(err, liblbryerrors.ErrBlobExists) {
+		t.Errorf("expected ErrBlobExists, got %v", err)
 	}
 }
 
@@ -330,7 +371,7 @@ func TestReflectorClientTimeoutHandling(t *testing.T) {
 func TestReflectorClientConcurrentClients(t *testing.T) {
 	// Create one server for all clients to connect to
 	store, logger, _, addr := setupReflectorIntegrationTest(t)
-	
+
 	// Create ONE blob that all clients will try to upload
 	testData := []byte("This is test blob data for concurrent access")
 	testBlob, blobHash, _, _ := createReflectorTestBlob(t, testData)
@@ -354,18 +395,18 @@ func TestReflectorClientConcurrentClients(t *testing.T) {
 				return err
 			}
 
-			// Test SendBlob - should return ErrBlobExists for all clients 
+			// Test SendBlob - should return ErrBlobExists for all clients
 			// since they're all trying to upload the same blob
 			err = client.SendBlob(blobHash, testBlob.ToBytes())
 			if err != nil {
 				// Check if it's the expected "blob already exists" error
-				if err.Error() != liblbryerrors.ErrBlobExists.Error() {
+				if !liblbryerrors.Is(err, liblbryerrors.ErrBlobExists) {
 					return err // Return unexpected errors
 				}
 				// ErrBlobExists is expected, so this is success
 				return nil
 			}
-			
+
 			// If no error, this was the first client to upload successfully
 			return nil
 		}
@@ -402,11 +443,11 @@ func TestReflectorClientLargeBlobHandling(t *testing.T) {
 
 	// Create a fresh client and server for testing duplicate upload
 	store2, logger2, _, addr2 := setupReflectorIntegrationTest(t)
-	
+
 	// Put the same blob in the new store
 	err = store2.Put(blobHash, largeBlob)
 	require.NoError(t, err)
-	
+
 	client2 := setupReflectorTestClient(t, addr2, logger2)
 	defer func(client ReflectorClient) {
 		_ = client.Close()

@@ -348,7 +348,7 @@ func TestShouldAcceptBlob_ExistingRegularBlob_WithNeededBlobChecker(t *testing.T
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing regular blob")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs for regular blob")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -366,7 +366,7 @@ func TestShouldAcceptBlob_ExistingRegularBlob_WithoutNeededBlobChecker(t *testin
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing regular blob")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs for regular blob")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -381,15 +381,16 @@ func TestShouldAcceptBlob_ExistingRegularBlob_NeededBlobCheckerError(t *testing.
 
 	// For regular blobs (isSdBlob=false), MissingBlobsForKnownStream should NOT be called
 	// Remove the expectation that it gets called since it's only called for SD blobs
-	
-	_, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
 
 	// For regular blobs, shouldAcceptBlob should return false without error
 	// because the blob already exists and we don't want to re-upload it
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed for existing regular blob")
+	assert.False(t, shouldSend, "Expected shouldSend to be false for existing regular blob")
 	assert.Nil(t, returnedBlobs, "returnedBlobs should be nil for regular blobs")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs for existing regular blob")
-	
+
 	// Verify the expected calls were made
 	// Only Has should be called, not MissingBlobsForKnownStream
 	mockStore.AssertExpectations(t)
@@ -412,7 +413,7 @@ func TestShouldAcceptBlob_ExistingSDBlob_WithNeededBlobChecker(t *testing.T) {
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing SD blob")
 	assert.Equal(t, neededBlobs, returnedBlobs, "Expected correct needed blobs")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -430,7 +431,7 @@ func TestShouldAcceptBlob_ExistingSDBlob_WithoutNeededBlobChecker(t *testing.T) 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for existing SD blob")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs when store doesn't implement NeededBlobChecker")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -447,13 +448,14 @@ func TestShouldAcceptBlob_ExistingSDBlob_NeededBlobCheckerError(t *testing.T) {
 	expectedError := errors.New("needed blob checker error")
 	mockStore.EXPECT().MissingBlobsForKnownStream(validBlobHash1).Return(nil, expectedError)
 
-	_, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, true, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, true, testLocalIP)
 
 	assert.Error(t, err, "Expected shouldAcceptBlob to fail with error")
+	assert.False(t, shouldSend, "Expected shouldSend to remain false when MissingBlobsForKnownStream errors")
 	// Check if the wrapped error matches
 	assert.True(t, errors.Is(err, expectedError), "Expected error to wrap the expected error")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs on error")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -471,7 +473,7 @@ func TestShouldAcceptBlob_WithBlocklister_WantsTrue(t *testing.T) {
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true when Wants returns true")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -489,7 +491,7 @@ func TestShouldAcceptBlob_WithBlocklister_WantsFalse(t *testing.T) {
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false when Wants returns false")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }
@@ -509,7 +511,7 @@ func TestShouldAcceptBlob_WithBlocklister_Error(t *testing.T) {
 	// Check if the wrapped error matches
 	assert.True(t, errors.Is(err, expectedError), "Expected error to wrap the expected error")
 	assert.Empty(t, returnedBlobs, "Expected no needed blobs on error")
-	
+
 	// Verify the expected calls were made
 	mockStore.AssertExpectations(t)
 }

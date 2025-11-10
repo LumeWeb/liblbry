@@ -220,7 +220,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 		err = r.store.Put(blobHash, blobData)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), errors.Join(liblbryerrors.ErrFailedToStoreBlob, err))
+		return errors.Join(liblbryerrors.ErrFailedToStoreBlob, fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), err))
 	}
 
 	// Notify about blob addition
@@ -253,7 +253,7 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Re
 		return blobSize, blobHash, isSdBlob, ErrBlobHashEmpty
 	}
 	if !ValidateBlobHash(blobHash) {
-		return blobSize, blobHash, isSdBlob, errors.Join(ErrInvalidBlobRequest, fmt.Errorf("invalid blob hash"))
+		return blobSize, blobHash, isSdBlob, errors.Join(ErrInvalidBlobRequest, liblbryerrors.ErrInvalidData)
 	}
 	if blobSize > MaxBlobSize {
 		return blobSize, blobHash, isSdBlob, ErrBlobTooBig
