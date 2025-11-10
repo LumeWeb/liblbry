@@ -293,23 +293,15 @@ func TestReflectorServerShouldAcceptSDBlob_BlocklisterFalseNoNeededChecker(t *te
 	// Since we can't easily test the internal method, we'll verify the behavior through
 	// the actual server handling by ensuring the connection is properly established
 	// and the blob is rejected appropriately
-	
-	// Create a test that verifies the server correctly handles the scenario
-	// by checking that the connection is handled without errors
 	err := client.SendSDBlob(sdBlobHash, sdTestBlob.ToBytes())
-	// This should not return an error, but the blob should be rejected by the server
-	// because the Blocklister says it doesn't want the blob
-	if err != nil {
-		// If there's an error, it should be related to connection or protocol, not the blob rejection
-		// The important thing is that it doesn't fail with ErrBlobExists since the store
-		// doesn't implement NeededBlobChecker
-		t.Logf("Client error (expected): %v", err)
-	}
+	// The client should receive ErrBlobExists because the server rejects the blob
+	// when the Blocklister returns false. This is the correct behavior.
+	require.Error(t, err, "Client should receive an error when server rejects blob")
+	assert.True(t, liblbryerrors.Is(err, liblbryerrors.ErrBlobExists), "Expected ErrBlobExists when server rejects blob")
 
 	// Verify that the mock was called as expected
 	mockStore.AssertExpectations(t)
 }
-
 
 // TestReflectorClientErrorHandling tests various error scenarios
 func TestReflectorClientErrorHandling(t *testing.T) {
