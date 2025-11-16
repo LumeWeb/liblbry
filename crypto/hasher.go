@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/sha512"
 	"encoding/hex"
+	"io"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 // Hasher interface defines the methods for hashing and validation
 type Hasher interface {
 	Hash(data []byte) string
+	HashReader(reader io.Reader) (string, error)
 	IsValid(hash string) bool
 }
 
@@ -27,7 +29,28 @@ func NewHasher() Hasher {
 // Hash computes the SHA-384 hash of the given data
 func (h *SHA384Hasher) Hash(data []byte) string {
 	hash := sha512.Sum384(data)
-	return hex.EncodeToString(hash[:])
+	return h.encodeHash(hash[:])
+}
+
+// HashReader computes the SHA-384 hash of the data read from the reader
+func (h *SHA384Hasher) HashReader(reader io.Reader) (string, error) {
+	// Create a new SHA-384 hasher
+	hasher := sha512.New384()
+	
+	// Copy data from reader to hasher in chunks to avoid loading everything into memory
+	_, err := io.Copy(hasher, reader)
+	if err != nil {
+		return "", err
+	}
+	
+	// Get the final hash
+	hash := hasher.Sum(nil)
+	return h.encodeHash(hash), nil
+}
+
+// encodeHash converts a byte slice to a hexadecimal string
+func (h *SHA384Hasher) encodeHash(hash []byte) string {
+	return hex.EncodeToString(hash)
 }
 
 // IsValid checks if the given hash is a valid SHA-384 hash
