@@ -49,7 +49,6 @@ func TestSHA384Hasher_HashReader(t *testing.T) {
 		name     string
 		reader   io.Reader
 		expected string
-		hasError bool
 	}{
 		{
 			name:     "string reader",
@@ -76,17 +75,11 @@ func TestSHA384Hasher_HashReader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := hasher.HashReader(tt.reader)
-			if tt.hasError {
-				if err == nil {
-					t.Errorf("HashReader() expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("HashReader() unexpected error: %v", err)
-				}
-				if result != tt.expected {
-					t.Errorf("HashReader() = %v, expected %v", result, tt.expected)
-				}
+			if err != nil {
+				t.Errorf("HashReader() unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("HashReader() = %v, expected %v", result, tt.expected)
 			}
 		})
 	}
