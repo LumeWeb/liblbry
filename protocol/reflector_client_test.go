@@ -71,9 +71,12 @@ func setupReflectorIntegrationTestServer(t *testing.T, server ReflectorServer) s
 // testReflectorSetup creates common test components
 func testReflectorSetup(t *testing.T) (*memory.MemoryStore, *zap.Logger, ReflectorServer) {
 	store := memory.NewMemoryStore()
-	logger := zaptest.NewLogger(t)
-	server := NewReflectorServer(store, WithReflectorLogger(logger))
-	return store, logger, server
+	// Use production logger for server to ensure thread-safety
+	serverLogger, err := zap.NewProduction()
+	require.NoError(t, err)
+	clientLogger := zaptest.NewLogger(t)
+	server := NewReflectorServer(store, WithReflectorLogger(serverLogger))
+	return store, clientLogger, server
 }
 
 // testReflectorClientSetup creates a test client and connects it to the server
@@ -94,15 +97,17 @@ func testReflectorClientSetup(t *testing.T, addr string, logger *zap.Logger, tim
 
 // setupReflectorIntegrationTest creates a complete integration test setup
 func setupReflectorIntegrationTest(t *testing.T, opts ...ReflectorServerOption) (*memory.MemoryStore, *zap.Logger, ReflectorServer, string) {
-	store, logger, server := testReflectorSetup(t)
+	store, clientLogger, server := testReflectorSetup(t)
 
 	// Apply additional server options
-	serverOpts := []ReflectorServerOption{WithReflectorLogger(logger)}
+	// Use zap.NewNop() for a no-op logger that's thread-safe for tests
+	// This avoids potential race conditions while maintaining thread-safety
+	serverOpts := []ReflectorServerOption{WithReflectorLogger(zap.NewNop())}
 	serverOpts = append(serverOpts, opts...)
 	server = NewReflectorServer(store, serverOpts...)
 
 	addr := setupReflectorIntegrationTestServer(t, server)
-	return store, logger, server, addr
+	return store, clientLogger, server, addr
 }
 
 // setupReflectorTestClient creates a test client with automatic cleanup
