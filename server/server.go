@@ -105,13 +105,16 @@ type DefaultServer struct {
 	wg        sync.WaitGroup
 	ctx       context.Context
 	cancel    context.CancelFunc
+	mu        sync.Mutex // Protects shared state
 }
 
 // Start starts the server and all configured config
 func (s *DefaultServer) Start(ctx context.Context) error {
+	s.mu.Lock()
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.listeners = make(map[string]net.Listener)
 	s.servers = make(map[string]any)
+	s.mu.Unlock()
 
 	// Initialize notifier system
 	s.createNotifier()
@@ -161,10 +164,11 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 
 // Stop stops the server and all configured config gracefully
 func (s *DefaultServer) Stop(ctx context.Context) error {
+	s.mu.Lock()
 	if s.cancel != nil {
 		s.cancel()
 	}
-
+	
 	// Close all listeners first to stop accepting new connections
 	for name, listener := range s.listeners {
 		if err := listener.Close(); err != nil {
@@ -179,6 +183,7 @@ func (s *DefaultServer) Stop(ctx context.Context) error {
 			s.logger.Info("DHT node shutdown completed")
 		}
 	}
+	s.mu.Unlock()
 
 	// Wait for all goroutines to finish with timeout
 	done := make(chan struct{})
@@ -321,6 +326,8 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 
 // getDhtNode returns the DHT node from the servers map with proper type assertion
 func (s *DefaultServer) getDhtNode() protocol.DHTNode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if dhtNode, ok := s.servers[ProtocolDHT].(protocol.DHTNode); ok {
 		return dhtNode
 	}
@@ -350,7 +357,9 @@ func (s *DefaultServer) setupDHTNode(config *DHTConfig, announcePeerPort int, fi
 
 // storeServer stores a server in the servers map
 func (s *DefaultServer) storeServer(protocolName string, server any) {
+	s.mu.Lock()
 	s.servers[protocolName] = server
+	s.mu.Unlock()
 }
 
 // setupExistingDHTNode handles setup of an existing DHT node
@@ -376,12 +385,16 @@ func (s *DefaultServer) setupExistingDHTNode(dhtNode protocol.DHTNode) error {
 // setupDHTAnnouncerAndNotifier sets up the DHT announcer and notifier
 func (s *DefaultServer) setupDHTAnnouncerAndNotifier(dhtNode protocol.DHTNode) {
 	// Set up DHT announcer and notifier
+	s.mu.Lock()
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
+	s.mu.Unlock()
 
 	// Register DHT notifier with the existing group notifier
 	if s.notifier != nil {
 		if group, ok := s.notifier.(*protocol.GroupNotifier); ok {
+			s.mu.Lock()
 			group.AddNotifier(protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier")))
+			s.mu.Unlock()
 		}
 	}
 }
@@ -397,7 +410,9 @@ func (s *DefaultServer) createNotifier() {
 	// Add the logging notifier to the group
 	groupNotifier.AddNotifier(loggingNotifier)
 
+	s.mu.Lock()
 	s.notifier = groupNotifier
+	s.mu.Unlock()
 }
 
 // announceBlobsToDHT enumerates all blobs from storage and announces them to the DHT
