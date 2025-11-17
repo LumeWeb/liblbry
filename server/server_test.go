@@ -695,6 +695,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc // Capture loop variable to avoid race condition
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -468,10 +468,18 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 	s.logger.Debug("Completed DHT blob announcement process", zap.Int("total_announced", totalAnnounced))
 }
 
-// validateBlobInput performs common validation for blob hash and data
-func (s *DefaultServer) validateBlobInput(hash string, data []byte) error {
+// validateHash performs common validation for blob hash
+func validateHash(hash string) error {
 	if hash == "" {
 		return fmt.Errorf("hash cannot be empty")
+	}
+	return nil
+}
+
+// validateBlobInput performs common validation for blob hash and data
+func validateBlobInput(hash string, data []byte) error {
+	if err := validateHash(hash); err != nil {
+		return err
 	}
 	if len(data) == 0 {
 		return fmt.Errorf("blob data cannot be empty")
@@ -482,7 +490,7 @@ func (s *DefaultServer) validateBlobInput(hash string, data []byte) error {
 // AddBlob stores a blob and notifies about the addition
 func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 	// Validate input
-	if err := s.validateBlobInput(hash, data); err != nil {
+	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
@@ -506,7 +514,7 @@ func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 // AddSDBlob stores an SD blob and notifies about the addition
 func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
 	// Validate input
-	if err := s.validateBlobInput(hash, data); err != nil {
+	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
@@ -530,8 +538,8 @@ func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
 // RemoveBlob deletes a blob and notifies about the removal
 func (s *DefaultServer) RemoveBlob(hash string) error {
 	// Validate hash
-	if hash == "" {
-		return fmt.Errorf("hash cannot be empty")
+	if err := validateHash(hash); err != nil {
+		return err
 	}
 
 	// Delete the blob from storage
