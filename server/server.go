@@ -44,6 +44,8 @@ const (
 type BlobManager interface {
 	// AddBlob stores a blob and notifies about the addition
 	AddBlob(hash string, data []byte) error
+	// AddSDBlob stores an SD blob and notifies about the addition
+	AddSDBlob(hash string, data []byte) error
 	// RemoveBlob deletes a blob and notifies about the removal
 	RemoveBlob(hash string) error
 }
@@ -61,7 +63,7 @@ type Server interface {
 type PeerConfig struct {
 	// Port specifies the main peer protocol port to listen on.
 	Port int
-	
+
 	// FixedPort specifies an optional fixed port for peer content.
 	// When set to 0, the fixed port feature is disabled.
 	// When set to a non-zero value, a separate peer server will be started on that port.
@@ -466,14 +468,30 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 	s.logger.Debug("Completed DHT blob announcement process", zap.Int("total_announced", totalAnnounced))
 }
 
-// AddBlob stores a blob and notifies about the addition
-func (s *DefaultServer) AddBlob(hash string, data []byte) error {
-	// Validate hash
+// validateHash performs common validation for blob hash
+func validateHash(hash string) error {
 	if hash == "" {
 		return fmt.Errorf("hash cannot be empty")
 	}
+	return nil
+}
+
+// validateBlobInput performs common validation for blob hash and data
+func validateBlobInput(hash string, data []byte) error {
+	if err := validateHash(hash); err != nil {
+		return err
+	}
 	if len(data) == 0 {
 		return fmt.Errorf("blob data cannot be empty")
+	}
+	return nil
+}
+
+// AddBlob stores a blob and notifies about the addition
+func (s *DefaultServer) AddBlob(hash string, data []byte) error {
+	// Validate input
+	if err := validateBlobInput(hash, data); err != nil {
+		return err
 	}
 
 	// Store the blob
@@ -493,11 +511,35 @@ func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 	return nil
 }
 
+// AddSDBlob stores an SD blob and notifies about the addition
+func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
+	// Validate input
+	if err := validateBlobInput(hash, data); err != nil {
+		return err
+	}
+
+	// Store the SD blob
+	err := s.storage.PutSD(hash, data)
+	if err != nil {
+		s.logger.Error("Failed to store SD blob",
+			zap.String("hash", hash),
+			zap.Error(err))
+		return fmt.Errorf("failed to store SD blob %s: %w", hash, err)
+	}
+
+	s.logger.Debug("Successfully stored SD blob", zap.String("hash", hash))
+
+	// Notify about blob addition
+	protocol.NotifyBlob(s.notifier, s.logger, protocol.NOTIFY_BLOB_ADDED, hash)
+
+	return nil
+}
+
 // RemoveBlob deletes a blob and notifies about the removal
 func (s *DefaultServer) RemoveBlob(hash string) error {
 	// Validate hash
-	if hash == "" {
-		return fmt.Errorf("hash cannot be empty")
+	if err := validateHash(hash); err != nil {
+		return err
 	}
 
 	// Delete the blob from storage
