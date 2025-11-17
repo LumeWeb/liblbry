@@ -384,19 +384,17 @@ func (s *DefaultServer) setupExistingDHTNode(dhtNode protocol.DHTNode) error {
 
 // setupDHTAnnouncerAndNotifier sets up the DHT announcer and notifier
 func (s *DefaultServer) setupDHTAnnouncerAndNotifier(dhtNode protocol.DHTNode) {
-	// Set up DHT announcer and notifier
+	// Set up DHT announcer
 	s.mu.Lock()
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)
-	s.mu.Unlock()
 
 	// Register DHT notifier with the existing group notifier
 	if s.notifier != nil {
 		if group, ok := s.notifier.(*protocol.GroupNotifier); ok {
-			s.mu.Lock()
 			group.AddNotifier(protocol.NewDHTNotifier(s.dhtAnnouncer, s.logger.Named("dht-notifier")))
-			s.mu.Unlock()
 		}
 	}
+	s.mu.Unlock()
 }
 
 // createNotifier initializes the notifier system
