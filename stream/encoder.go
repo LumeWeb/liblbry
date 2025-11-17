@@ -166,19 +166,19 @@ func (e *Encoder) Next() (blob.Blob, error) {
 				return nil, err
 			}
 
-			blob, err := blob.NewBlob(e.buf[:n], e.sd.Key, iv)
+			b, err := blob.NewBlob(e.buf[:n], e.sd.Key, iv)
 			if err != nil {
 				return nil, err
 			}
 
-			err = e.sd.addBlob(blob, iv)
+			err = e.sd.addBlob(b, iv)
 			if err != nil {
 				return nil, err
 			}
 
 			// Return the produced blob now; if the underlying read hit EOF, it will
 			// be observed on the next call and termination will be handled then.
-			return blob, nil
+			return b, nil
 		}
 
 		// Handle zero-byte reads
@@ -296,6 +296,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 
 			// Store chunk info for result
 			chunkSizes = append(chunkSizes, chunk.Size)
+			contentHashes = append(contentHashes, chunk.Hash)
 
 			chunkNumber++
 		}
@@ -336,19 +337,19 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	}
 
 	result := &StreamResult{
-		SDBlob:      e.SDBlob(),
-		SDBlobData:  sdBlobData,
-		SDBlobHash:  hex.EncodeToString(blobHash),
-		StreamHash:  hex.EncodeToString(e.SDBlob().StreamHash),
-		SourceSize:  int64(e.SourceLen()),
-		TotalChunks: len(e.sd.BlobInfos) - 1, // Exclude terminating blob
-		ChunkSizes:  chunkSizes,
+		SDBlob:        e.SDBlob(),
+		SDBlobData:    sdBlobData,
+		SDBlobHash:    hex.EncodeToString(blobHash),
+		StreamHash:    hex.EncodeToString(e.SDBlob().StreamHash),
+		SourceSize:    int64(e.SourceLen()),
+		TotalChunks:   len(e.sd.BlobInfos) - 1, // Exclude terminating blob
+		ChunkSizes:    chunkSizes,
+		ContentHashes: contentHashes,
 	}
 
 	// Only populate content blobs if not using chunk handler
 	if config.ChunkHandler == nil {
 		result.ContentBlobs = contentBlobs
-		result.ContentHashes = contentHashes
 	}
 
 	return result, nil
