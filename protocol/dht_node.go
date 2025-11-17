@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lbryio/lbry.go/v2/dht"
-	"github.com/lbryio/lbry.go/v2/dht/bits"
+	"go.lumeweb.com/lbry-dht"
+	"go.lumeweb.com/lbry-dht/bits"
 )
 
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
@@ -128,7 +128,7 @@ func (w *managedDHTNode) Shutdown() {
 	// Shutdown the DHT
 	dhtInstance.Shutdown()
 
-	// Wait for all goroutines to finish (this is where deadlock occurred before)
+	// Wait for all goroutines to finish
 	w.wg.Wait()
 
 	// Re-acquire lock briefly to finalize state changes

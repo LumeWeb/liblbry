@@ -168,7 +168,7 @@ func (s *DefaultServer) Stop(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	
+
 	// Close all listeners first to stop accepting new connections
 	for name, listener := range s.listeners {
 		if err := listener.Close(); err != nil {

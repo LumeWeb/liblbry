@@ -4,9 +4,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/lbryio/lbry.go/v2/dht"
-	"github.com/lbryio/lbry.go/v2/dht/bits"
 	"github.com/sirupsen/logrus"
+	"go.lumeweb.com/lbry-dht"
+	"go.lumeweb.com/lbry-dht/bits"
 	"go.uber.org/zap"
 )
 

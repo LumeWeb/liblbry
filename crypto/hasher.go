@@ -36,13 +36,13 @@ func (h *SHA384Hasher) Hash(data []byte) string {
 func (h *SHA384Hasher) HashReader(reader io.Reader) (string, error) {
 	// Create a new SHA-384 hasher
 	hasher := sha512.New384()
-	
+
 	// Copy data from reader to hasher in chunks to avoid loading everything into memory
 	_, err := io.Copy(hasher, reader)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Get the final hash
 	hash := hasher.Sum(nil)
 	return h.encodeHash(hash), nil

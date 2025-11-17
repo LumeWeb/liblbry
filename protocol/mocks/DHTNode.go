@@ -5,9 +5,9 @@
 package mocks
 
 import (
-	"github.com/lbryio/lbry.go/v2/dht"
-	"github.com/lbryio/lbry.go/v2/dht/bits"
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/lbry-dht"
+	"go.lumeweb.com/lbry-dht/bits"
 )
 
 // NewMockDHTNode creates a new instance of MockDHTNode. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
