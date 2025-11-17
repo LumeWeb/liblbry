@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lbryio/lbry.go/v2/dht"
-	"github.com/lbryio/lbry.go/v2/dht/bits"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/lbry-dht"
+	"go.lumeweb.com/lbry-dht/bits"
 	"go.lumeweb.com/liblbry/protocol/mocks"
 )
 

@@ -249,7 +249,7 @@ func TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobCheck
 	// Verify that MemoryStore doesn't implement NeededBlobChecker
 	// This is a critical assumption for this test's behavior
 	_, _, _, _ = setupReflectorIntegrationTest(t)
-	
+
 	// Runtime check to ensure the test's assumption holds
 	// If this check fails, the test needs to be updated or reconsidered
 	store, _, _, _ := setupReflectorIntegrationTest(t)

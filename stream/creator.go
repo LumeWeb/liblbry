@@ -194,7 +194,7 @@ func (sc *DefaultStreamCreator) createStreamWithMetadata(source io.Reader, size 
 	newOpts := appendOption(opts, func(c *StreamConfig) {
 		c.ExistingSDBlob = config.ExistingSDBlob
 	})
-	
+
 	return sc.CreateStream(source, size, newOpts...)
 }
 

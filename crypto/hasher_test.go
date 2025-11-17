@@ -90,7 +90,7 @@ func TestSHA384Hasher_HashReader_ErrorHandling(t *testing.T) {
 
 	// Test with a reader that always returns an error
 	errorReader := &errorReader{}
-	
+
 	_, err := hasher.HashReader(errorReader)
 	if err == nil {
 		t.Error("HashReader() expected error but got none")
@@ -99,24 +99,24 @@ func TestSHA384Hasher_HashReader_ErrorHandling(t *testing.T) {
 
 func TestSHA384Hasher_Comparison(t *testing.T) {
 	hasher := NewHasher()
-	
+
 	// Test that HashReader produces the same result as Hash for the same data
 	testData := []byte("hello world")
-	
+
 	// Hash the data directly
 	hashResult := hasher.Hash(testData)
-	
+
 	// Hash the data via reader
 	readerResult, err := hasher.HashReader(bytes.NewReader(testData))
 	if err != nil {
 		t.Fatalf("HashReader() failed: %v", err)
 	}
-	
+
 	// Compare results
 	if hashResult != readerResult {
 		t.Errorf("Hash() and HashReader() produced different results: %v vs %v", hashResult, readerResult)
 	}
-	
+
 	// Test with empty data
 	emptyData := []byte{}
 	emptyHashResult := hasher.Hash(emptyData)
@@ -124,7 +124,7 @@ func TestSHA384Hasher_Comparison(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashReader() failed for empty data: %v", err)
 	}
-	
+
 	if emptyHashResult != emptyReaderResult {
 		t.Errorf("Hash() and HashReader() produced different results for empty data: %v vs %v", emptyHashResult, emptyReaderResult)
 	}

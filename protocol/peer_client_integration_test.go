@@ -727,4 +727,3 @@ type denyAllAccessControl struct{}
 func (d *denyAllAccessControl) Allow(hash string, peerIP string) bool {
 	return false
 }
-
