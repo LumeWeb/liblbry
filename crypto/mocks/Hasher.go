@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"io"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -82,6 +84,66 @@ func (_c *MockHasher_Hash_Call) Return(s string) *MockHasher_Hash_Call {
 }
 
 func (_c *MockHasher_Hash_Call) RunAndReturn(run func(data []byte) string) *MockHasher_Hash_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// HashReader provides a mock function for the type MockHasher
+func (_mock *MockHasher) HashReader(reader io.Reader) (string, error) {
+	ret := _mock.Called(reader)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HashReader")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(io.Reader) (string, error)); ok {
+		return returnFunc(reader)
+	}
+	if returnFunc, ok := ret.Get(0).(func(io.Reader) string); ok {
+		r0 = returnFunc(reader)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(io.Reader) error); ok {
+		r1 = returnFunc(reader)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockHasher_HashReader_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HashReader'
+type MockHasher_HashReader_Call struct {
+	*mock.Call
+}
+
+// HashReader is a helper method to define mock.On call
+//   - reader io.Reader
+func (_e *MockHasher_Expecter) HashReader(reader interface{}) *MockHasher_HashReader_Call {
+	return &MockHasher_HashReader_Call{Call: _e.mock.On("HashReader", reader)}
+}
+
+func (_c *MockHasher_HashReader_Call) Run(run func(reader io.Reader)) *MockHasher_HashReader_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 io.Reader
+		if args[0] != nil {
+			arg0 = args[0].(io.Reader)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockHasher_HashReader_Call) Return(s string, err error) *MockHasher_HashReader_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockHasher_HashReader_Call) RunAndReturn(run func(reader io.Reader) (string, error)) *MockHasher_HashReader_Call {
 	_c.Call.Return(run)
 	return _c
 }

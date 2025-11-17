@@ -621,6 +621,140 @@ func TestDefaultServer_AddBlob_WithNotifier(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestDefaultServer_AddSDBlob tests SD blob addition with various scenarios
+// Validates that SD blobs can be successfully stored and handles error cases properly
+func TestDefaultServer_AddSDBlob(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		hash           string
+		data           []byte
+		setupMocks     func(*testMocks, *DefaultServer)
+		expectErr      bool
+		expectedErrMsg string
+		description    string
+	}{
+		{
+			name: "success",
+			hash: TestBlobHash,
+			data: []byte(TestBlobData),
+			setupMocks: func(m *testMocks, s *DefaultServer) {
+				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(nil)
+			},
+			expectErr:   false,
+			description: "Successfully stores SD blob",
+		},
+		{
+			name: "empty hash",
+			hash: "",
+			data: []byte(TestBlobData),
+			setupMocks: func(m *testMocks, s *DefaultServer) {
+				// No storage mock needed since validation fails first
+			},
+			expectErr:      true,
+			expectedErrMsg: "hash cannot be empty",
+			description:    "Rejects empty hash",
+		},
+		{
+			name: "empty data",
+			hash: TestBlobHash,
+			data: []byte{},
+			setupMocks: func(m *testMocks, s *DefaultServer) {
+				// No storage mock needed since validation fails first
+			},
+			expectErr:      true,
+			expectedErrMsg: "blob data cannot be empty",
+			description:    "Rejects empty data",
+		},
+		{
+			name: "storage failure",
+			hash: TestBlobHash,
+			data: []byte(TestBlobData),
+			setupMocks: func(m *testMocks, s *DefaultServer) {
+				storageError := errors.New("storage error")
+				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(storageError)
+			},
+			expectErr:      true,
+			expectedErrMsg: "failed to store SD blob",
+			description:    "Propagates storage errors",
+		},
+		{
+			name: "with notifier",
+			hash: TestBlobHash,
+			data: []byte(TestBlobData),
+			setupMocks: func(m *testMocks, s *DefaultServer) {
+				mockNotifier := protocolMocks.NewMockNotifier(t)
+				s.notifier = mockNotifier
+				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(nil)
+				mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_ADDED, TestNotificationHash).Return(nil)
+			},
+			expectErr:   false,
+			description: "Sends notification when notifier is configured",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			testMocks := setupMocks(t)
+			server := setupServer(t, testMocks, map[string]any{})
+
+			// Setup test-specific mocks
+			tc.setupMocks(testMocks, server)
+
+			err := server.AddSDBlob(tc.hash, tc.data)
+
+			if tc.expectErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErrMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestDefaultServer_ConcurrentAddSDBlob tests concurrent AddSDBlob operations
+// Validates thread safety and concurrent operation handling for SD blob addition
+func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	blobData := []byte(TestBlobData)
+	numGoroutines := 10
+	errors := make(chan error, numGoroutines)
+
+	var wg sync.WaitGroup
+
+	// Test concurrent AddSDBlob operations
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			// Setup mock expectations for each goroutine
+			testMocks.storage.EXPECT().PutSD(blobHash, blobData).Return(nil)
+
+			err := server.AddSDBlob(blobHash, blobData)
+			if err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Errorf("Concurrent AddSDBlob error: %v", err)
+	}
+}
+
 // TestDefaultServer_RemoveBlob_Success tests successful blob removal
 // Validates that blobs can be successfully removed from the blob store
 func TestDefaultServer_RemoveBlob_Success(t *testing.T) {
