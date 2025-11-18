@@ -11,14 +11,17 @@ package stream
 
 import (
 	"bytes"
+	"crypto/aes"
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
+	"fmt"
 	"hash"
 	"io"
 	"math"
 
 	"go.lumeweb.com/liblbry/blob"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
 
@@ -107,30 +110,37 @@ type Encoder struct {
 	srcHash hash.Hash
 }
 
-// NewEncoder creates a new stream encoder
-func NewEncoder(src io.Reader) *Encoder {
+// newEncoderInternal creates a new stream encoder with the provided key
+// This is an internal helper that avoids key generation when a key is already available
+func newEncoderInternal(src io.Reader, key []byte) *Encoder {
 	return &Encoder{
 		src: src,
 
 		buf: make([]byte, maxBlobDataSize),
 		sd: &SDBlob{
 			StreamType: StreamTypeLBRYFile,
-			Key: func() []byte {
-				iv, err := randIV()
-				if err != nil {
-					panic(err) // This maintains existing behavior for the constructor
-				}
-				return iv
-			}(),
+			Key:        key,
 		},
 		srcHash: sha512.New384(),
 	}
 }
 
+// NewEncoder creates a new stream encoder
+func NewEncoder(src io.Reader) *Encoder {
+	key, err := generateKey()
+	if err != nil {
+		panic(err) // This maintains existing behavior for the constructor
+	}
+
+	return newEncoderInternal(src, key)
+}
+
 // NewEncoderWithIVs creates a new encoder that uses preset cryptographic material
 func NewEncoderWithIVs(src io.Reader, key []byte, ivs [][]byte) *Encoder {
-	e := NewEncoder(src)
-	e.sd.Key = key
+	if len(key) != lbrycrypto.AES256KeySize {
+		panic(fmt.Sprintf("invalid key size: expected %d bytes, got %d bytes", lbrycrypto.AES256KeySize, len(key)))
+	}
+	e := newEncoderInternal(src, key)
 	e.ivs = ivs
 	return e
 }
@@ -242,6 +252,18 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 		if err != nil {
 			return nil, liblbryerrors.Err("failed to parse existing SD blob: %w", err)
 		}
+
+		// Generate a new key if the existing SD blob has an empty key
+		if len(sdBlob.Key) == 0 {
+			newKey, err := generateKey()
+			if err != nil {
+				return nil, liblbryerrors.Err("failed to generate new key for existing SD blob: %w", err)
+			}
+			sdBlob.Key = newKey
+		} else if len(sdBlob.Key) != lbrycrypto.AES256KeySize {
+			return nil, liblbryerrors.Err("existing SD blob has invalid key size: expected %d bytes, got %d bytes", lbrycrypto.AES256KeySize, len(sdBlob.Key))
+		}
+
 		e.sd = sdBlob
 		// Seed IVs from existing SD blob
 		e.ivs = make([][]byte, len(sdBlob.BlobInfos))
@@ -406,12 +428,25 @@ func (e *Encoder) nextIV() ([]byte, error) {
 	return iv, nil
 }
 
+// generateRandomBytes generates cryptographically secure random bytes of the specified size
+func generateRandomBytes(size int) ([]byte, error) {
+	if size <= 0 {
+		return nil, liblbryerrors.Err("invalid size for random bytes: %d", size)
+	}
+	data := make([]byte, size)
+	_, err := io.ReadFull(rand.Reader, data)
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to generate random bytes: %w", err)
+	}
+	return data, nil
+}
+
+// generateKey generates a cryptographically secure random key for encryption
+func generateKey() ([]byte, error) {
+	return generateRandomBytes(lbrycrypto.AES256KeySize) // 256-bit key for AES-256
+}
+
 // randIV generates a random initialization vector
 func randIV() ([]byte, error) {
-	iv := make([]byte, 16) // AES block size
-	_, err := io.ReadFull(rand.Reader, iv)
-	if err != nil {
-		return nil, liblbryerrors.Err("failed to generate random IV: %w", err)
-	}
-	return iv, nil
+	return generateRandomBytes(aes.BlockSize) // AES block size
 }
