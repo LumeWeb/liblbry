@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
@@ -479,15 +480,15 @@ func TestProtocolConstants(t *testing.T) {
 }
 
 func TestPeerPortDHTAlignment(t *testing.T) {
-	mocks := setupBuilderMocks(t)
+	builderMocks := setupBuilderMocks(t)
 
 	t.Run("DHT port alignment when no fixed port", func(t *testing.T) {
 		// When no fixed port is specified, DHT should announce peer port = DHT port
 		builder := NewServerBuilder().
 			WithPeer(testPortPeer).
 			WithDHT(testPortDHT).
-			WithStorage(mocks.storage).
-			WithAcquirer(mocks.acquirer)
+			WithStorage(builderMocks.storage).
+			WithAcquirer(builderMocks.acquirer)
 
 		server, err := builder.Build()
 		require.NoError(t, err)
@@ -510,8 +511,8 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 			WithPeer(testPortPeer).
 			WithFixedPeerPort(testPortPeer2).
 			WithDHT(testPortDHT).
-			WithStorage(mocks.storage).
-			WithAcquirer(mocks.acquirer)
+			WithStorage(builderMocks.storage).
+			WithAcquirer(builderMocks.acquirer)
 
 		server, err := builder.Build()
 		require.NoError(t, err)
@@ -728,7 +729,7 @@ func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
 	blobHash := TestBlobHash
 	blobData := []byte(TestBlobData)
 	numGoroutines := 10
-	errors := make(chan error, numGoroutines)
+	errChan := make(chan error, numGoroutines)
 
 	var wg sync.WaitGroup
 
@@ -742,16 +743,16 @@ func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
 
 			err := server.AddSDBlob(blobHash, blobData)
 			if err != nil {
-				errors <- err
+				errChan <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errChan)
 
 	// Check for any errors
-	for err := range errors {
+	for err := range errChan {
 		t.Errorf("Concurrent AddSDBlob error: %v", err)
 	}
 }
@@ -849,7 +850,7 @@ func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
-	errors := make(chan error, numGoroutines)
+	errChan := make(chan error, numGoroutines)
 
 	// Test concurrent AddBlob operations
 	for i := 0; i < numGoroutines; i++ {
@@ -864,16 +865,16 @@ func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
 
 			err := server.AddBlob(blobHash, blobData)
 			if err != nil {
-				errors <- err
+				errChan <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errChan)
 
 	// Check for any errors
-	for err := range errors {
+	for err := range errChan {
 		t.Errorf("Concurrent AddBlob error: %v", err)
 	}
 }
@@ -888,7 +889,7 @@ func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
-	errors := make(chan error, numGoroutines)
+	errChan := make(chan error, numGoroutines)
 
 	// Test concurrent RemoveBlob operations
 	for i := 0; i < numGoroutines; i++ {
@@ -902,16 +903,16 @@ func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
 
 			err := server.RemoveBlob(blobHash)
 			if err != nil {
-				errors <- err
+				errChan <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errChan)
 
 	// Check for any errors
-	for err := range errors {
+	for err := range errChan {
 		t.Errorf("Concurrent RemoveBlob error: %v", err)
 	}
 }
@@ -926,7 +927,7 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 
 	var wg sync.WaitGroup
 	numOperations := 20 // 10 adds + 10 removes
-	errors := make(chan error, numOperations)
+	errChan := make(chan error, numOperations)
 
 	// Test concurrent Add and Remove operations
 	for i := 0; i < 10; i++ {
@@ -941,7 +942,7 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 
 			err := server.AddBlob(blobHash, blobData)
 			if err != nil {
-				errors <- err
+				errChan <- err
 			}
 		}(i)
 
@@ -955,16 +956,16 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 
 			err := server.RemoveBlob(blobHash)
 			if err != nil {
-				errors <- err
+				errChan <- err
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(errors)
+	close(errChan)
 
 	// Check for any errors
-	for err := range errors {
+	for err := range errChan {
 		t.Errorf("Concurrent blob operation error: %v", err)
 	}
 }
@@ -1009,4 +1010,258 @@ func TestDefaultServer_announceBlobsToDHT_UsesLBRYHash(t *testing.T) {
 	// Verify all mock expectations were met
 	// This ensures that LBRY hashes were passed directly to AnnounceBlob,
 	// not converted to multihash format first
+}
+
+// TestDefaultServer_AcquireBlob_Success tests successful blob acquisition
+// Validates that blobs can be successfully acquired using the configured acquirer
+func TestDefaultServer_AcquireBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	expectedData := []byte(TestBlobData)
+	ctx := context.Background()
+
+	// Setup mock expectations
+	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(expectedData, nil)
+
+	// Test successful blob acquisition
+	result, err := server.AcquireBlob(ctx, blobHash)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedData, result)
+}
+
+// TestDefaultServer_AcquireBlob_EmptyHash tests error handling for empty hash
+// Validates that blob acquisition properly rejects empty hash values
+func TestDefaultServer_AcquireBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	ctx := context.Background()
+
+	// Test with empty hash
+	result, err := server.AcquireBlob(ctx, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireBlob_NoAcquirer tests error handling when no acquirer is configured
+// Validates that blob acquisition properly handles missing acquirer configuration
+func TestDefaultServer_AcquireBlob_NoAcquirer(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+	server.acquirer = nil // Explicitly set acquirer to nil
+
+	blobHash := TestBlobHash
+	ctx := context.Background()
+
+	// Test with no acquirer configured
+	result, err := server.AcquireBlob(ctx, blobHash)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no acquirer configured")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireBlob_AcquirerFailure tests error handling when acquirer fails
+// Validates that blob acquisition properly propagates acquirer errors
+func TestDefaultServer_AcquireBlob_AcquirerFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	ctx := context.Background()
+	acquirerError := errors.New("acquirer error")
+
+	// Setup mock expectations
+	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(nil, acquirerError)
+
+	// Test acquirer failure
+	result, err := server.AcquireBlob(ctx, blobHash)
+	assert.Error(t, err)
+	assert.Equal(t, acquirerError, err)
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireBlob_ContextCancellation tests context cancellation handling
+// Validates that blob acquisition properly respects context cancellation
+func TestDefaultServer_AcquireBlob_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Setup mock expectations (should not be called due to context cancellation)
+	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(nil, context.Canceled)
+
+	// Test with cancelled context
+	result, err := server.AcquireBlob(ctx, blobHash)
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireSDBlob_Success tests successful SD blob acquisition (non-recursive)
+// Validates that SD blobs can be successfully acquired without fetching content blobs
+func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	sdBlobData := []byte(`{
+		"blobs": [
+			{"length": 100, "blob_num": 0, "blob_hash": "68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3", "iv": "1234567890123456"},
+			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
+		],
+		"stream_type": "lbryfile",
+		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	}`)
+	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	ctx := context.Background()
+
+	// Setup mock expectations for SD blob acquisition
+	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return([]byte(sdBlobData), nil)
+
+	// Test successful SD blob acquisition (non-recursive)
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(false))
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, sdBlobHash, result.SDBlobHash)
+	assert.Equal(t, expectedStreamHash, result.StreamHash)
+	assert.NotNil(t, result.SDBlob)
+	assert.Equal(t, []byte(sdBlobData), result.SDBlobData)
+	assert.Nil(t, result.ContentBlobs)     // Should be nil for non-recursive
+	assert.Nil(t, result.ContentHashes)    // Should be nil for non-recursive
+	assert.Equal(t, 0, result.TotalChunks) // Should be 0 for non-recursive
+}
+
+// TestDefaultServer_AcquireSDBlob_RecursiveSuccess tests successful recursive SD blob acquisition
+// Validates that SD blobs can be successfully acquired with all content blobs
+func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
+	contentBlobData := []byte("content blob data")
+	sdBlobData := []byte(fmt.Sprintf(`{
+		"blobs": [
+			{"length": %d, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
+			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
+		],
+		"stream_type": "lbryfile",
+		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	}`, len(contentBlobData), contentBlobHash))
+
+	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	ctx := context.Background()
+
+	// Setup mock expectations with explicit call ordering
+	// First, acquire the SD blob
+	testMocks.acquirer.EXPECT().Acquire(mock.Anything, sdBlobHash).Return(sdBlobData, nil)
+	// Check if content blob exists in storage - it doesn't
+	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
+	// Then, acquire the content blob - use Anything for context to be more flexible
+	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
+
+	// Test successful recursive SD blob acquisition
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, sdBlobHash, result.SDBlobHash)
+	assert.Equal(t, expectedStreamHash, result.StreamHash)
+	assert.NotNil(t, result.SDBlob)
+	assert.Equal(t, sdBlobData, result.SDBlobData)
+	assert.NotNil(t, result.ContentBlobs)
+	assert.Equal(t, 1, len(result.ContentBlobs))
+
+	assert.Equal(t, contentBlobData, result.ContentBlobs[0])
+	assert.NotNil(t, result.ContentHashes)
+	assert.Equal(t, 1, len(result.ContentHashes))
+	assert.Equal(t, contentBlobHash, result.ContentHashes[0])
+	assert.Equal(t, 1, result.TotalChunks)
+	assert.NotNil(t, result.ChunkSizes)
+	assert.Equal(t, 1, len(result.ChunkSizes))
+	assert.Equal(t, len(contentBlobData), result.ChunkSizes[0])
+}
+
+// TestDefaultServer_AcquireSDBlob_EmptyHash tests error handling for empty hash
+// Validates that SD blob acquisition properly rejects empty hash values
+func TestDefaultServer_AcquireSDBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	ctx := context.Background()
+
+	// Test with empty hash
+	result, err := server.AcquireSDBlob(ctx, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireSDBlob_SDBlobAcquisitionFailure tests error handling when SD blob acquisition fails
+// Validates that SD blob acquisition properly propagates acquirer errors for SD blob
+func TestDefaultServer_AcquireSDBlob_SDBlobAcquisitionFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	ctx := context.Background()
+	acquirerError := errors.New("acquirer error")
+
+	// Setup mock expectations
+	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(nil, acquirerError)
+
+	// Test SD blob acquisition failure
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to acquire SD blob")
+	assert.Contains(t, err.Error(), sdBlobHash)
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireSDBlob_InvalidJSON tests error handling for invalid SD blob JSON
+// Validates that SD blob acquisition properly handles malformed JSON data
+func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	invalidJSON := []byte("{ invalid json")
+	ctx := context.Background()
+
+	// Setup mock expectations
+	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(invalidJSON, nil)
+
+	// Test invalid JSON handling
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse SD blob")
+	assert.Contains(t, err.Error(), sdBlobHash)
+	assert.Nil(t, result)
 }

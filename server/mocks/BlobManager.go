@@ -5,7 +5,11 @@
 package mocks
 
 import (
+	"context"
+
 	mock "github.com/stretchr/testify/mock"
+	"go.lumeweb.com/liblbry/server"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // NewMockBlobManager creates a new instance of MockBlobManager. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -33,6 +37,161 @@ type MockBlobManager_Expecter struct {
 
 func (_m *MockBlobManager) EXPECT() *MockBlobManager_Expecter {
 	return &MockBlobManager_Expecter{mock: &_m.Mock}
+}
+
+// AcquireBlob provides a mock function for the type MockBlobManager
+func (_mock *MockBlobManager) AcquireBlob(ctx context.Context, hash string) ([]byte, error) {
+	ret := _mock.Called(ctx, hash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AcquireBlob")
+	}
+
+	var r0 []byte
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]byte, error)); ok {
+		return returnFunc(ctx, hash)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []byte); ok {
+		r0 = returnFunc(ctx, hash)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, hash)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlobManager_AcquireBlob_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AcquireBlob'
+type MockBlobManager_AcquireBlob_Call struct {
+	*mock.Call
+}
+
+// AcquireBlob is a helper method to define mock.On call
+//   - ctx context.Context
+//   - hash string
+func (_e *MockBlobManager_Expecter) AcquireBlob(ctx interface{}, hash interface{}) *MockBlobManager_AcquireBlob_Call {
+	return &MockBlobManager_AcquireBlob_Call{Call: _e.mock.On("AcquireBlob", ctx, hash)}
+}
+
+func (_c *MockBlobManager_AcquireBlob_Call) Run(run func(ctx context.Context, hash string)) *MockBlobManager_AcquireBlob_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlobManager_AcquireBlob_Call) Return(bytes []byte, err error) *MockBlobManager_AcquireBlob_Call {
+	_c.Call.Return(bytes, err)
+	return _c
+}
+
+func (_c *MockBlobManager_AcquireBlob_Call) RunAndReturn(run func(ctx context.Context, hash string) ([]byte, error)) *MockBlobManager_AcquireBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AcquireSDBlob provides a mock function for the type MockBlobManager
+func (_mock *MockBlobManager) AcquireSDBlob(ctx context.Context, hash string, opts ...server.AcquireSDOption) (*stream.StreamResult, error) {
+	// server.AcquireSDOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, hash)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AcquireSDBlob")
+	}
+
+	var r0 *stream.StreamResult
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...server.AcquireSDOption) (*stream.StreamResult, error)); ok {
+		return returnFunc(ctx, hash, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...server.AcquireSDOption) *stream.StreamResult); ok {
+		r0 = returnFunc(ctx, hash, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*stream.StreamResult)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, ...server.AcquireSDOption) error); ok {
+		r1 = returnFunc(ctx, hash, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlobManager_AcquireSDBlob_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AcquireSDBlob'
+type MockBlobManager_AcquireSDBlob_Call struct {
+	*mock.Call
+}
+
+// AcquireSDBlob is a helper method to define mock.On call
+//   - ctx context.Context
+//   - hash string
+//   - opts ...server.AcquireSDOption
+func (_e *MockBlobManager_Expecter) AcquireSDBlob(ctx interface{}, hash interface{}, opts ...interface{}) *MockBlobManager_AcquireSDBlob_Call {
+	return &MockBlobManager_AcquireSDBlob_Call{Call: _e.mock.On("AcquireSDBlob",
+		append([]interface{}{ctx, hash}, opts...)...)}
+}
+
+func (_c *MockBlobManager_AcquireSDBlob_Call) Run(run func(ctx context.Context, hash string, opts ...server.AcquireSDOption)) *MockBlobManager_AcquireSDBlob_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []server.AcquireSDOption
+		variadicArgs := make([]server.AcquireSDOption, len(args)-2)
+		for i, a := range args[2:] {
+			if a != nil {
+				variadicArgs[i] = a.(server.AcquireSDOption)
+			}
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlobManager_AcquireSDBlob_Call) Return(streamResult *stream.StreamResult, err error) *MockBlobManager_AcquireSDBlob_Call {
+	_c.Call.Return(streamResult, err)
+	return _c
+}
+
+func (_c *MockBlobManager_AcquireSDBlob_Call) RunAndReturn(run func(ctx context.Context, hash string, opts ...server.AcquireSDOption) (*stream.StreamResult, error)) *MockBlobManager_AcquireSDBlob_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // AddBlob provides a mock function for the type MockBlobManager
