@@ -55,6 +55,31 @@ func generateNamedTestBlobHash(name string, index int) string {
 	return fmt.Sprintf("%s_%02x", name, index)
 }
 
+// runConcurrentTest executes a test function concurrently and collects any errors.
+// This helper reduces duplication across concurrent test patterns.
+func runConcurrentTest(t *testing.T, numGoroutines int, testFunc func(int) error) {
+	var wg sync.WaitGroup
+	errChan := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			if err := testFunc(index); err != nil {
+				errChan <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		t.Errorf("Concurrent test error: %v", err)
+	}
+}
+
 // testMocks holds all common mocks used in tests
 type testMocks struct {
 	storage       *storageMocks.MockBlobStore
@@ -729,32 +754,14 @@ func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
 	blobHash := TestBlobHash
 	blobData := []byte(TestBlobData)
 	numGoroutines := 10
-	errChan := make(chan error, numGoroutines)
 
-	var wg sync.WaitGroup
+	// Pre-register mock expectations to avoid concurrent registration fragility
+	testMocks.storage.EXPECT().PutSD(blobHash, blobData).Times(numGoroutines).Return(nil)
 
-	// Test concurrent AddSDBlob operations
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			// Setup mock expectations for each goroutine
-			testMocks.storage.EXPECT().PutSD(blobHash, blobData).Return(nil)
-
-			err := server.AddSDBlob(blobHash, blobData)
-			if err != nil {
-				errChan <- err
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		t.Errorf("Concurrent AddSDBlob error: %v", err)
-	}
+	// Test concurrent AddSDBlob operations using helper
+	runConcurrentTest(t, numGoroutines, func(index int) error {
+		return server.AddSDBlob(blobHash, blobData)
+	})
 }
 
 // TestDefaultServer_RemoveBlob_Success tests successful blob removal
@@ -848,35 +855,21 @@ func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	var wg sync.WaitGroup
 	numGoroutines := 10
-	errChan := make(chan error, numGoroutines)
 
-	// Test concurrent AddBlob operations
+	// Pre-register mock expectations for all goroutines
 	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			blobHash := generateTestBlobHash(index)
-			blobData := generateSimpleTestBlobData(index)
-
-			// Setup mock expectations for each goroutine
-			testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
-
-			err := server.AddBlob(blobHash, blobData)
-			if err != nil {
-				errChan <- err
-			}
-		}(i)
+		blobHash := generateTestBlobHash(i)
+		blobData := generateSimpleTestBlobData(i)
+		testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
 	}
 
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		t.Errorf("Concurrent AddBlob error: %v", err)
-	}
+	// Test concurrent AddBlob operations using helper
+	runConcurrentTest(t, numGoroutines, func(index int) error {
+		blobHash := generateTestBlobHash(index)
+		blobData := generateSimpleTestBlobData(index)
+		return server.AddBlob(blobHash, blobData)
+	})
 }
 
 // TestDefaultServer_ConcurrentRemoveBlob tests concurrent RemoveBlob operations
@@ -887,34 +880,19 @@ func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	var wg sync.WaitGroup
 	numGoroutines := 10
-	errChan := make(chan error, numGoroutines)
 
-	// Test concurrent RemoveBlob operations
+	// Pre-register mock expectations for all goroutines
 	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			blobHash := generateTestBlobHash(index)
-
-			// Setup mock expectations for each goroutine
-			testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
-
-			err := server.RemoveBlob(blobHash)
-			if err != nil {
-				errChan <- err
-			}
-		}(i)
+		blobHash := generateTestBlobHash(i)
+		testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
 	}
 
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		t.Errorf("Concurrent RemoveBlob error: %v", err)
-	}
+	// Test concurrent RemoveBlob operations using helper
+	runConcurrentTest(t, numGoroutines, func(index int) error {
+		blobHash := generateTestBlobHash(index)
+		return server.RemoveBlob(blobHash)
+	})
 }
 
 // TestDefaultServer_ConcurrentBlobOperations tests mixed concurrent blob operations
@@ -925,49 +903,33 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	var wg sync.WaitGroup
-	numOperations := 20 // 10 adds + 10 removes
-	errChan := make(chan error, numOperations)
+	numOperations := 10 // 10 adds + 10 removes = 20 total operations
 
-	// Test concurrent Add and Remove operations
-	for i := 0; i < 10; i++ {
-		// Add operation
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			blobHash := generateNamedTestBlobHash("add_hash", index)
-			blobData := generateTestBlobData("add data", index)
-
-			testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
-
-			err := server.AddBlob(blobHash, blobData)
-			if err != nil {
-				errChan <- err
-			}
-		}(i)
-
-		// Remove operation
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			blobHash := generateNamedTestBlobHash("remove_hash", index)
-
-			testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
-
-			err := server.RemoveBlob(blobHash)
-			if err != nil {
-				errChan <- err
-			}
-		}(i)
+	// Pre-register mock expectations for all add operations
+	for i := 0; i < numOperations; i++ {
+		addBlobHash := generateNamedTestBlobHash("add_hash", i)
+		addBlobData := generateTestBlobData("add data", i)
+		testMocks.storage.EXPECT().Put(addBlobHash, addBlobData).Return(nil)
 	}
 
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		t.Errorf("Concurrent blob operation error: %v", err)
+	// Pre-register mock expectations for all remove operations
+	for i := 0; i < numOperations; i++ {
+		removeBlobHash := generateNamedTestBlobHash("remove_hash", i)
+		testMocks.storage.EXPECT().Delete(removeBlobHash).Return(nil)
 	}
+
+	// Test concurrent Add operations using helper
+	runConcurrentTest(t, numOperations, func(index int) error {
+		blobHash := generateNamedTestBlobHash("add_hash", index)
+		blobData := generateTestBlobData("add data", index)
+		return server.AddBlob(blobHash, blobData)
+	})
+
+	// Test concurrent Remove operations using helper
+	runConcurrentTest(t, numOperations, func(index int) error {
+		blobHash := generateNamedTestBlobHash("remove_hash", index)
+		return server.RemoveBlob(blobHash)
+	})
 }
 
 // TestDefaultServer_announceBlobsToDHT_UsesLBRYHash tests that DHT blob announcements
@@ -1263,5 +1225,93 @@ func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse SD blob")
 	assert.Contains(t, err.Error(), sdBlobHash)
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_AcquireSDBlob_StorageHit tests recursive SD blob acquisition when content blobs exist in storage
+// Validates that existing blobs are retrieved from storage without calling the acquirer
+func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
+	contentBlobData := []byte("existing content blob data")
+	sdBlobData := []byte(fmt.Sprintf(`{
+		"blobs": [
+			{"length": %d, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
+			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
+		],
+		"stream_type": "lbryfile",
+		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	}`, len(contentBlobData), contentBlobHash))
+
+	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	ctx := context.Background()
+
+	// Setup mock expectations - SD blob acquisition, then storage hit for content blob
+	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
+	// Content blob exists in storage
+	testMocks.storage.EXPECT().Has(contentBlobHash).Return(true, nil)
+	// Retrieve from storage (acquirer should NOT be called for content blob)
+	testMocks.storage.EXPECT().Get(contentBlobHash).Return(contentBlobData, nil)
+
+	// Test successful recursive SD blob acquisition with storage hit
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, sdBlobHash, result.SDBlobHash)
+	assert.Equal(t, expectedStreamHash, result.StreamHash)
+	assert.NotNil(t, result.SDBlob)
+	assert.Equal(t, sdBlobData, result.SDBlobData)
+	assert.NotNil(t, result.ContentBlobs)
+	assert.Equal(t, 1, len(result.ContentBlobs))
+	assert.Equal(t, contentBlobData, result.ContentBlobs[0])
+	assert.NotNil(t, result.ContentHashes)
+	assert.Equal(t, 1, len(result.ContentHashes))
+	assert.Equal(t, contentBlobHash, result.ContentHashes[0])
+	assert.Equal(t, 1, result.TotalChunks)
+	assert.NotNil(t, result.ChunkSizes)
+	assert.Equal(t, 1, len(result.ChunkSizes))
+	assert.Equal(t, len(contentBlobData), result.ChunkSizes[0])
+}
+
+// TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure tests recursive SD blob acquisition when content blob acquisition fails
+// Validates that content blob acquisition failures are properly wrapped and propagated
+func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
+	sdBlobData := []byte(fmt.Sprintf(`{
+		"blobs": [
+			{"length": 100, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
+			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
+		],
+		"stream_type": "lbryfile",
+		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	}`, contentBlobHash))
+
+	ctx := context.Background()
+	acquirerError := errors.New("content blob acquisition failed")
+
+	// Setup mock expectations - SD blob acquisition succeeds, but content blob acquisition fails
+	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
+	// Content blob doesn't exist in storage
+	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
+	// Content blob acquisition fails
+	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(nil, acquirerError)
+
+	// Test content blob acquisition failure
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to acquire content blob")
+	assert.Contains(t, err.Error(), contentBlobHash)
+	assert.Contains(t, err.Error(), "index 0")
 	assert.Nil(t, result)
 }
