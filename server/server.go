@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
+	"go.lumeweb.com/liblbry/stream"
 
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
@@ -48,6 +51,26 @@ type BlobManager interface {
 	AddSDBlob(hash string, data []byte) error
 	// RemoveBlob deletes a blob and notifies about the removal
 	RemoveBlob(hash string) error
+
+	// AcquireBlob retrieves a blob using available transfer methods
+	AcquireBlob(ctx context.Context, hash string) ([]byte, error)
+	// AcquireSDBlob retrieves an SD blob and optionally its content blobs
+	AcquireSDBlob(ctx context.Context, hash string, opts ...AcquireSDOption) (*stream.StreamResult, error)
+}
+
+// AcquireSDConfig holds configuration for SD blob acquisition
+type AcquireSDConfig struct {
+	Recursive bool // Whether to fetch all content blobs
+}
+
+// AcquireSDOption defines a function type for configuring SD blob acquisition
+type AcquireSDOption func(*AcquireSDConfig)
+
+// WithAcquireRecursive sets whether to recursively fetch all content blobs
+func WithAcquireRecursive(recursive bool) AcquireSDOption {
+	return func(config *AcquireSDConfig) {
+		config.Recursive = recursive
+	}
 }
 
 // Server defines the interface for a liblbry server
@@ -570,6 +593,117 @@ func (s *DefaultServer) RemoveBlob(hash string) error {
 	protocol.NotifyBlob(s.notifier, s.logger, protocol.NOTIFY_BLOB_REMOVED, hash)
 
 	return nil
+}
+
+// AcquireBlob retrieves a blob using available transfer methods
+func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, error) {
+	// Validate hash
+	if err := validateHash(hash); err != nil {
+		return nil, err
+	}
+
+	// Use the acquirer to get the blob
+	if s.acquirer == nil {
+		return nil, fmt.Errorf("no acquirer configured")
+	}
+
+	return s.acquirer.Acquire(ctx, hash)
+}
+
+// AcquireSDBlob retrieves an SD blob and optionally its content blobs
+func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...AcquireSDOption) (*stream.StreamResult, error) {
+	// Validate hash
+	if err := validateHash(hash); err != nil {
+		return nil, err
+	}
+
+	// Apply default configuration
+	config := &AcquireSDConfig{
+		Recursive: true, // Default to recursive fetching
+	}
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	// Acquire the SD blob first
+	sdBlobData, err := s.AcquireBlob(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire SD blob %s: %w", hash, err)
+	}
+
+	// Parse the SD blob
+	var sdBlob stream.SDBlob
+	if err := json.Unmarshal(sdBlobData, &sdBlob); err != nil {
+		return nil, fmt.Errorf("failed to parse SD blob %s: %w", hash, err)
+	}
+
+	// Create the basic stream result
+	result := &stream.StreamResult{
+		SDBlob:     &sdBlob,
+		SDBlobData: sdBlobData,
+		SDBlobHash: hash,
+		StreamHash: hex.EncodeToString(sdBlob.StreamHash),
+	}
+
+	// If not recursive, return just the SD blob metadata
+	if !config.Recursive {
+		return result, nil
+	}
+
+	// Recursive: fetch all content blobs
+	contentBlobs := make([][]byte, 0, len(sdBlob.BlobInfos))
+	contentHashes := make([]string, 0, len(sdBlob.BlobInfos))
+	chunkSizes := make([]int, 0, len(sdBlob.BlobInfos))
+
+	// Get all content blobs (excluding the terminating null blob)
+	for i, blobInfo := range sdBlob.BlobInfos {
+		// Skip the terminating null blob
+		if blobInfo.Length == 0 {
+			break
+		}
+
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		blobHash := hex.EncodeToString(blobInfo.BlobHash)
+
+		// Check if we already have this blob
+		if has, err := s.storage.Has(blobHash); err == nil && has {
+			// Blob exists in storage, retrieve it
+			blobData, err := s.storage.Get(blobHash)
+			if err != nil {
+				s.logger.Warn("Failed to retrieve existing blob from storage",
+					zap.String("hash", blobHash),
+					zap.Error(err))
+				// Continue with acquisition
+			} else {
+				contentBlobs = append(contentBlobs, blobData)
+				contentHashes = append(contentHashes, blobHash)
+				chunkSizes = append(chunkSizes, blobInfo.Length)
+				continue
+			}
+		}
+
+		// Acquire the blob
+		blobData, err := s.AcquireBlob(ctx, blobHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to acquire content blob %s (index %d): %w", blobHash, i, err)
+		}
+
+		contentBlobs = append(contentBlobs, blobData)
+		contentHashes = append(contentHashes, blobHash)
+		chunkSizes = append(chunkSizes, blobInfo.Length)
+	}
+
+	// Update the result with content information
+	result.ContentBlobs = contentBlobs
+	result.ContentHashes = contentHashes
+	result.TotalChunks = len(contentBlobs)
+	result.ChunkSizes = chunkSizes
+
+	return result, nil
 }
 
 // startTCPProtocol starts a generic TCP protocol handler
