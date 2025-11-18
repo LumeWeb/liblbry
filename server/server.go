@@ -651,9 +651,9 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 	}
 
 	// Recursive: fetch all content blobs
-	contentBlobs := make([][]byte, 0, len(sdBlob.BlobInfos)-1)
-	contentHashes := make([]string, 0, len(sdBlob.BlobInfos)-1)
-	chunkSizes := make([]int, 0, len(sdBlob.BlobInfos)-1)
+	contentBlobs := make([][]byte, 0, len(sdBlob.BlobInfos))
+	contentHashes := make([]string, 0, len(sdBlob.BlobInfos))
+	chunkSizes := make([]int, 0, len(sdBlob.BlobInfos))
 
 	// Get all content blobs (excluding the terminating null blob)
 	for i, blobInfo := range sdBlob.BlobInfos {

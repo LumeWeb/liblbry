@@ -1105,7 +1105,7 @@ func TestDefaultServer_AcquireBlob_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	// Setup mock expectations (should not be called due to context cancellation)
+	// Setup mock expectations (acquirer is called and should return context.Canceled when given a cancelled context)
 	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(nil, context.Canceled)
 
 	// Test with cancelled context
