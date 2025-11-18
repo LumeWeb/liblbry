@@ -109,13 +109,9 @@ type Encoder struct {
 	srcHash hash.Hash
 }
 
-// NewEncoder creates a new stream encoder
-func NewEncoder(src io.Reader) *Encoder {
-	key, err := generateKey()
-	if err != nil {
-		panic(err) // This maintains existing behavior for the constructor
-	}
-
+// newEncoderInternal creates a new stream encoder with the provided key
+// This is an internal helper that avoids key generation when a key is already available
+func newEncoderInternal(src io.Reader, key []byte) *Encoder {
 	return &Encoder{
 		src: src,
 
@@ -128,13 +124,22 @@ func NewEncoder(src io.Reader) *Encoder {
 	}
 }
 
+// NewEncoder creates a new stream encoder
+func NewEncoder(src io.Reader) *Encoder {
+	key, err := generateKey()
+	if err != nil {
+		panic(err) // This maintains existing behavior for the constructor
+	}
+
+	return newEncoderInternal(src, key)
+}
+
 // NewEncoderWithIVs creates a new encoder that uses preset cryptographic material
 func NewEncoderWithIVs(src io.Reader, key []byte, ivs [][]byte) *Encoder {
 	if len(key) != lbrycrypto.AES256KeySize {
 		panic(fmt.Sprintf("invalid key size: expected %d bytes, got %d bytes", lbrycrypto.AES256KeySize, len(key)))
 	}
-	e := NewEncoder(src)
-	e.sd.Key = key
+	e := newEncoderInternal(src, key)
 	e.ivs = ivs
 	return e
 }
