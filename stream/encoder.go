@@ -11,6 +11,7 @@ package stream
 
 import (
 	"bytes"
+	"crypto/aes"
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"math"
 
 	"go.lumeweb.com/liblbry/blob"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
 
@@ -109,19 +111,18 @@ type Encoder struct {
 
 // NewEncoder creates a new stream encoder
 func NewEncoder(src io.Reader) *Encoder {
+	key, err := generateKey()
+	if err != nil {
+		panic(err) // This maintains existing behavior for the constructor
+	}
+
 	return &Encoder{
 		src: src,
 
 		buf: make([]byte, maxBlobDataSize),
 		sd: &SDBlob{
 			StreamType: StreamTypeLBRYFile,
-			Key: func() []byte {
-				iv, err := randIV()
-				if err != nil {
-					panic(err) // This maintains existing behavior for the constructor
-				}
-				return iv
-			}(),
+			Key:        key,
 		},
 		srcHash: sha512.New384(),
 	}
@@ -242,6 +243,16 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 		if err != nil {
 			return nil, liblbryerrors.Err("failed to parse existing SD blob: %w", err)
 		}
+
+		// Generate a new key if the existing SD blob has an empty key
+		if len(sdBlob.Key) == 0 {
+			newKey, err := generateKey()
+			if err != nil {
+				return nil, liblbryerrors.Err("failed to generate new key for existing SD blob: %w", err)
+			}
+			sdBlob.Key = newKey
+		}
+
 		e.sd = sdBlob
 		// Seed IVs from existing SD blob
 		e.ivs = make([][]byte, len(sdBlob.BlobInfos))
@@ -406,12 +417,22 @@ func (e *Encoder) nextIV() ([]byte, error) {
 	return iv, nil
 }
 
+// generateRandomBytes generates cryptographically secure random bytes of the specified size
+func generateRandomBytes(size int) ([]byte, error) {
+	data := make([]byte, size)
+	_, err := io.ReadFull(rand.Reader, data)
+	if err != nil {
+		return nil, liblbryerrors.Err("failed to generate random bytes: %w", err)
+	}
+	return data, nil
+}
+
+// generateKey generates a cryptographically secure random key for encryption
+func generateKey() ([]byte, error) {
+	return generateRandomBytes(lbrycrypto.AES256KeySize) // 256-bit key for AES-256
+}
+
 // randIV generates a random initialization vector
 func randIV() ([]byte, error) {
-	iv := make([]byte, 16) // AES block size
-	_, err := io.ReadFull(rand.Reader, iv)
-	if err != nil {
-		return nil, liblbryerrors.Err("failed to generate random IV: %w", err)
-	}
-	return iv, nil
+	return generateRandomBytes(aes.BlockSize) // AES block size
 }
