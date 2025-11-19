@@ -438,6 +438,11 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 		if workerPool == nil {
 			t.logger.Debug("Worker pool is nil, cannot submit task")
+			// Complete the placeholder request with error so waiters are unblocked
+			req.once.Do(func() {
+				req.result = taskResult{err: liblbryerrors.Err(liblbryerrors.ErrTransferStopped)}
+				close(req.done)
+			})
 			return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
 		}
 
