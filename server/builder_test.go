@@ -1177,6 +1177,12 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 
 		defaultServer := server.(*DefaultServer)
 
+		// Start the server to follow the documented contract for ensureAcquirer()
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+		defer server.Stop(ctx)
+
 		// Verify that the default factory still creates an acquirer even without DHT
 		// (it will have no transfers, but should still be created)
 		err = defaultServer.ensureAcquirer()
