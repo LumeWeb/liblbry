@@ -671,6 +671,17 @@ func (s *DefaultServer) ensureAcquirer() error {
 	return nil
 }
 
+// requireStarted checks if the server has been started and returns an error if not
+func (s *DefaultServer) requireStarted() error {
+	s.mu.Lock()
+	started := s.started
+	s.mu.Unlock()
+	if !started {
+		return fmt.Errorf("server must be started before calling acquisition methods")
+	}
+	return nil
+}
+
 // AcquireBlob retrieves a blob using available transfer methods
 func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
@@ -679,11 +690,8 @@ func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, e
 	}
 
 	// Check if server has been started
-	s.mu.Lock()
-	started := s.started
-	s.mu.Unlock()
-	if !started {
-		return nil, fmt.Errorf("server must be started before calling AcquireBlob")
+	if err := s.requireStarted(); err != nil {
+		return nil, err
 	}
 
 	// Ensure acquirer is initialized
@@ -702,11 +710,8 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 	}
 
 	// Check if server has been started
-	s.mu.Lock()
-	started := s.started
-	s.mu.Unlock()
-	if !started {
-		return nil, fmt.Errorf("server must be started before calling AcquireSDBlob")
+	if err := s.requireStarted(); err != nil {
+		return nil, err
 	}
 
 	// Apply default configuration

@@ -907,57 +907,50 @@ func TestServerBuilder_WithDefaultAcquirer(t *testing.T) {
 func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
 	testMocks := setupBuilderMocks(t)
 
-	t.Run("AcquirerFactory_with_Acquirer_fails", func(t *testing.T) {
-		// Test that specifying both acquirer and acquirer factory fails
-		factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+	// Helper function to create a test factory
+	createTestFactory := func() AcquirerFactory {
+		return func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
 			return testMocks.acquirer, nil
 		}
+	}
 
-		builder := NewServerBuilder().
+	// Helper function to create a base builder with common configuration
+	createBaseBuilder := func() *ServerBuilder {
+		return NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithAcquirer(testMocks.acquirer).
-			WithAcquirerFactory(factory).
 			WithPeer(testPortPeer)
+	}
 
+	// Helper function to assert build failure with specific error message
+	assertBuildFailure := func(t *testing.T, builder *ServerBuilder, expectedError string) {
 		server, err := builder.Build()
-
 		require.Error(t, err)
 		assert.Nil(t, server)
-		assert.Contains(t, err.Error(), "cannot specify both acquirer and acquirer factory")
+		assert.Contains(t, err.Error(), expectedError)
+	}
+
+	t.Run("AcquirerFactory_with_Acquirer_fails", func(t *testing.T) {
+		builder := createBaseBuilder().
+			WithAcquirer(testMocks.acquirer).
+			WithAcquirerFactory(createTestFactory())
+
+		assertBuildFailure(t, builder, "cannot specify both acquirer and acquirer factory")
 	})
 
 	t.Run("AcquirerFactory_with_DefaultAcquirer_fails", func(t *testing.T) {
-		// Test that specifying both acquirer factory and default acquirer fails
-		factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
-			return testMocks.acquirer, nil
-		}
+		builder := createBaseBuilder().
+			WithAcquirerFactory(createTestFactory()).
+			WithDefaultAcquirer()
 
-		builder := NewServerBuilder().
-			WithStorage(testMocks.storage).
-			WithAcquirerFactory(factory).
-			WithDefaultAcquirer().
-			WithPeer(testPortPeer)
-
-		server, err := builder.Build()
-
-		require.Error(t, err)
-		assert.Nil(t, server)
-		assert.Contains(t, err.Error(), "cannot specify both acquirer factory and default acquirer")
+		assertBuildFailure(t, builder, "cannot specify both acquirer factory and default acquirer")
 	})
 
 	t.Run("Acquirer_with_DefaultAcquirer_fails", func(t *testing.T) {
-		// Test that specifying both acquirer and default acquirer fails
-		builder := NewServerBuilder().
-			WithStorage(testMocks.storage).
+		builder := createBaseBuilder().
 			WithAcquirer(testMocks.acquirer).
-			WithDefaultAcquirer().
-			WithPeer(testPortPeer)
+			WithDefaultAcquirer()
 
-		server, err := builder.Build()
-
-		require.Error(t, err)
-		assert.Nil(t, server)
-		assert.Contains(t, err.Error(), "cannot specify both acquirer and default acquirer")
+		assertBuildFailure(t, builder, "cannot specify both acquirer and default acquirer")
 	})
 }
 
@@ -1085,7 +1078,7 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	mockDHTNode.EXPECT().Shutdown().Return()
 
 	// Add mock expectation for storage.List() called during DHT blob announcement
-	testMocks.storage.EXPECT().List(0, 1000).Return([]string{}, liblbryerrors.ErrEndOfList)
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1140,7 +1133,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		mockDHTNode.EXPECT().Shutdown().Return()
 
 		// Add mock expectation for storage.List() called during DHT blob announcement
-		testMocks.storage.EXPECT().List(0, 1000).Return([]string{}, liblbryerrors.ErrEndOfList)
+		testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
