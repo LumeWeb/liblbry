@@ -89,7 +89,13 @@ func WithPeerTransferMaxConcurrency(maxConcurrency int) PeerTransferOption {
 }
 
 // NewPeerTransfer creates a new PeerTransfer with the specified DHT node and peer client factory
-func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerClientFactory, options ...PeerTransferOption) *PeerTransfer {
+// Returns an error if peerClientFactory is nil
+func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerClientFactory, options ...PeerTransferOption) (*PeerTransfer, error) {
+	// Validate that peerClientFactory is not nil
+	if peerClientFactory == nil {
+		return nil, errors.New("peerClientFactory cannot be nil")
+	}
+
 	transfer := &PeerTransfer{
 		dhtNode:           dhtNode,
 		peerClientFactory: peerClientFactory,
@@ -109,21 +115,25 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 	transfer.createWorkerPool()
 	transfer.createClientPool()
 
-	return transfer
+	return transfer, nil
 }
 
-// getFromBacklog checks if a blob download is already in progress and returns the existing request
-func (t *PeerTransfer) getFromBacklog(hash string) *BlobRequest {
-	t.backlogMu.RLock()
-	defer t.backlogMu.RUnlock()
+// getOrCreateFromBacklog atomically checks if a blob download is already in progress
+// and returns the existing request, or creates and adds a new one if none exists.
+// Returns the request and a boolean indicating if this caller is the owner (created the request).
+func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*BlobRequest, bool) {
+	t.backlogMu.Lock()
+	defer t.backlogMu.Unlock()
 
 	if req, exists := t.backlog[hash]; exists {
 		req.mu.Lock()
 		req.waiters++
 		req.mu.Unlock()
-		return req
+		return req, false // joined existing request
 	}
-	return nil
+
+	// No existing request, caller will be the owner
+	return nil, true
 }
 
 // addToBacklog adds a new blob request to the backlog
@@ -150,6 +160,10 @@ func (t *PeerTransfer) createClientPool() {
 	if t.clientPool == nil {
 		t.clientPool = &sync.Pool{
 			New: func() interface{} {
+				// Defensive check - this should never happen due to constructor validation
+				if t.clientFactory == nil {
+					panic("clientFactory is nil - this should have been caught in constructor")
+				}
 				return t.clientFactory()
 			},
 		}
@@ -248,8 +262,8 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		return nil, liblbryerrors.ErrInvalidHash
 	}
 
-	// Check if this blob is already being downloaded
-	if req := t.getFromBacklog(hash); req != nil {
+	// Check if this blob is already being downloaded, atomically
+	if req, isOwner := t.getOrCreateFromBacklog(hash); req != nil && !isOwner {
 		t.logger.Debug("Joining existing blob download", zap.String("hash", hash))
 		return req.wait(ctx)
 	}

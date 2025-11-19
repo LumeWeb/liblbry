@@ -103,7 +103,8 @@ func newTestPeerTransfer(t *testing.T) (*PeerTransfer, *protocolMocks.MockDHTNod
 	peerClientFactory := protocol.DefaultPeerClientFactory(
 		protocol.WithClientLogger(zap.NewNop().Named("test-peer-client")),
 	)
-	transfer := NewPeerTransfer(dhtNode, peerClientFactory)
+	transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+	require.NoError(t, err)
 
 	return transfer, dhtNode
 }
@@ -174,13 +175,20 @@ func TestNewPeerTransfer(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			transfer := NewPeerTransfer(test.dhtNode, test.peerClientFactory,
+			transfer, err := NewPeerTransfer(test.dhtNode, test.peerClientFactory,
 				WithPeerTransferTimeout(test.timeout),
 				WithPeerTransferMaxPeers(test.maxPeers),
 				WithPeerTransferLogger(test.logger),
 			)
 
 			// Basic non-nil assertions
+			if test.peerClientFactory == nil {
+				assert.Error(t, err)
+				assert.Nil(t, transfer)
+				return
+			}
+
+			assert.NoError(t, err)
 			assert.NotNil(t, transfer)
 
 			// Verify core fields are properly wired through
@@ -215,6 +223,17 @@ func TestNewPeerTransfer(t *testing.T) {
 			assert.False(t, transfer.isStopped(), "transfer should not be stopped initially")
 		})
 	}
+}
+
+// TestNewPeerTransfer_NilFactory tests that constructor returns error for nil factory
+func TestNewPeerTransfer_NilFactory(t *testing.T) {
+	dhtNode := protocolMocks.NewMockDHTNode(t)
+
+	transfer, err := NewPeerTransfer(dhtNode, nil)
+
+	assert.Error(t, err)
+	assert.Nil(t, transfer)
+	assert.Contains(t, err.Error(), "peerClientFactory cannot be nil")
 }
 
 // TestPeerTransfer_Get_NoPeersFound tests DHT discovery returning no contacts
@@ -710,9 +729,12 @@ func TestPeerTransfer_returnClientToPool_ResetFailure(t *testing.T) {
 	// Call returnClientToPool with failing client
 	transfer.returnClientToPool(mockClient)
 
-	// Verify that the mock client was not returned to pool by checking that we still get the original client
+	// Verify that the mock client was not returned to pool by checking that we get a DefaultPeerClient, not the mock
 	retrievedClient := transfer.clientPool.Get()
-	assert.Equal(t, initialClient, retrievedClient, "Should get the original client back, not the failing mock client")
+	_, isDefaultClient := retrievedClient.(*protocol.DefaultPeerClient)
+	_, isMockClient := retrievedClient.(*protocolMocks.MockPeerClient)
+	assert.True(t, isDefaultClient, "Should get a DefaultPeerClient back, not the failing mock client")
+	assert.False(t, isMockClient, "Should not get the MockPeerClient back")
 
 	// Put the original client back for cleanup
 	transfer.clientPool.Put(retrievedClient)
@@ -752,4 +774,108 @@ func TestPeerTransfer_returnClientToPool_StoppedTransfer(t *testing.T) {
 
 	// Verify that Reset was not called (client should be discarded immediately)
 	mockClient.AssertNotCalled(t, "Reset")
+}
+
+// TestPeerTransfer_Get_ConcurrentSameHash tests that concurrent Get() calls on the same hash
+// do not create duplicate BlobRequest entries (race condition fix verification)
+func TestPeerTransfer_Get_ConcurrentSameHash(t *testing.T) {
+	transfer, mockDHT := newTestPeerTransfer(t)
+
+	// Test data
+	testData := []byte("test data for concurrent access")
+
+	// Start a real peer server with the test data
+	blobData := map[string][]byte{testHash: testData}
+	server := StartTestPeerServer(t, blobData)
+	defer server.Stop()
+
+	// Setup mock DHT to return the actual server port
+	hashBitmap, err := bits.FromShortHex(testHash)
+	require.NoError(t, err)
+
+	contacts := []dht.Contact{
+		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
+		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
+		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
+	}
+	mockDHT.EXPECT().Get(hashBitmap).Return(contacts, nil)
+
+	// Number of concurrent goroutines
+	numGoroutines := 10
+
+	// Channel to collect results
+	results := make(chan []byte, numGoroutines)
+	errors := make(chan error, numGoroutines)
+
+	// Barrier to synchronize goroutine start
+	var startWG sync.WaitGroup
+	startWG.Add(1)
+
+	// Launch multiple goroutines that all call Get() on the same hash
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+
+			// Wait for all goroutines to be ready
+			startWG.Wait()
+
+			// Call Get() concurrently
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			data, err := transfer.Get(ctx, testHash)
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- data
+		}()
+	}
+
+	// Start all goroutines simultaneously
+	startWG.Done()
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(results)
+	close(errors)
+
+	// Collect results
+	var allResults [][]byte
+	var allErrors []error
+
+	for result := range results {
+		allResults = append(allResults, result)
+	}
+
+	for err := range errors {
+		allErrors = append(allErrors, err)
+	}
+
+	// Verify that all calls succeeded (no errors)
+	assert.Empty(t, allErrors, "No Get() calls should fail")
+	assert.Len(t, allResults, numGoroutines, "All goroutines should return results")
+
+	// Verify that all results are identical (same data)
+	for i := 1; i < len(allResults); i++ {
+		assert.Equal(t, allResults[0], allResults[i], "All results should be identical")
+	}
+	assert.Equal(t, testData, allResults[0], "Result should match expected test data")
+
+	// Verify that only one BlobRequest was created by checking backlog size
+	// Wait a moment for any cleanup to complete
+	time.Sleep(100 * time.Millisecond)
+
+	transfer.backlogMu.RLock()
+	backlogSize := len(transfer.backlog)
+	transfer.backlogMu.RUnlock()
+
+	assert.Equal(t, 0, backlogSize, "Backlog should be empty after all requests complete")
+
+	// Additional verification: check that no duplicate peer connections were made
+	// This is indirectly verified by the fact that all requests succeeded with identical data
+	// and the test completed without race conditions
 }

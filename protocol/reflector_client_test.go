@@ -290,7 +290,7 @@ func TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobCheck
 func TestReflectorServerShouldAcceptSDBlob_BlocklisterFalseNoNeededChecker(t *testing.T) {
 	// Create a mock store that implements Blocklister but not NeededBlobChecker
 	mockStore := storageMocks.NewMockDummyBlocklistBlobStore(t)
-	logger := zaptest.NewLogger(t)
+	logger := zap.NewNop()
 	server := NewReflectorServer(mockStore, WithReflectorLogger(logger))
 
 	// Start server on random port
