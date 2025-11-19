@@ -285,11 +285,11 @@ func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logg
 
 	// Add peer transfer if DHT is enabled
 	if dhtNode != nil {
-		// Create a default peer client - this would need to be configurable in the future
-		peerClient := protocol.NewPeerClient(
+		// Create a default peer client factory
+		peerClientFactory := protocol.DefaultPeerClientFactory(
 			protocol.WithClientLogger(logger.Named("peer_client")),
 		)
-		peerTransfer := transfer.NewPeerTransfer(dhtNode, peerClient,
+		peerTransfer := transfer.NewPeerTransfer(dhtNode, peerClientFactory,
 			transfer.WithPeerTransferLogger(logger.Named("peer_transfer")),
 		)
 		transfers = append(transfers, peerTransfer)

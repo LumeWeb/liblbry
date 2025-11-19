@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -31,7 +32,11 @@ type PeerClient interface {
 	GetBlob(ctx context.Context, hash string) ([]byte, error)
 	HasBlob(ctx context.Context, hash string) (bool, error)
 	GetStream(ctx context.Context, sdHash string) (stream.Stream, error)
+	Reset() error
 }
+
+// PeerClientFactory is a function type that creates new peer client instances
+type PeerClientFactory func() PeerClient
 
 // Conn is an interface that embeds net.Conn for testability
 type Conn interface {
@@ -48,6 +53,13 @@ type DefaultPeerClient struct {
 	dialFunc        func(network, address string) (net.Conn, error)
 	dialContextFunc func(ctx context.Context, network, address string) (net.Conn, error)
 	mutex           sync.RWMutex
+}
+
+// DefaultPeerClientFactory creates a new peer client factory with the given options
+func DefaultPeerClientFactory(options ...ClientOption) PeerClientFactory {
+	return func() PeerClient {
+		return NewPeerClient(options...)
+	}
 }
 
 // ClientOption configures the peer client
@@ -175,11 +187,10 @@ func (c *DefaultPeerClient) Connect(ctx context.Context, address string) error {
 	return nil
 }
 
-// Close terminates the connection to the peer server
-func (c *DefaultPeerClient) Close() error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
+// closeConnection terminates the connection to the peer server
+// This method assumes the mutex is already locked
+// wrapError determines whether to wrap the error with liblbryerrors.Err()
+func (c *DefaultPeerClient) closeConnection(wrapError bool) error {
 	if !c.connected {
 		c.logger.Debug("client not connected, nothing to close")
 		return nil
@@ -193,10 +204,38 @@ func (c *DefaultPeerClient) Close() error {
 
 	if err != nil {
 		c.logger.Debug("error closing peer connection", zap.Error(err))
-		return liblbryerrors.Err(err)
+		if wrapError {
+			return liblbryerrors.Err(err)
+		}
+		return err
 	}
 
 	c.logger.Debug("peer connection closed successfully")
+	return nil
+}
+
+// Close terminates the connection to the peer server
+func (c *DefaultPeerClient) Close() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.closeConnection(true)
+}
+
+// Reset resets the peer client to a clean state
+func (c *DefaultPeerClient) Reset() error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Close connection if currently connected
+	if c.connected {
+		if err := c.closeConnection(false); err != nil {
+			c.logger.Debug("failed to close connection during reset", zap.Error(err))
+			return err
+		}
+	}
+
+	// Reset other internal state
+	c.logger.Debug("peer client reset successfully")
 	return nil
 }
 
@@ -403,7 +442,7 @@ func (c *DefaultPeerClient) GetStream(ctx context.Context, sdHash string) (strea
 
 // wrapContextError wraps an error with liblbryerrors.Err only if it's not a context error
 func (c *DefaultPeerClient) wrapContextError(err error) error {
-	if liblbryerrors.Is(err, context.DeadlineExceeded) || liblbryerrors.Is(err, context.Canceled) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return err
 	}
 	return liblbryerrors.Err(err)
