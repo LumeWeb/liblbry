@@ -5,6 +5,7 @@ import (
 
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry/blob/transfer"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/storage/disk"
@@ -14,25 +15,29 @@ import (
 
 // ServerBuilder provides a fluent interface for building a Server
 type ServerBuilder struct {
-	storage       storage.BlobStore
-	acquirer      liblbry.BlobAcquirer
-	accessControl storage.AccessControl
-	config        map[string]any
-	logger        *zap.Logger
-	dhtWorkers    int
-	dhtBatchSize  int
+	storage            storage.BlobStore
+	acquirer           liblbry.BlobAcquirer
+	acquirerFactory    AcquirerFactory
+	useDefaultAcquirer bool
+	accessControl      storage.AccessControl
+	config             map[string]any
+	logger             *zap.Logger
+	dhtWorkers         int
+	dhtBatchSize       int
 }
 
 // NewServerBuilder creates a new ServerBuilder instance
 func NewServerBuilder() *ServerBuilder {
 	return &ServerBuilder{
-		storage:       nil,
-		acquirer:      nil,
-		accessControl: nil,
-		config:        make(map[string]any),
-		logger:        zap.NewNop(),                    // Default to no-op logger
-		dhtWorkers:    DefaultDHTAnnouncerWorkers,      // Default value
-		dhtBatchSize:  DefaultDHTAnnouncementBatchSize, // Default batch size
+		storage:            nil,
+		acquirer:           nil,
+		acquirerFactory:    nil,
+		useDefaultAcquirer: false,
+		accessControl:      nil,
+		config:             make(map[string]any),
+		logger:             zap.NewNop(),                    // Default to no-op logger
+		dhtWorkers:         DefaultDHTAnnouncerWorkers,      // Default value
+		dhtBatchSize:       DefaultDHTAnnouncementBatchSize, // Default batch size
 	}
 }
 
@@ -45,6 +50,20 @@ func (b *ServerBuilder) WithStorage(store storage.BlobStore) *ServerBuilder {
 // WithAcquirer sets the blob acquirer for the server
 func (b *ServerBuilder) WithAcquirer(acquirer liblbry.BlobAcquirer) *ServerBuilder {
 	b.acquirer = acquirer
+	return b
+}
+
+// WithAcquirerFactory sets a factory function that creates the blob acquirer
+// This allows the acquirer to be created after the DHT is available during server build
+func (b *ServerBuilder) WithAcquirerFactory(factory func(protocol.DHTNode, storage.BlobStore) (liblbry.BlobAcquirer, error)) *ServerBuilder {
+	b.acquirerFactory = factory
+	return b
+}
+
+// WithDefaultAcquirer enables creation of a default acquirer with sensible defaults
+// The default acquirer will be configured with transfers based on enabled protocols
+func (b *ServerBuilder) WithDefaultAcquirer() *ServerBuilder {
+	b.useDefaultAcquirer = true
 	return b
 }
 
@@ -250,6 +269,25 @@ func (b *ServerBuilder) WithExistingDHT(dhtNode protocol.DHTNode) *ServerBuilder
 	return b
 }
 
+// createDefaultTransfers creates a slice of transfer.Transfer instances based on enabled protocols
+func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) []transfer.Transfer {
+	var transfers []transfer.Transfer
+
+	// Add peer transfer if DHT is enabled
+	if dhtNode != nil {
+		// Create a default peer client - this would need to be configurable in the future
+		peerClient := protocol.NewPeerClient(
+			protocol.WithClientLogger(b.logger.Named("peer_client")),
+		)
+		peerTransfer := transfer.NewPeerTransfer(dhtNode, peerClient,
+			transfer.WithPeerTransferLogger(b.logger.Named("peer_transfer")),
+		)
+		transfers = append(transfers, peerTransfer)
+	}
+
+	return transfers
+}
+
 // Build creates a Server instance from the builder configuration
 func (b *ServerBuilder) Build() (Server, error) {
 	if b.storage == nil {
@@ -266,7 +304,18 @@ func (b *ServerBuilder) Build() (Server, error) {
 		b.accessControl = storage.NewAllowAllAccess()
 	}
 
-	return &DefaultServer{
+	// Validate acquirer configuration
+	if b.acquirer != nil && b.acquirerFactory != nil {
+		return nil, errors.New("cannot specify both acquirer and acquirer factory")
+	}
+	if b.acquirer != nil && b.useDefaultAcquirer {
+		return nil, errors.New("cannot specify both acquirer and default acquirer")
+	}
+	if b.acquirerFactory != nil && b.useDefaultAcquirer {
+		return nil, errors.New("cannot specify both acquirer factory and default acquirer")
+	}
+
+	server := &DefaultServer{
 		storage:       b.storage,
 		acquirer:      b.acquirer,
 		accessControl: b.accessControl,
@@ -274,7 +323,20 @@ func (b *ServerBuilder) Build() (Server, error) {
 		logger:        b.logger.Named("server"),
 		dhtWorkers:    b.dhtWorkers,
 		dhtBatchSize:  b.dhtBatchSize,
-	}, nil
+	}
+
+	// Set acquirer creation functions for lazy initialization
+	if b.acquirerFactory != nil {
+		server.acquirerFactory = b.acquirerFactory
+	}
+	if b.useDefaultAcquirer {
+		server.acquirerFactory = func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+			transfers := b.createDefaultTransfers(dhtNode)
+			return liblbry.NewBlobAcquirer(transfers, store)
+		}
+	}
+
+	return server, nil
 }
 
 // Preset helper functions for common server configurations

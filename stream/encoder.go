@@ -137,8 +137,8 @@ func NewEncoder(src io.Reader) *Encoder {
 
 // NewEncoderWithIVs creates a new encoder that uses preset cryptographic material
 func NewEncoderWithIVs(src io.Reader, key []byte, ivs [][]byte) *Encoder {
-	if len(key) != lbrycrypto.AES256KeySize {
-		panic(fmt.Sprintf("invalid key size: expected %d bytes, got %d bytes", lbrycrypto.AES256KeySize, len(key)))
+	if len(key) != lbrycrypto.AES256KeySize && len(key) != lbrycrypto.AES128KeySize {
+		panic(fmt.Sprintf("invalid key size: expected %d or %d bytes, got %d bytes", lbrycrypto.AES256KeySize, lbrycrypto.AES128KeySize, len(key)))
 	}
 	e := newEncoderInternal(src, key)
 	e.ivs = ivs

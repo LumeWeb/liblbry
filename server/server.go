@@ -22,6 +22,10 @@ import (
 	"golang.org/x/text/language"
 )
 
+// AcquirerFactory defines a function type for creating blob acquirers
+// This allows lazy initialization of acquirers after DHT and other dependencies are available
+type AcquirerFactory func(protocol.DHTNode, storage.BlobStore) (liblbry.BlobAcquirer, error)
+
 // Default protocol ports
 const (
 	DefaultPeerPort      = 5567
@@ -110,12 +114,13 @@ type DHTConfig struct {
 type DefaultServer struct {
 	BlobManager // Embedded interface
 
-	storage       storage.BlobStore
-	acquirer      liblbry.BlobAcquirer
-	accessControl storage.AccessControl
-	config        map[string]any
-	logger        *zap.Logger
-	dhtWorkers    int
+	storage         storage.BlobStore
+	acquirer        liblbry.BlobAcquirer
+	acquirerFactory AcquirerFactory
+	accessControl   storage.AccessControl
+	config          map[string]any
+	logger          *zap.Logger
+	dhtWorkers      int
 
 	// DHT management - kept at server level
 	dhtAnnouncer protocol.DHTAnnouncer
@@ -595,6 +600,29 @@ func (s *DefaultServer) RemoveBlob(hash string) error {
 	return nil
 }
 
+// ensureAcquirer ensures the acquirer is initialized, creating it if necessary
+func (s *DefaultServer) ensureAcquirer() error {
+	if s.acquirer != nil {
+		return nil // Already initialized
+	}
+
+	if s.acquirerFactory == nil {
+		return fmt.Errorf("no acquirer configured")
+	}
+
+	// Get the DHT node if available
+	dhtNode := s.getDhtNode()
+
+	// Create the acquirer using the factory
+	acquirer, err := s.acquirerFactory(dhtNode, s.storage)
+	if err != nil {
+		return fmt.Errorf("failed to create acquirer: %w", err)
+	}
+
+	s.acquirer = acquirer
+	return nil
+}
+
 // AcquireBlob retrieves a blob using available transfer methods
 func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
@@ -602,9 +630,9 @@ func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, e
 		return nil, err
 	}
 
-	// Use the acquirer to get the blob
-	if s.acquirer == nil {
-		return nil, fmt.Errorf("no acquirer configured")
+	// Ensure acquirer is initialized
+	if err := s.ensureAcquirer(); err != nil {
+		return nil, err
 	}
 
 	return s.acquirer.Acquire(ctx, hash)

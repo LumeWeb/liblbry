@@ -6,9 +6,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
+	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/storage/memory"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 	"go.uber.org/zap"
@@ -870,4 +872,273 @@ func TestServerBuilder_WithExistingDHT_Tests(t *testing.T) {
 		// Verify the server was built successfully
 		assert.NotNil(t, server)
 	})
+}
+
+// TestServerBuilder_WithAcquirerFactory verifies that acquirer factory can be properly set on the builder
+// This ensures the builder correctly stores and references the provided acquirer factory function
+func TestServerBuilder_WithAcquirerFactory(t *testing.T) {
+	builder := NewServerBuilder()
+	testMocks := setupBuilderMocks(t)
+
+	// Create a mock acquirer factory function
+	factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+		return testMocks.acquirer, nil
+	}
+
+	result := builder.WithAcquirerFactory(factory)
+
+	assertBuilderReturnsSame(t, builder, result)
+	assert.NotNil(t, builder.acquirerFactory)
+}
+
+// TestServerBuilder_WithDefaultAcquirer verifies that default acquirer flag can be properly set on the builder
+// This ensures the builder correctly enables the default acquirer creation
+func TestServerBuilder_WithDefaultAcquirer(t *testing.T) {
+	builder := NewServerBuilder()
+
+	result := builder.WithDefaultAcquirer()
+
+	assertBuilderReturnsSame(t, builder, result)
+	assert.True(t, builder.useDefaultAcquirer)
+}
+
+// TestServerBuilder_Build_AcquirerFactoryValidation tests the validation logic for acquirer factory configuration
+func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	t.Run("AcquirerFactory_with_Acquirer_fails", func(t *testing.T) {
+		// Test that specifying both acquirer and acquirer factory fails
+		factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+			return testMocks.acquirer, nil
+		}
+
+		builder := NewServerBuilder().
+			WithStorage(testMocks.storage).
+			WithAcquirer(testMocks.acquirer).
+			WithAcquirerFactory(factory).
+			WithPeer(testPortPeer)
+
+		server, err := builder.Build()
+
+		require.Error(t, err)
+		assert.Nil(t, server)
+		assert.Contains(t, err.Error(), "cannot specify both acquirer and acquirer factory")
+	})
+
+	t.Run("AcquirerFactory_with_DefaultAcquirer_fails", func(t *testing.T) {
+		// Test that specifying both acquirer factory and default acquirer fails
+		factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+			return testMocks.acquirer, nil
+		}
+
+		builder := NewServerBuilder().
+			WithStorage(testMocks.storage).
+			WithAcquirerFactory(factory).
+			WithDefaultAcquirer().
+			WithPeer(testPortPeer)
+
+		server, err := builder.Build()
+
+		require.Error(t, err)
+		assert.Nil(t, server)
+		assert.Contains(t, err.Error(), "cannot specify both acquirer factory and default acquirer")
+	})
+
+	t.Run("Acquirer_with_DefaultAcquirer_fails", func(t *testing.T) {
+		// Test that specifying both acquirer and default acquirer fails
+		builder := NewServerBuilder().
+			WithStorage(testMocks.storage).
+			WithAcquirer(testMocks.acquirer).
+			WithDefaultAcquirer().
+			WithPeer(testPortPeer)
+
+		server, err := builder.Build()
+
+		require.Error(t, err)
+		assert.Nil(t, server)
+		assert.Contains(t, err.Error(), "cannot specify both acquirer and default acquirer")
+	})
+}
+
+// TestServerBuilder_Build_AcquirerFactorySuccess tests successful server building with acquirer factory
+func TestServerBuilder_Build_AcquirerFactorySuccess(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Create a mock acquirer factory function
+	factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+		return testMocks.acquirer, nil
+	}
+
+	builder := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithAcquirerFactory(factory).
+		WithPeer(testPortPeer).
+		WithAccessControl(testMocks.accessControl).
+		WithLogger(testMocks.logger)
+
+	server, err := builder.Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server is of the correct type
+	defaultServer, ok := server.(*DefaultServer)
+	require.True(t, ok)
+	assert.Same(t, testMocks.storage, defaultServer.storage)
+	assert.Same(t, testMocks.accessControl, defaultServer.accessControl)
+	assert.NotNil(t, defaultServer.acquirerFactory)
+	assert.Nil(t, defaultServer.acquirer) // Should be nil until initialized
+}
+
+// TestServerBuilder_Build_DefaultAcquirerSuccess tests successful server building with default acquirer
+func TestServerBuilder_Build_DefaultAcquirerSuccess(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	builder := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithPeer(testPortPeer). // Need DHT for default transfers
+		WithAccessControl(testMocks.accessControl).
+		WithLogger(testMocks.logger)
+
+	server, err := builder.Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server is of the correct type
+	defaultServer, ok := server.(*DefaultServer)
+	require.True(t, ok)
+	assert.Same(t, testMocks.storage, defaultServer.storage)
+	assert.Same(t, testMocks.accessControl, defaultServer.accessControl)
+	assert.NotNil(t, defaultServer.acquirerFactory)
+	assert.Nil(t, defaultServer.acquirer) // Should be nil until initialized
+}
+
+// TestServerBuilder_Build_AcquirerFactoryIntegration tests the integration of acquirer factory with server lifecycle
+func TestServerBuilder_Build_AcquirerFactoryIntegration(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Create a mock DHT node
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Shutdown().Return()
+
+	// Create a mock acquirer factory function that tracks calls
+	var factoryCalled bool
+	var factoryDHTNode protocol.DHTNode
+	var factoryStore storage.BlobStore
+
+	factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+		factoryCalled = true
+		factoryDHTNode = dhtNode
+		factoryStore = store
+		return testMocks.acquirer, nil
+	}
+
+	// Mock the storage.List call that happens during DHT blob announcement
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+
+	builder := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithAcquirerFactory(factory).
+		WithExistingDHT(mockDHTNode).
+		WithAccessControl(testMocks.accessControl).
+		WithLogger(testMocks.logger)
+
+	server, err := builder.Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server is of the correct type
+	defaultServer, ok := server.(*DefaultServer)
+	require.True(t, ok)
+	assert.NotNil(t, defaultServer.acquirerFactory)
+
+	// Start the server to initialize the DHT node
+	ctx := context.Background()
+	err = server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(ctx)
+
+	// Test that the factory is called when ensuring acquirer
+	err = defaultServer.ensureAcquirer()
+	require.NoError(t, err)
+
+	// Verify factory was called with correct parameters
+	assert.True(t, factoryCalled, "Factory should have been called")
+	assert.Equal(t, mockDHTNode, factoryDHTNode, "Factory should receive the correct DHT node")
+	assert.Equal(t, testMocks.storage, factoryStore, "Factory should receive the correct storage")
+	assert.Equal(t, testMocks.acquirer, defaultServer.acquirer, "Acquirer should be set from factory")
+}
+
+// TestServerBuilder_Build_DefaultAcquirerIntegration tests the integration of default acquirer with server lifecycle
+func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Create a mock DHT node
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+	builder := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithExistingDHT(mockDHTNode).
+		WithAccessControl(testMocks.accessControl).
+		WithLogger(testMocks.logger)
+
+	server, err := builder.Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server is of the correct type
+	defaultServer, ok := server.(*DefaultServer)
+	require.True(t, ok)
+	assert.NotNil(t, defaultServer.acquirerFactory)
+
+	// Test that the default factory creates an acquirer
+	err = defaultServer.ensureAcquirer()
+	require.NoError(t, err)
+
+	// Verify acquirer was created
+	assert.NotNil(t, defaultServer.acquirer, "Default acquirer should be created")
+}
+
+// TestServerBuilder_ChainedMethodsWithAcquirerFactory verifies that builder method chaining works correctly with acquirer factory
+func TestServerBuilder_ChainedMethodsWithAcquirerFactory(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	factory := func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
+		return testMocks.acquirer, nil
+	}
+
+	// Test method chaining works correctly with acquirer factory
+	server, err := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithAcquirerFactory(factory).
+		WithAccessControl(testMocks.accessControl).
+		WithPeer(testPortPeer).
+		WithLogger(testMocks.logger).
+		Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+}
+
+// TestServerBuilder_ChainedMethodsWithDefaultAcquirer verifies that builder method chaining works correctly with default acquirer
+func TestServerBuilder_ChainedMethodsWithDefaultAcquirer(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Test method chaining works correctly with default acquirer
+	server, err := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithAccessControl(testMocks.accessControl).
+		WithPeer(testPortPeer).
+		WithLogger(testMocks.logger).
+		Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
 }
