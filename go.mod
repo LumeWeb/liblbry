@@ -9,7 +9,6 @@ require (
 	github.com/go-errors/errors v1.5.1
 	github.com/ipfs/go-cid v0.5.0
 	github.com/knadh/koanf/v2 v2.3.0
-	github.com/lbryio/lbry.go/v2 v2.7.1
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/samber/lo v1.52.0
@@ -31,6 +30,7 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
+	github.com/lbryio/lbry.go/v2 v2.7.1 // indirect
 	github.com/lyoshenka/bencode v0.0.0-20180323155644-b7abd7672df5 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
@@ -39,8 +39,6 @@ require (
 	github.com/multiformats/go-base32 v0.0.3 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
-	github.com/nlopes/slack v0.6.0 // indirect
-	github.com/pkg/errors v0.8.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/slack-go/slack v0.17.3 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect

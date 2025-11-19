@@ -982,9 +982,14 @@ func TestDefaultServer_AcquireBlob_Success(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	blobHash := TestBlobHash
 	expectedData := []byte(TestBlobData)
-	ctx := context.Background()
 
 	// Setup mock expectations
 	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(expectedData, nil)
@@ -1021,8 +1026,13 @@ func TestDefaultServer_AcquireBlob_NoAcquirer(t *testing.T) {
 	server := setupServer(t, testMocks, map[string]any{})
 	server.acquirer = nil // Explicitly set acquirer to nil
 
-	blobHash := TestBlobHash
+	// Start the server to enable blob acquisition
 	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
+	blobHash := TestBlobHash
 
 	// Test with no acquirer configured
 	result, err := server.AcquireBlob(ctx, blobHash)
@@ -1039,8 +1049,13 @@ func TestDefaultServer_AcquireBlob_AcquirerFailure(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	blobHash := TestBlobHash
+	// Start the server to enable blob acquisition
 	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
+	blobHash := TestBlobHash
 	acquirerError := errors.New("acquirer error")
 
 	// Setup mock expectations
@@ -1061,11 +1076,16 @@ func TestDefaultServer_AcquireBlob_ContextCancellation(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx, cancel := context.WithCancel(context.Background())
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	blobHash := TestBlobHash
 
-	// Create a cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
+	// Cancel the context after starting the server
+	cancel()
 
 	// Setup mock expectations (acquirer is called and should return context.Canceled when given a cancelled context)
 	testMocks.acquirer.EXPECT().Acquire(ctx, blobHash).Return(nil, context.Canceled)
@@ -1085,6 +1105,12 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	sdBlobHash := TestBlobHash
 	sdBlobData := []byte(`{
 		"blobs": [
@@ -1095,7 +1121,6 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
 	}`)
 	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	ctx := context.Background()
 
 	// Setup mock expectations for SD blob acquisition
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return([]byte(sdBlobData), nil)
@@ -1121,6 +1146,12 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
 	contentBlobData := []byte("content blob data")
@@ -1134,7 +1165,6 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	}`, len(contentBlobData), contentBlobHash))
 
 	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	ctx := context.Background()
 
 	// Setup mock expectations with explicit call ordering
 	// First, acquire the SD blob
@@ -1190,8 +1220,13 @@ func TestDefaultServer_AcquireSDBlob_SDBlobAcquisitionFailure(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
-	sdBlobHash := TestBlobHash
+	// Start the server to enable blob acquisition
 	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
+	sdBlobHash := TestBlobHash
 	acquirerError := errors.New("acquirer error")
 
 	// Setup mock expectations
@@ -1213,9 +1248,14 @@ func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	sdBlobHash := TestBlobHash
 	invalidJSON := []byte("{ invalid json")
-	ctx := context.Background()
 
 	// Setup mock expectations
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(invalidJSON, nil)
@@ -1236,6 +1276,12 @@ func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
 	contentBlobData := []byte("existing content blob data")
@@ -1249,7 +1295,6 @@ func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
 	}`, len(contentBlobData), contentBlobHash))
 
 	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	ctx := context.Background()
 
 	// Setup mock expectations - SD blob acquisition, then storage hit for content blob
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
@@ -1286,6 +1331,12 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 	testMocks := setupMocks(t)
 	server := setupServer(t, testMocks, map[string]any{})
 
+	// Start the server to enable blob acquisition
+	ctx := context.Background()
+	err := server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(context.Background())
+
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
 	sdBlobData := []byte(fmt.Sprintf(`{
@@ -1297,7 +1348,6 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
 	}`, contentBlobHash))
 
-	ctx := context.Background()
 	acquirerError := errors.New("content blob acquisition failed")
 
 	// Setup mock expectations - SD blob acquisition succeeds, but content blob acquisition fails
