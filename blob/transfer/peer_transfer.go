@@ -26,8 +26,12 @@ type BlobRequest struct {
 	resultChan chan TaskResult
 	cancel     context.CancelFunc
 	waiters    int
-	completed  int32 // atomic counter for completed peers
+	completed  int32 // number of completed peer attempts
+	totalPeers int32 // total number of peer attempts scheduled
+	result     TaskResult
+	done       chan struct{}
 	mu         sync.Mutex
+	once       sync.Once
 }
 
 // PeerTransfer fetches blobs from LBRY peers using DHT discovery
@@ -44,6 +48,8 @@ type PeerTransfer struct {
 	backlogMu      sync.RWMutex
 	maxConcurrency int
 	clientPool     *sync.Pool
+	clientFactory  protocol.PeerClientFactory // stored factory for pool recreation
+	stopped        int32                      // atomic flag for stopped state
 }
 
 // PeerTransferOption configures the peer transfer
@@ -92,19 +98,16 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 		logger:            zap.NewNop(),
 		maxConcurrency:    5,
 		backlog:           make(map[string]*BlobRequest),
-		clientPool: &sync.Pool{
-			New: func() interface{} {
-				return peerClientFactory()
-			},
-		},
+		clientFactory:     peerClientFactory, // store factory for pool recreation
 	}
 
 	for _, option := range options {
 		option(transfer)
 	}
 
-	// Initialize worker pool after options are applied
-	transfer.workerPool = workerpool.New(transfer.maxConcurrency)
+	// Initialize worker pool and client pool after options are applied
+	transfer.createWorkerPool()
+	transfer.createClientPool()
 
 	return transfer
 }
@@ -137,11 +140,42 @@ func (t *PeerTransfer) removeFromBacklog(hash string) {
 	delete(t.backlog, hash)
 }
 
+// isStopped checks if the transfer is in a stopped state
+func (t *PeerTransfer) isStopped() bool {
+	return atomic.LoadInt32(&t.stopped) == 1
+}
+
+// createClientPool creates a new sync.Pool using the stored factory
+func (t *PeerTransfer) createClientPool() {
+	if t.clientPool == nil {
+		t.clientPool = &sync.Pool{
+			New: func() interface{} {
+				return t.clientFactory()
+			},
+		}
+	}
+}
+
+// createWorkerPool creates a new worker pool with the configured concurrency
+func (t *PeerTransfer) createWorkerPool() {
+	if t.workerPool == nil {
+		t.workerPool = workerpool.New(t.maxConcurrency)
+	}
+}
+
 // returnClientToPool resets the client and returns it to the pool
 func (t *PeerTransfer) returnClientToPool(peerClient protocol.PeerClient) {
-	if resetErr := peerClient.Reset(); resetErr != nil {
-		t.logger.Debug("Failed to reset peer client", zap.Error(resetErr))
+	// Check if transfer is stopped - if so, discard the client
+	if t.isStopped() || t.clientPool == nil {
+		t.logger.Debug("Discarding client because transfer is stopped")
+		return
 	}
+
+	if resetErr := peerClient.Reset(); resetErr != nil {
+		t.logger.Debug("Discarding client due to reset failure", zap.Error(resetErr))
+		return
+	}
+
 	t.clientPool.Put(peerClient)
 }
 
@@ -153,35 +187,24 @@ func (br *BlobRequest) wait(ctx context.Context) ([]byte, error) {
 		br.mu.Unlock()
 	}()
 
-	for {
-		select {
-		case result := <-br.resultChan:
-			// If we got a successful result, return it immediately
-			if result.err == nil {
-				return result.data, nil
-			}
-			// If we got an error result, check if all peers have completed
-			// and if so, return the error
-			completed := atomic.LoadInt32(&br.completed)
-			if completed > 0 {
-				// Check if we've received results from all waiters
-				br.mu.Lock()
-				waiters := br.waiters
-				br.mu.Unlock()
-
-				if completed >= int32(waiters) {
-					return nil, result.err
-				}
-			}
-			// Continue waiting for other results (loop again)
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	select {
+	case <-br.done:
+		br.mu.Lock()
+		res := br.result
+		br.mu.Unlock()
+		return res.data, res.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
 // downloadFromPeer attempts to download a blob from a specific peer
 func (t *PeerTransfer) downloadFromPeer(ctx context.Context, peerAddr, hash string) ([]byte, error) {
+	// Check if transfer is stopped
+	if t.isStopped() {
+		return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
+	}
+
 	// Get a peer client from the pool
 	peerClient := t.clientPool.Get().(protocol.PeerClient)
 
@@ -215,6 +238,11 @@ func (t *PeerTransfer) downloadFromPeer(ctx context.Context, peerAddr, hash stri
 
 // Get attempts to fetch a blob from peers discovered via DHT using concurrent race pattern
 func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
+	// Check if transfer is stopped
+	if t.isStopped() {
+		return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
+	}
+
 	// Validate hash
 	if !stream.ValidateHash(hash) {
 		return nil, liblbryerrors.ErrInvalidHash
@@ -226,6 +254,29 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		return req.wait(ctx)
 	}
 
+	// Discover peers via DHT
+	hashBitmap, err := protocol.ParseHashFromString(hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse hash for DHT lookup: %w", err)
+	}
+
+	contacts, err := t.dhtNode.Get(hashBitmap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover peers via DHT: %w", err)
+	}
+
+	if len(contacts) == 0 {
+		return nil, liblbryerrors.ErrBlobNotFound
+	}
+
+	// Limit number of peers to try
+	peersToTry := min(len(contacts), t.maxPeers)
+
+	// Handle edge case where no peers will be tried
+	if peersToTry == 0 {
+		return nil, liblbryerrors.ErrBlobNotFound
+	}
+
 	// Create race context for cancellation
 	raceCtx, raceCancel := context.WithTimeout(ctx, t.timeout)
 
@@ -234,32 +285,13 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		resultChan: resultChan,
 		cancel:     raceCancel,
 		waiters:    1,
+		totalPeers: int32(peersToTry),
+		done:       make(chan struct{}),
 	}
 
 	// Add to backlog before starting downloads
 	t.addToBacklog(hash, req)
 	defer t.removeFromBacklog(hash)
-
-	// Discover peers via DHT
-	hashBitmap, err := protocol.ParseHashFromString(hash)
-	if err != nil {
-		raceCancel()
-		return nil, fmt.Errorf("failed to parse hash for DHT lookup: %w", err)
-	}
-
-	contacts, err := t.dhtNode.Get(hashBitmap)
-	if err != nil {
-		raceCancel()
-		return nil, fmt.Errorf("failed to discover peers via DHT: %w", err)
-	}
-
-	if len(contacts) == 0 {
-		raceCancel()
-		return nil, liblbryerrors.ErrBlobNotFound
-	}
-
-	// Limit number of peers to try
-	peersToTry := min(len(contacts), t.maxPeers)
 	t.logger.Debug("Starting concurrent peer race",
 		zap.String("hash", hash),
 		zap.Int("total_peers", len(contacts)),
@@ -282,35 +314,35 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 			data, err := t.downloadFromPeer(raceCtx, peerAddrCopy, hashCopy)
 
 			if err == nil {
-				// SUCCESS! Cancel all other peer tasks
-				select {
-				case resultChan <- TaskResult{data: data}:
+				// SUCCESS! Set result and notify all waiters
+				req.once.Do(func() {
+					req.mu.Lock()
+					req.result = TaskResult{data: data}
+					req.mu.Unlock()
+					close(req.done)
 					t.logger.Debug("Peer download succeeded, canceling others",
 						zap.String("hash", hashCopy),
 						zap.String("peer", peerAddrCopy))
 					raceCancel() // This cancels all other in-flight tasks
-				default:
-					// Another peer already won the race
-					t.logger.Debug("Peer download succeeded but race already won",
-						zap.String("hash", hashCopy),
-						zap.String("peer", peerAddrCopy))
-				}
+				})
 			} else {
-				// Track failed peer and send error result
-				atomic.AddInt32(&req.completed, 1)
+				// Track failed peer
+				completed := atomic.AddInt32(&req.completed, 1)
 				t.logger.Debug("Peer download failed",
 					zap.String("hash", hashCopy),
 					zap.String("peer", peerAddrCopy),
 					zap.Error(err))
 
-				// Send error result to indicate failure
-				select {
-				case resultChan <- TaskResult{err: err}:
-					t.logger.Debug("Sent error result for failed peer",
-						zap.String("hash", hashCopy),
-						zap.String("peer", peerAddrCopy))
-				default:
-					// Result already sent or channel closed
+				// Check if this was the last peer to fail
+				if completed >= req.totalPeers {
+					req.once.Do(func() {
+						req.mu.Lock()
+						req.result = TaskResult{err: err}
+						req.mu.Unlock()
+						close(req.done)
+						t.logger.Debug("All peers failed, returning error",
+							zap.String("hash", hashCopy))
+					})
 				}
 			}
 		})
@@ -330,24 +362,30 @@ func (t *PeerTransfer) Name() string {
 	return "peer"
 }
 
+// Start initializes or restarts the peer transfer
+func (t *PeerTransfer) Start() {
+	// Reset stopped flag to allow operations
+	atomic.StoreInt32(&t.stopped, 0)
+
+	// Recreate client pool if it was cleared
+	t.createClientPool()
+
+	// Recreate worker pool if it was stopped
+	t.createWorkerPool()
+}
+
 // Stop gracefully shuts down the peer transfer and its worker pool
 func (t *PeerTransfer) Stop() {
+	// Set stopped flag atomically to prevent new operations
+	atomic.StoreInt32(&t.stopped, 1)
+
 	if t.workerPool != nil {
 		t.workerPool.Stop()
+		t.workerPool = nil // Clear to allow recreation
 	}
 
-	// Clear the client pool
-	if t.clientPool != nil {
-		// Clear the pool by draining it
-		for {
-			client := t.clientPool.Get()
-			if client == nil {
-				break
-			}
-			// Reset and discard the client
-			if resetErr := client.(protocol.PeerClient).Reset(); resetErr != nil {
-				t.logger.Debug("Failed to reset client during shutdown", zap.Error(resetErr))
-			}
-		}
-	}
+	// Clear the client pool reference to allow garbage collection
+	// Note: We don't drain the pool because sync.Pool.Get() with a New function
+	// will never return nil, which would cause an infinite loop
+	t.clientPool = nil
 }

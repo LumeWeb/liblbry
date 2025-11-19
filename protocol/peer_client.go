@@ -226,12 +226,10 @@ func (c *DefaultPeerClient) Reset() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// Close connection if currently connected
-	if c.connected {
-		if err := c.closeConnection(false); err != nil {
-			c.logger.Debug("failed to close connection during reset", zap.Error(err))
-			return err
-		}
+	// Close connection (helper handles early return if not connected)
+	if err := c.closeConnection(false); err != nil {
+		c.logger.Debug("failed to close connection during reset", zap.Error(err))
+		return err
 	}
 
 	// Reset other internal state

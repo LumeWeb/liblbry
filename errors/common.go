@@ -128,3 +128,6 @@ var (
 	ErrUnexpectedEmptyBlob    = errors.New("got 0-length blob before end of stream")
 	ErrBlobsOutOfOrder        = errors.New("blobs are out of order in sd blob")
 )
+var (
+	ErrTransferStopped = errors.New("transfer is stopped")
+)
