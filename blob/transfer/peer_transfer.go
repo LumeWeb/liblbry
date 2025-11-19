@@ -356,6 +356,9 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	// This goroutine is the owner - initialize the request
+	// Ensure cleanup happens when the request is completed, even on early errors
+	defer t.removeFromBacklog(hash)
+
 	// Discover peers via DHT
 	hashBitmap, err := protocol.ParseHashFromString(hash)
 	if err != nil {
@@ -403,16 +406,13 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	// This context manages the overall timeout for all peer attempts in the race
 	// It is separate from individual caller contexts to prevent one caller's timeout
 	// from cancelling the entire race for all participants
-	raceCtx, raceCancel := context.WithTimeout(ctx, t.timeout)
+	raceCtx, raceCancel := context.WithTimeout(context.Background(), t.timeout)
 
 	// Initialize the placeholder request with actual values
 	req.mu.Lock()
 	req.cancel = raceCancel // Store cancel function for potential early cancellation
 	req.totalPeers = int32(peersToTry)
 	req.mu.Unlock()
-
-	// Ensure cleanup happens when the request is completed
-	defer t.removeFromBacklog(hash)
 
 	t.logger.Debug("Starting concurrent peer race",
 		zap.String("hash", hash),
@@ -438,7 +438,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 		if workerPool == nil {
 			t.logger.Debug("Worker pool is nil, cannot submit task")
-			return
+			return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
 		}
 
 		workerPool.Submit(func() {
@@ -484,7 +484,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	// Wait for first success or timeout
-	data, err := req.wait(raceCtx)
+	data, err := req.wait(ctx)
 
 	// Ensure race context is cancelled to clean up all in-flight peer attempts
 	// This is the authoritative cancellation that stops the race for all participants
