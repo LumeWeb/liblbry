@@ -15,19 +15,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// TaskResult represents the result of a peer download attempt
-type TaskResult struct {
+// taskResult represents the result of a peer download attempt
+type taskResult struct {
 	data []byte
 	err  error
 }
 
-// BlobRequest tracks an in-progress blob download with race coordination
-type BlobRequest struct {
+// blobRequest tracks an in-progress blob download with race coordination
+type blobRequest struct {
 	cancel     context.CancelFunc // Cancels the race context for all peer attempts
 	waiters    int
 	completed  int32 // number of completed peer attempts
 	totalPeers int32 // total number of peer attempts scheduled
-	result     TaskResult
+	result     taskResult
 	done       chan struct{}
 	mu         sync.Mutex
 	once       sync.Once
@@ -43,10 +43,11 @@ type PeerTransfer struct {
 
 	// Concurrent execution fields
 	workerPool     *workerpool.WorkerPool
-	backlog        map[string]*BlobRequest
+	backlog        map[string]*blobRequest
 	backlogMu      sync.RWMutex
 	maxConcurrency int
 	clientPool     *sync.Pool
+	clientPoolMu   sync.RWMutex               // protects clientPool access
 	clientFactory  protocol.PeerClientFactory // stored factory for pool recreation
 	stopped        int32                      // atomic flag for stopped state
 }
@@ -102,7 +103,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 		maxPeers:          5,
 		logger:            zap.NewNop(),
 		maxConcurrency:    5,
-		backlog:           make(map[string]*BlobRequest),
+		backlog:           make(map[string]*blobRequest),
 		clientFactory:     peerClientFactory, // store factory for pool recreation
 	}
 
@@ -120,7 +121,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 // getOrCreateFromBacklog atomically checks if a blob download is already in progress
 // and returns the existing request, or creates and adds a new one if none exists.
 // Returns the request and a boolean indicating if this caller is the owner (created the request).
-func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*BlobRequest, bool) {
+func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*blobRequest, bool) {
 	t.backlogMu.Lock()
 	defer t.backlogMu.Unlock()
 
@@ -133,7 +134,7 @@ func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*BlobRequest, bool) 
 
 	// No existing request, create a placeholder to reserve the spot
 	// This prevents other goroutines from creating duplicate requests
-	placeholder := &BlobRequest{
+	placeholder := &blobRequest{
 		waiters: 1,
 		done:    make(chan struct{}),
 	}
@@ -155,6 +156,9 @@ func (t *PeerTransfer) isStopped() bool {
 
 // createClientPool creates a new sync.Pool using the stored factory
 func (t *PeerTransfer) createClientPool() {
+	t.clientPoolMu.Lock()
+	defer t.clientPoolMu.Unlock()
+
 	if t.clientPool == nil {
 		// Defensive check - this should never happen due to constructor validation
 		if t.clientFactory == nil {
@@ -180,6 +184,9 @@ func (t *PeerTransfer) createWorkerPool() {
 
 // getPeerClient safely gets and validates a peer client from the pool
 func (t *PeerTransfer) getPeerClient() (protocol.PeerClient, error) {
+	t.clientPoolMu.RLock()
+	defer t.clientPoolMu.RUnlock()
+
 	// Check if client pool is available
 	if t.clientPool == nil {
 		return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
@@ -202,15 +209,19 @@ func (t *PeerTransfer) getPeerClient() (protocol.PeerClient, error) {
 
 // safeReturnClient safely returns a client to the pool if both pool and client are valid
 func (t *PeerTransfer) safeReturnClient(peerClient protocol.PeerClient) {
-	if t.clientPool != nil && peerClient != nil {
+	t.clientPoolMu.RLock()
+	poolExists := t.clientPool != nil && peerClient != nil
+	t.clientPoolMu.RUnlock()
+
+	if poolExists {
 		t.returnClientToPool(peerClient)
 	}
 }
 
 // returnClientToPool resets the client and returns it to the pool
 func (t *PeerTransfer) returnClientToPool(peerClient protocol.PeerClient) {
-	// Check if transfer is stopped - if so, discard the client
-	if t.isStopped() || t.clientPool == nil {
+	// Check if transfer is stopped first (without lock for performance)
+	if t.isStopped() {
 		t.logger.Debug("Discarding client because transfer is stopped")
 		return
 	}
@@ -220,7 +231,13 @@ func (t *PeerTransfer) returnClientToPool(peerClient protocol.PeerClient) {
 		return
 	}
 
-	t.clientPool.Put(peerClient)
+	// Use a single lock to check pool existence and put the client
+	t.clientPoolMu.RLock()
+	defer t.clientPoolMu.RUnlock()
+
+	if t.clientPool != nil {
+		t.clientPool.Put(peerClient)
+	}
 }
 
 // wait waits for the blob request to complete and returns the result.
@@ -233,7 +250,7 @@ func (t *PeerTransfer) returnClientToPool(peerClient protocol.PeerClient) {
 //
 // This design ensures that one caller's timeout doesn't waste work already in progress
 // for other callers who may still be waiting for the result.
-func (br *BlobRequest) wait(ctx context.Context) ([]byte, error) {
+func (br *blobRequest) wait(ctx context.Context) ([]byte, error) {
 	defer func() {
 		br.mu.Lock()
 		br.waiters--
@@ -326,15 +343,30 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	// Discover peers via DHT
 	hashBitmap, err := protocol.ParseHashFromString(hash)
 	if err != nil {
+		// Complete the placeholder request with error so waiters are unblocked
+		req.once.Do(func() {
+			req.result = taskResult{err: fmt.Errorf("failed to parse hash for DHT lookup: %w", err)}
+			close(req.done)
+		})
 		return nil, fmt.Errorf("failed to parse hash for DHT lookup: %w", err)
 	}
 
 	contacts, err := t.dhtNode.Get(hashBitmap)
 	if err != nil {
+		// Complete the placeholder request with error so waiters are unblocked
+		req.once.Do(func() {
+			req.result = taskResult{err: fmt.Errorf("failed to discover peers via DHT: %w", err)}
+			close(req.done)
+		})
 		return nil, fmt.Errorf("failed to discover peers via DHT: %w", err)
 	}
 
 	if len(contacts) == 0 {
+		// Complete the placeholder request with error so waiters are unblocked
+		req.once.Do(func() {
+			req.result = taskResult{err: liblbryerrors.ErrBlobNotFound}
+			close(req.done)
+		})
 		return nil, liblbryerrors.ErrBlobNotFound
 	}
 
@@ -343,6 +375,11 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	// Handle edge case where no peers will be tried
 	if peersToTry == 0 {
+		// Complete the placeholder request with error so waiters are unblocked
+		req.once.Do(func() {
+			req.result = taskResult{err: liblbryerrors.ErrBlobNotFound}
+			close(req.done)
+		})
 		return nil, liblbryerrors.ErrBlobNotFound
 	}
 
@@ -358,7 +395,9 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	req.totalPeers = int32(peersToTry)
 	req.mu.Unlock()
 
+	// Ensure cleanup happens when the request is completed
 	defer t.removeFromBacklog(hash)
+
 	t.logger.Debug("Starting concurrent peer race",
 		zap.String("hash", hash),
 		zap.Int("total_peers", len(contacts)),
@@ -388,7 +427,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 				// SUCCESS! Set result and notify all waiters
 				req.once.Do(func() {
 					req.mu.Lock()
-					req.result = TaskResult{data: data}
+					req.result = taskResult{data: data}
 					req.mu.Unlock()
 					close(req.done)
 					t.logger.Debug("Peer download succeeded, canceling others",
@@ -408,7 +447,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 				if completed >= req.totalPeers {
 					req.once.Do(func() {
 						req.mu.Lock()
-						req.result = TaskResult{err: err}
+						req.result = taskResult{err: err}
 						req.mu.Unlock()
 						close(req.done)
 						t.logger.Debug("All peers failed, returning error",
@@ -459,5 +498,7 @@ func (t *PeerTransfer) Stop() {
 	// Clear the client pool reference to allow garbage collection
 	// Note: We don't drain the pool because sync.Pool.Get() with a New function
 	// will never return nil, which would cause an infinite loop
+	t.clientPoolMu.Lock()
 	t.clientPool = nil
+	t.clientPoolMu.Unlock()
 }
