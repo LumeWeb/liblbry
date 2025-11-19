@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
@@ -1074,11 +1075,17 @@ func TestServerBuilder_Build_AcquirerFactoryIntegration(t *testing.T) {
 }
 
 // TestServerBuilder_Build_DefaultAcquirerIntegration tests the integration of default acquirer with server lifecycle
+// and verifies that DHT-backed transfers are properly created when the server is started
 func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	testMocks := setupBuilderMocks(t)
 
 	// Create a mock DHT node
 	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Shutdown().Return()
+
+	// Add mock expectation for storage.List() called during DHT blob announcement
+	testMocks.storage.EXPECT().List(0, 1000).Return([]string{}, liblbryerrors.ErrEndOfList)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1097,6 +1104,12 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	require.True(t, ok)
 	assert.NotNil(t, defaultServer.acquirerFactory)
 
+	// Start the server to initialize the DHT node
+	ctx := context.Background()
+	err = server.Start(ctx)
+	require.NoError(t, err)
+	defer server.Stop(ctx)
+
 	// Test that the default factory creates an acquirer with DHT-backed transfers
 	err = defaultServer.ensureAcquirer()
 	require.NoError(t, err)
@@ -1104,8 +1117,12 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	// Verify acquirer was created
 	assert.NotNil(t, defaultServer.acquirer, "Default acquirer should be created")
 
-	// Verify that the acquirer was created with the expected DHT node by checking
-	// that the factory was called with the correct DHT node
+	// Verify that the DHT node is properly initialized in the server
+	dhtNode := defaultServer.getDhtNodeUnsafe()
+	assert.NotNil(t, dhtNode, "DHT node should be initialized after server.Start()")
+	assert.Equal(t, mockDHTNode, dhtNode, "DHT node should match the mock provided to builder")
+
+	// Verify that the acquirer was created with the expected DHT node
 	// Since we're using the default factory, we can verify this indirectly
 	// by ensuring the acquirer is non-nil when DHT is provided
 	assert.NotNil(t, defaultServer.acquirer, "Acquirer should be created when DHT node is provided")
@@ -1119,6 +1136,11 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 	t.Run("With DHT node", func(t *testing.T) {
 		// Create a mock DHT node
 		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Shutdown().Return()
+
+		// Add mock expectation for storage.List() called during DHT blob announcement
+		testMocks.storage.EXPECT().List(0, 1000).Return([]string{}, liblbryerrors.ErrEndOfList)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -1131,6 +1153,17 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		require.NoError(t, err)
 
 		defaultServer := server.(*DefaultServer)
+
+		// Start the server to initialize the DHT node
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+		defer server.Stop(ctx)
+
+		// Verify that the DHT node is properly initialized
+		dhtNode := defaultServer.getDhtNodeUnsafe()
+		assert.NotNil(t, dhtNode, "DHT node should be initialized after server.Start()")
+		assert.Equal(t, mockDHTNode, dhtNode, "DHT node should match the mock provided to builder")
 
 		// Verify that the default factory creates an acquirer when DHT is provided
 		err = defaultServer.ensureAcquirer()
@@ -1156,6 +1189,10 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		err = defaultServer.ensureAcquirer()
 		require.NoError(t, err)
 		assert.NotNil(t, defaultServer.acquirer, "Acquirer should still be created even without DHT node")
+
+		// Verify that no DHT node is available when not configured
+		dhtNode := defaultServer.getDhtNodeUnsafe()
+		assert.Nil(t, dhtNode, "DHT node should be nil when not configured")
 	})
 }
 

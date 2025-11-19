@@ -134,6 +134,7 @@ type DefaultServer struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex // Protects shared state
+	started   bool       // Tracks whether Start() has been called
 }
 
 // Start starts the server and all configured config
@@ -181,6 +182,11 @@ func (s *DefaultServer) Start(ctx context.Context) error {
 		}
 	}
 
+	// Mark server as started
+	s.mu.Lock()
+	s.started = true
+	s.mu.Unlock()
+
 	// Announce all blobs to DHT after all config are started
 	if s.dhtAnnouncer != nil && s.storage != nil {
 		s.announceBlobsToDHT(s.dhtWorkers, s.dhtBatchSize)
@@ -211,6 +217,9 @@ func (s *DefaultServer) Stop(ctx context.Context) error {
 			s.logger.Info("DHT node shutdown completed")
 		}
 	}
+
+	// Mark server as stopped
+	s.started = false
 	s.mu.Unlock()
 
 	// Wait for all goroutines to finish with timeout
@@ -610,6 +619,9 @@ func (s *DefaultServer) getDhtNodeUnsafe() protocol.DHTNode {
 }
 
 // ensureAcquirer ensures the acquirer is initialized, creating it if necessary
+// Note: This method should only be called after Start() has been invoked to ensure
+// DHT nodes are properly initialized. Calling before Start() will result in an acquirer
+// without DHT-backed transfers.
 func (s *DefaultServer) ensureAcquirer() error {
 	// First check without lock for fast path
 	if s.acquirer != nil {
@@ -617,22 +629,40 @@ func (s *DefaultServer) ensureAcquirer() error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Double-check after acquiring lock
 	if s.acquirer != nil {
+		s.mu.Unlock()
 		return nil
 	}
 
 	if s.acquirerFactory == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("no acquirer configured")
 	}
 
 	// Get the DHT node if available using the unsafe version to avoid deadlock
 	dhtNode := s.getDhtNodeUnsafe()
 
-	// Create the acquirer using the factory
-	acquirer, err := s.acquirerFactory(dhtNode, s.storage)
+	// Snapshot factory and dependencies to minimize lock scope
+	factory := s.acquirerFactory
+	storage := s.storage
+
+	// Release lock before calling factory to avoid potential deadlocks
+	s.mu.Unlock()
+
+	// Create the acquirer using the factory outside of lock
+	acquirer, err := factory(dhtNode, storage)
+
+	// Re-acquire lock to assign the result
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Double-check again in case another goroutine initialized while we were unlocked
+	if s.acquirer != nil {
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create acquirer: %w", err)
 	}
@@ -648,6 +678,14 @@ func (s *DefaultServer) AcquireBlob(ctx context.Context, hash string) ([]byte, e
 		return nil, err
 	}
 
+	// Check if server has been started
+	s.mu.Lock()
+	started := s.started
+	s.mu.Unlock()
+	if !started {
+		return nil, fmt.Errorf("server must be started before calling AcquireBlob")
+	}
+
 	// Ensure acquirer is initialized
 	if err := s.ensureAcquirer(); err != nil {
 		return nil, err
@@ -661,6 +699,14 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return nil, err
+	}
+
+	// Check if server has been started
+	s.mu.Lock()
+	started := s.started
+	s.mu.Unlock()
+	if !started {
+		return nil, fmt.Errorf("server must be started before calling AcquireSDBlob")
 	}
 
 	// Apply default configuration
