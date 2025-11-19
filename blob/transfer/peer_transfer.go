@@ -482,6 +482,7 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 						close(req.done)
 						t.logger.Debug("All peers failed, returning error",
 							zap.String("hash", hashCopy))
+						raceCancel() // Cancel all remaining in-flight peer attempts
 					})
 				}
 			}
@@ -490,10 +491,6 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	// Wait for first success or timeout
 	data, err := req.wait(ctx)
-
-	// Ensure race context is cancelled to clean up all in-flight peer attempts
-	// This is the authoritative cancellation that stops the race for all participants
-	raceCancel()
 
 	return data, err
 }
