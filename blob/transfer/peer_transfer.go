@@ -24,7 +24,7 @@ type TaskResult struct {
 // BlobRequest tracks an in-progress blob download with race coordination
 type BlobRequest struct {
 	resultChan chan TaskResult
-	cancel     context.CancelFunc
+	cancel     context.CancelFunc // Cancels the race context for all peer attempts
 	waiters    int
 	completed  int32 // number of completed peer attempts
 	totalPeers int32 // total number of peer attempts scheduled
@@ -132,15 +132,15 @@ func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*BlobRequest, bool) 
 		return req, false // joined existing request
 	}
 
-	// No existing request, caller will be the owner
-	return nil, true
-}
-
-// addToBacklog adds a new blob request to the backlog
-func (t *PeerTransfer) addToBacklog(hash string, req *BlobRequest) {
-	t.backlogMu.Lock()
-	defer t.backlogMu.Unlock()
-	t.backlog[hash] = req
+	// No existing request, create a placeholder to reserve the spot
+	// This prevents other goroutines from creating duplicate requests
+	placeholder := &BlobRequest{
+		resultChan: make(chan TaskResult, 1),
+		waiters:    1,
+		done:       make(chan struct{}),
+	}
+	t.backlog[hash] = placeholder
+	return placeholder, true // caller owns this request and must initialize it
 }
 
 // removeFromBacklog removes a completed blob request from the backlog
@@ -158,12 +158,15 @@ func (t *PeerTransfer) isStopped() bool {
 // createClientPool creates a new sync.Pool using the stored factory
 func (t *PeerTransfer) createClientPool() {
 	if t.clientPool == nil {
+		// Defensive check - this should never happen due to constructor validation
+		if t.clientFactory == nil {
+			if t.logger != nil {
+				t.logger.Error("clientFactory is nil - client pool not created")
+			}
+			return
+		}
 		t.clientPool = &sync.Pool{
 			New: func() interface{} {
-				// Defensive check - this should never happen due to constructor validation
-				if t.clientFactory == nil {
-					panic("clientFactory is nil - this should have been caught in constructor")
-				}
 				return t.clientFactory()
 			},
 		}
@@ -174,6 +177,35 @@ func (t *PeerTransfer) createClientPool() {
 func (t *PeerTransfer) createWorkerPool() {
 	if t.workerPool == nil {
 		t.workerPool = workerpool.New(t.maxConcurrency)
+	}
+}
+
+// getPeerClient safely gets and validates a peer client from the pool
+func (t *PeerTransfer) getPeerClient() (protocol.PeerClient, error) {
+	// Check if client pool is available
+	if t.clientPool == nil {
+		return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
+	}
+
+	// Get a peer client from the pool
+	client := t.clientPool.Get()
+	if client == nil {
+		return nil, fmt.Errorf("failed to get client from pool: client is nil")
+	}
+
+	// Type assert to protocol.PeerClient
+	peerClient, ok := client.(protocol.PeerClient)
+	if !ok {
+		return nil, fmt.Errorf("failed to assert client as PeerClient: got %T", client)
+	}
+
+	return peerClient, nil
+}
+
+// safeReturnClient safely returns a client to the pool if both pool and client are valid
+func (t *PeerTransfer) safeReturnClient(peerClient protocol.PeerClient) {
+	if t.clientPool != nil && peerClient != nil {
+		t.returnClientToPool(peerClient)
 	}
 }
 
@@ -193,7 +225,16 @@ func (t *PeerTransfer) returnClientToPool(peerClient protocol.PeerClient) {
 	t.clientPool.Put(peerClient)
 }
 
-// wait waits for the blob request to complete and returns the result
+// wait waits for the blob request to complete and returns the result.
+//
+// Timeout Policy:
+// - Individual caller timeouts (via ctx) do NOT cancel the shared download race
+// - This allows multiple callers to share the same download work without interference
+// - Only the overall race timeout (managed by the race context) cancels all peer attempts
+// - When a caller times out, they receive ctx.Err() but other waiters continue unaffected
+//
+// This design ensures that one caller's timeout doesn't waste work already in progress
+// for other callers who may still be waiting for the result.
 func (br *BlobRequest) wait(ctx context.Context) ([]byte, error) {
 	defer func() {
 		br.mu.Lock()
@@ -208,6 +249,19 @@ func (br *BlobRequest) wait(ctx context.Context) ([]byte, error) {
 		br.mu.Unlock()
 		return res.data, res.err
 	case <-ctx.Done():
+		// Check if this was the last waiter - if so, cancel the race to avoid wasted work
+		br.mu.Lock()
+		isLastWaiter := br.waiters == 1
+		cancelFunc := br.cancel
+		br.mu.Unlock()
+
+		if isLastWaiter && cancelFunc != nil {
+			// This was the last waiter, cancel the race to stop all peer attempts
+			// This optimization prevents wasted work when no one is waiting anymore
+			cancelFunc()
+		}
+
+		// Return the caller's context error
 		return nil, ctx.Err()
 	}
 }
@@ -219,13 +273,16 @@ func (t *PeerTransfer) downloadFromPeer(ctx context.Context, peerAddr, hash stri
 		return nil, liblbryerrors.Err(liblbryerrors.ErrTransferStopped)
 	}
 
-	// Get a peer client from the pool
-	peerClient := t.clientPool.Get().(protocol.PeerClient)
+	// Get and validate peer client
+	peerClient, err := t.getPeerClient()
+	if err != nil {
+		return nil, err
+	}
 
 	// Attempt to connect and download
 	if err := peerClient.Connect(ctx, peerAddr); err != nil {
 		// Return client to pool even on error
-		t.returnClientToPool(peerClient)
+		t.safeReturnClient(peerClient)
 		// Preserve context errors without wrapping
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return nil, err
@@ -233,10 +290,8 @@ func (t *PeerTransfer) downloadFromPeer(ctx context.Context, peerAddr, hash stri
 		return nil, fmt.Errorf("connect to peer %s: %w", peerAddr, err)
 	}
 
-	defer func() {
-		// Return client to pool when done
-		t.returnClientToPool(peerClient)
-	}()
+	// Defer return client to pool when done
+	defer t.safeReturnClient(peerClient)
 
 	data, err := peerClient.GetBlob(ctx, hash)
 	if err != nil {
@@ -263,11 +318,13 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	// Check if this blob is already being downloaded, atomically
-	if req, isOwner := t.getOrCreateFromBacklog(hash); req != nil && !isOwner {
+	req, isOwner := t.getOrCreateFromBacklog(hash)
+	if !isOwner {
 		t.logger.Debug("Joining existing blob download", zap.String("hash", hash))
 		return req.wait(ctx)
 	}
 
+	// This goroutine is the owner - initialize the request
 	// Discover peers via DHT
 	hashBitmap, err := protocol.ParseHashFromString(hash)
 	if err != nil {
@@ -292,19 +349,18 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	// Create race context for cancellation
+	// This context manages the overall timeout for all peer attempts in the race
+	// It is separate from individual caller contexts to prevent one caller's timeout
+	// from cancelling the entire race for all participants
 	raceCtx, raceCancel := context.WithTimeout(ctx, t.timeout)
 
-	resultChan := make(chan TaskResult, 1)
-	req := &BlobRequest{
-		resultChan: resultChan,
-		cancel:     raceCancel,
-		waiters:    1,
-		totalPeers: int32(peersToTry),
-		done:       make(chan struct{}),
-	}
+	// Initialize the placeholder request with actual values
+	req.mu.Lock()
+	req.resultChan = make(chan TaskResult, 1)
+	req.cancel = raceCancel // Store cancel function for potential early cancellation
+	req.totalPeers = int32(peersToTry)
+	req.mu.Unlock()
 
-	// Add to backlog before starting downloads
-	t.addToBacklog(hash, req)
 	defer t.removeFromBacklog(hash)
 	t.logger.Debug("Starting concurrent peer race",
 		zap.String("hash", hash),
@@ -312,6 +368,10 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		zap.Int("peers_to_try", peersToTry))
 
 	// Submit ALL peer tasks to worker pool simultaneously
+	t.logger.Debug("Get: submitting peer tasks to worker pool",
+		zap.String("hash", hash),
+		zap.Int("num_tasks", peersToTry))
+
 	for i := 0; i < peersToTry; i++ {
 		contact := contacts[i]
 		peerAddr := contact.Addr().String()
@@ -365,7 +425,8 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	// Wait for first success or timeout
 	data, err := req.wait(raceCtx)
 
-	// Ensure race context is cancelled
+	// Ensure race context is cancelled to clean up all in-flight peer attempts
+	// This is the authoritative cancellation that stops the race for all participants
 	raceCancel()
 
 	return data, err

@@ -282,6 +282,9 @@ func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) ([]tran
 // This is a standalone helper function that avoids capturing the ServerBuilder instance.
 // Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
 func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger) ([]transfer.Transfer, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	var transfers []transfer.Transfer
 
 	// Add peer transfer if DHT is enabled

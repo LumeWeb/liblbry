@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +31,8 @@ type TestPeerServer struct {
 	port     int
 	storage  storage.BlobStore
 	wg       sync.WaitGroup
+	ready    chan struct{}
+	once     sync.Once
 }
 
 // StartTestPeerServer starts a real peer server on a random port for testing
@@ -60,11 +63,16 @@ func StartTestPeerServer(t *testing.T, blobData map[string][]byte) *TestPeerServ
 		address:  address,
 		port:     port,
 		storage:  store,
+		ready:    make(chan struct{}),
 	}
 
 	testServer.wg.Add(1)
 	go func() {
 		defer testServer.wg.Done()
+		// Signal readiness once after starting the accept loop
+		testServer.once.Do(func() {
+			close(testServer.ready)
+		})
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -79,8 +87,8 @@ func StartTestPeerServer(t *testing.T, blobData map[string][]byte) *TestPeerServ
 		}
 	}()
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-testServer.ready
 
 	return testServer
 }
@@ -96,6 +104,42 @@ func (tps *TestPeerServer) Stop() {
 // testHash is a valid SHA-384 hash used consistently across tests
 const testHash = "acc6adf8b4f10dcddffc5c2ca87dbd9cb3a2664564695ac7aaab038193ff14a280cc3d4ebae55c71d0b885a7316d0137"
 
+// TestPeerClientWrapper wraps a PeerClient to track download attempts for testing
+type TestPeerClientWrapper struct {
+	protocol.PeerClient
+	downloadAttempts int64
+}
+
+func (w *TestPeerClientWrapper) GetBlob(ctx context.Context, hash string) ([]byte, error) {
+	atomic.AddInt64(&w.downloadAttempts, 1)
+	return w.PeerClient.GetBlob(ctx, hash)
+}
+
+// newTestPeerTransferWithTracking creates a PeerTransfer with tracking capabilities
+func newTestPeerTransferWithTracking(t *testing.T) (*PeerTransfer, *protocolMocks.MockDHTNode, *TestPeerClientWrapper) {
+	mockDHT := protocolMocks.NewMockDHTNode(t)
+
+	// Create a tracking wrapper that will be used for all clients
+	tracker := &TestPeerClientWrapper{}
+
+	// Create a factory that returns wrapped clients
+	factory := protocol.PeerClientFactory(func() protocol.PeerClient {
+		// Create a real client and wrap it
+		realClient := protocol.DefaultPeerClientFactory()()
+		tracker.PeerClient = realClient
+		return tracker
+	})
+
+	transfer, err := NewPeerTransfer(mockDHT, factory,
+		WithPeerTransferLogger(zap.NewNop()),
+		WithPeerTransferMaxPeers(3),
+		WithPeerTransferMaxConcurrency(5),
+	)
+	require.NoError(t, err)
+
+	return transfer, mockDHT, tracker
+}
+
 // newTestPeerTransfer creates a PeerTransfer with mock DHT and factory for testing
 // This helper reduces boilerplate across multiple test functions
 func newTestPeerTransfer(t *testing.T) (*PeerTransfer, *protocolMocks.MockDHTNode) {
@@ -104,6 +148,16 @@ func newTestPeerTransfer(t *testing.T) (*PeerTransfer, *protocolMocks.MockDHTNod
 		protocol.WithClientLogger(zap.NewNop().Named("test-peer-client")),
 	)
 	transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+	require.NoError(t, err)
+
+	return transfer, dhtNode
+}
+
+// newTestPeerTransferWithMockClient creates a PeerTransfer with mock DHT and a custom client factory
+// This allows tests to inject specific mock client behavior
+func newTestPeerTransferWithMockClient(t *testing.T, clientFactory protocol.PeerClientFactory) (*PeerTransfer, *protocolMocks.MockDHTNode) {
+	dhtNode := protocolMocks.NewMockDHTNode(t)
+	transfer, err := NewPeerTransfer(dhtNode, clientFactory)
 	require.NoError(t, err)
 
 	return transfer, dhtNode
@@ -234,6 +288,32 @@ func TestNewPeerTransfer_NilFactory(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, transfer)
 	assert.Contains(t, err.Error(), "peerClientFactory cannot be nil")
+}
+
+// TestPeerTransfer_Start_NilFactory tests that Start() handles nil factory gracefully
+// This tests the defensive programming in createClientPool when somehow factory becomes nil
+func TestPeerTransfer_Start_NilFactory(t *testing.T) {
+	dhtNode := protocolMocks.NewMockDHTNode(t)
+	logger := zap.NewNop()
+
+	// Create a valid transfer first
+	factory := protocol.DefaultPeerClientFactory()
+	transfer, err := NewPeerTransfer(dhtNode, factory, WithPeerTransferLogger(logger))
+	require.NoError(t, err)
+	require.NotNil(t, transfer)
+
+	// Manually set factory to nil to test defensive behavior (this shouldn't happen in practice)
+	transfer.clientFactory = nil
+
+	// Stop the transfer to clear the client pool
+	transfer.Stop()
+	assert.Nil(t, transfer.clientPool, "Client pool should be nil after Stop()")
+
+	// Start should not panic even with nil factory, it should log error and continue
+	transfer.Start()
+
+	// Client pool should remain nil because factory is nil
+	assert.Nil(t, transfer.clientPool, "Client pool should remain nil when factory is nil")
 }
 
 // TestPeerTransfer_Get_NoPeersFound tests DHT discovery returning no contacts
@@ -561,13 +641,27 @@ func TestPeerTransfer_Get_PeerClientSuccess(t *testing.T) {
 
 // TestPeerTransfer_Get_Timeout tests timeout configuration
 func TestPeerTransfer_Get_Timeout(t *testing.T) {
-	transfer, dhtNode := newTestPeerTransfer(t)
+	// Create a client factory that creates new mock clients with blocking behavior
+	// Use Maybe() for Reset() since it may not always be called depending on timing
+	clientFactory := func() protocol.PeerClient {
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Connect(mock.Anything, mock.AnythingOfType("string")).Return(nil)
+		mockClient.EXPECT().GetBlob(mock.Anything, mock.AnythingOfType("string")).RunAndReturn(func(ctx context.Context, hash string) ([]byte, error) {
+			// Block until the context is done, then return the context error
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+		mockClient.EXPECT().Reset().Return(nil).Maybe()
+		return mockClient
+	}
 
-	// Mock DHT to return a non-existent server address (will cause timeout)
+	transfer, dhtNode := newTestPeerTransferWithMockClient(t, clientFactory)
+
+	// Mock DHT to return a contact (the actual address doesn't matter since we're using mock client)
 	contact := dht.Contact{
 		ID:       bits.Rand(),
-		IP:       net.ParseIP("192.0.2.1"), // Non-routable IP for timeout
-		Port:     80,                       // Valid port
+		IP:       net.ParseIP("127.0.0.1"), // Use localhost since we're mocking
+		Port:     80,
 		PeerPort: 80,
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
@@ -742,11 +836,16 @@ func TestPeerTransfer_returnClientToPool_ResetFailure(t *testing.T) {
 
 // TestPeerTransfer_returnClientToPool_ResetSuccess tests that clients with successful Reset are returned to pool
 func TestPeerTransfer_returnClientToPool_ResetSuccess(t *testing.T) {
-	transfer, _ := newTestPeerTransfer(t)
-
-	// Create a mock client that succeeds Reset
+	// Create a transfer with a controlled client pool to avoid race conditions
 	mockClient := protocolMocks.NewMockPeerClient(t)
 	mockClient.EXPECT().Reset().Return(nil)
+
+	// Create a custom client factory that always returns our mock client
+	clientFactory := func() protocol.PeerClient {
+		return mockClient
+	}
+
+	transfer, _ := newTestPeerTransferWithMockClient(t, clientFactory)
 
 	// Call returnClientToPool with successful client
 	transfer.returnClientToPool(mockClient)
@@ -798,7 +897,7 @@ func TestPeerTransfer_Get_ConcurrentSameHash(t *testing.T) {
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
 	}
-	mockDHT.EXPECT().Get(hashBitmap).Return(contacts, nil)
+	mockDHT.EXPECT().Get(hashBitmap).Return(contacts, nil).Times(1)
 
 	// Number of concurrent goroutines
 	numGoroutines := 10
@@ -874,8 +973,4 @@ func TestPeerTransfer_Get_ConcurrentSameHash(t *testing.T) {
 	transfer.backlogMu.RUnlock()
 
 	assert.Equal(t, 0, backlogSize, "Backlog should be empty after all requests complete")
-
-	// Additional verification: check that no duplicate peer connections were made
-	// This is indirectly verified by the fact that all requests succeeded with identical data
-	// and the test completed without race conditions
 }
