@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
@@ -273,29 +274,35 @@ func (b *ServerBuilder) WithExistingDHT(dhtNode protocol.DHTNode) *ServerBuilder
 
 // createDefaultTransfers creates a slice of transfer.Transfer instances based on enabled protocols.
 // Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
-func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) []transfer.Transfer {
+func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) ([]transfer.Transfer, error) {
 	return createDefaultTransfersWithLogger(dhtNode, b.logger)
 }
 
 // createDefaultTransfersWithLogger creates a slice of transfer.Transfer instances based on enabled protocols.
 // This is a standalone helper function that avoids capturing the ServerBuilder instance.
 // Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
-func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger) []transfer.Transfer {
+func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger) ([]transfer.Transfer, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	var transfers []transfer.Transfer
 
 	// Add peer transfer if DHT is enabled
 	if dhtNode != nil {
-		// Create a default peer client - this would need to be configurable in the future
-		peerClient := protocol.NewPeerClient(
+		// Create a default peer client factory
+		peerClientFactory := protocol.DefaultPeerClientFactory(
 			protocol.WithClientLogger(logger.Named("peer_client")),
 		)
-		peerTransfer := transfer.NewPeerTransfer(dhtNode, peerClient,
+		peerTransfer, err := transfer.NewPeerTransfer(dhtNode, peerClientFactory,
 			transfer.WithPeerTransferLogger(logger.Named("peer_transfer")),
 		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create peer transfer: %w", err)
+		}
 		transfers = append(transfers, peerTransfer)
 	}
 
-	return transfers
+	return transfers, nil
 }
 
 // Build creates a Server instance from the builder configuration
@@ -343,7 +350,10 @@ func (b *ServerBuilder) Build() (Server, error) {
 		// Capture only the logger to avoid long-lived builder capture
 		logger := b.logger
 		server.acquirerFactory = func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
-			transfers := createDefaultTransfersWithLogger(dhtNode, logger)
+			transfers, err := createDefaultTransfersWithLogger(dhtNode, logger)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create default transfers: %w", err)
+			}
 			return liblbry.NewBlobAcquirer(transfers, store)
 		}
 	}

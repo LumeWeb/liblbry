@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,9 @@ func setupReflectorIntegrationTestServer(t *testing.T, server ReflectorServer) s
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
+	// Use a WaitGroup to track active connections
+	var wg sync.WaitGroup
+
 	// Server goroutine
 	go func() {
 		for {
@@ -43,7 +47,9 @@ func setupReflectorIntegrationTestServer(t *testing.T, server ReflectorServer) s
 			}
 
 			// Handle connection in a separate goroutine
+			wg.Add(1)
 			go func(conn net.Conn) {
+				defer wg.Done()
 				defer func() {
 					if r := recover(); r != nil {
 						// Log panic recovery
@@ -63,6 +69,8 @@ func setupReflectorIntegrationTestServer(t *testing.T, server ReflectorServer) s
 	// Register cleanup function to close listener when test completes
 	t.Cleanup(func() {
 		_ = listener.Close()
+		// Wait for all connection handlers to finish
+		wg.Wait()
 	})
 
 	return addr
@@ -100,9 +108,9 @@ func setupReflectorIntegrationTest(t *testing.T, opts ...ReflectorServerOption) 
 	store, clientLogger, server := testReflectorSetup(t)
 
 	// Apply additional server options
-	// Use zap.NewNop() for a no-op logger that's thread-safe for tests
-	// This avoids potential race conditions while maintaining thread-safety
-	serverOpts := []ReflectorServerOption{WithReflectorLogger(zap.NewNop())}
+	// Use zaptest.NewLogger for proper test logging that's thread-safe
+	// This provides debuggability while avoiding potential race conditions
+	serverOpts := []ReflectorServerOption{WithReflectorLogger(zaptest.NewLogger(t).Named("reflector-server"))}
 	serverOpts = append(serverOpts, opts...)
 	server = NewReflectorServer(store, serverOpts...)
 
@@ -290,7 +298,7 @@ func TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobCheck
 func TestReflectorServerShouldAcceptSDBlob_BlocklisterFalseNoNeededChecker(t *testing.T) {
 	// Create a mock store that implements Blocklister but not NeededBlobChecker
 	mockStore := storageMocks.NewMockDummyBlocklistBlobStore(t)
-	logger := zaptest.NewLogger(t)
+	logger := zaptest.NewLogger(t).Named("reflector-server")
 	server := NewReflectorServer(mockStore, WithReflectorLogger(logger))
 
 	// Start server on random port
