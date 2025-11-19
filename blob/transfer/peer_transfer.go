@@ -23,7 +23,6 @@ type TaskResult struct {
 
 // BlobRequest tracks an in-progress blob download with race coordination
 type BlobRequest struct {
-	resultChan chan TaskResult
 	cancel     context.CancelFunc // Cancels the race context for all peer attempts
 	waiters    int
 	completed  int32 // number of completed peer attempts
@@ -135,9 +134,8 @@ func (t *PeerTransfer) getOrCreateFromBacklog(hash string) (*BlobRequest, bool) 
 	// No existing request, create a placeholder to reserve the spot
 	// This prevents other goroutines from creating duplicate requests
 	placeholder := &BlobRequest{
-		resultChan: make(chan TaskResult, 1),
-		waiters:    1,
-		done:       make(chan struct{}),
+		waiters: 1,
+		done:    make(chan struct{}),
 	}
 	t.backlog[hash] = placeholder
 	return placeholder, true // caller owns this request and must initialize it
@@ -356,7 +354,6 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	// Initialize the placeholder request with actual values
 	req.mu.Lock()
-	req.resultChan = make(chan TaskResult, 1)
 	req.cancel = raceCancel // Store cancel function for potential early cancellation
 	req.totalPeers = int32(peersToTry)
 	req.mu.Unlock()
