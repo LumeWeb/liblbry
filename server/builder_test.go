@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
@@ -921,20 +922,12 @@ func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
 			WithPeer(testPortPeer)
 	}
 
-	// Helper function to assert build failure with specific error message
-	assertBuildFailure := func(t *testing.T, builder *ServerBuilder, expectedError string) {
-		server, err := builder.Build()
-		require.Error(t, err)
-		assert.Nil(t, server)
-		assert.Contains(t, err.Error(), expectedError)
-	}
-
 	t.Run("AcquirerFactory_with_Acquirer_fails", func(t *testing.T) {
 		builder := createBaseBuilder().
 			WithAcquirer(testMocks.acquirer).
 			WithAcquirerFactory(createTestFactory())
 
-		assertBuildFailure(t, builder, "cannot specify both acquirer and acquirer factory")
+		assertBuildError(t, builder, "cannot specify both acquirer and acquirer factory")
 	})
 
 	t.Run("AcquirerFactory_with_DefaultAcquirer_fails", func(t *testing.T) {
@@ -942,7 +935,7 @@ func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
 			WithAcquirerFactory(createTestFactory()).
 			WithDefaultAcquirer()
 
-		assertBuildFailure(t, builder, "cannot specify both acquirer factory and default acquirer")
+		assertBuildError(t, builder, "cannot specify both acquirer factory and default acquirer")
 	})
 
 	t.Run("Acquirer_with_DefaultAcquirer_fails", func(t *testing.T) {
@@ -950,7 +943,7 @@ func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
 			WithAcquirer(testMocks.acquirer).
 			WithDefaultAcquirer()
 
-		assertBuildFailure(t, builder, "cannot specify both acquirer and default acquirer")
+		assertBuildError(t, builder, "cannot specify both acquirer and default acquirer")
 	})
 }
 
@@ -1031,7 +1024,7 @@ func TestServerBuilder_Build_AcquirerFactoryIntegration(t *testing.T) {
 	}
 
 	// Mock the storage.List call that happens during DHT blob announcement
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1078,7 +1071,7 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	mockDHTNode.EXPECT().Shutdown().Return()
 
 	// Add mock expectation for storage.List() called during DHT blob announcement
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList)
+	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1133,7 +1126,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		mockDHTNode.EXPECT().Shutdown().Return()
 
 		// Add mock expectation for storage.List() called during DHT blob announcement
-		testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList)
+		testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -1165,6 +1158,9 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 	})
 
 	t.Run("Without DHT node", func(t *testing.T) {
+		// Ensure storage.List is not called when no DHT node is configured
+		testMocks.storage.EXPECT().List(mock.Anything, mock.Anything).Times(0)
+
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
 			WithDefaultAcquirer().
