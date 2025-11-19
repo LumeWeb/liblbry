@@ -600,18 +600,36 @@ func (s *DefaultServer) RemoveBlob(hash string) error {
 	return nil
 }
 
+// getDhtNodeUnsafe returns the DHT node without locking
+// This should only be called when the caller already holds s.mu
+func (s *DefaultServer) getDhtNodeUnsafe() protocol.DHTNode {
+	if dhtNode, ok := s.servers[ProtocolDHT].(protocol.DHTNode); ok {
+		return dhtNode
+	}
+	return nil
+}
+
 // ensureAcquirer ensures the acquirer is initialized, creating it if necessary
 func (s *DefaultServer) ensureAcquirer() error {
+	// First check without lock for fast path
 	if s.acquirer != nil {
-		return nil // Already initialized
+		return nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Double-check after acquiring lock
+	if s.acquirer != nil {
+		return nil
 	}
 
 	if s.acquirerFactory == nil {
 		return fmt.Errorf("no acquirer configured")
 	}
 
-	// Get the DHT node if available
-	dhtNode := s.getDhtNode()
+	// Get the DHT node if available using the unsafe version to avoid deadlock
+	dhtNode := s.getDhtNodeUnsafe()
 
 	// Create the acquirer using the factory
 	acquirer, err := s.acquirerFactory(dhtNode, s.storage)

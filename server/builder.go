@@ -55,13 +55,15 @@ func (b *ServerBuilder) WithAcquirer(acquirer liblbry.BlobAcquirer) *ServerBuild
 
 // WithAcquirerFactory sets a factory function that creates the blob acquirer
 // This allows the acquirer to be created after the DHT is available during server build
-func (b *ServerBuilder) WithAcquirerFactory(factory func(protocol.DHTNode, storage.BlobStore) (liblbry.BlobAcquirer, error)) *ServerBuilder {
+func (b *ServerBuilder) WithAcquirerFactory(factory AcquirerFactory) *ServerBuilder {
 	b.acquirerFactory = factory
 	return b
 }
 
 // WithDefaultAcquirer enables creation of a default acquirer with sensible defaults
-// The default acquirer will be configured with transfers based on enabled protocols
+// The default acquirer will be configured with transfers based on enabled protocols.
+// Note: DHT-based transfers require a DHT node to be configured; without DHT,
+// the acquirer will be created with an empty transfer set.
 func (b *ServerBuilder) WithDefaultAcquirer() *ServerBuilder {
 	b.useDefaultAcquirer = true
 	return b
@@ -269,18 +271,26 @@ func (b *ServerBuilder) WithExistingDHT(dhtNode protocol.DHTNode) *ServerBuilder
 	return b
 }
 
-// createDefaultTransfers creates a slice of transfer.Transfer instances based on enabled protocols
+// createDefaultTransfers creates a slice of transfer.Transfer instances based on enabled protocols.
+// Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
 func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) []transfer.Transfer {
+	return createDefaultTransfersWithLogger(dhtNode, b.logger)
+}
+
+// createDefaultTransfersWithLogger creates a slice of transfer.Transfer instances based on enabled protocols.
+// This is a standalone helper function that avoids capturing the ServerBuilder instance.
+// Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
+func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger) []transfer.Transfer {
 	var transfers []transfer.Transfer
 
 	// Add peer transfer if DHT is enabled
 	if dhtNode != nil {
 		// Create a default peer client - this would need to be configurable in the future
 		peerClient := protocol.NewPeerClient(
-			protocol.WithClientLogger(b.logger.Named("peer_client")),
+			protocol.WithClientLogger(logger.Named("peer_client")),
 		)
 		peerTransfer := transfer.NewPeerTransfer(dhtNode, peerClient,
-			transfer.WithPeerTransferLogger(b.logger.Named("peer_transfer")),
+			transfer.WithPeerTransferLogger(logger.Named("peer_transfer")),
 		)
 		transfers = append(transfers, peerTransfer)
 	}
@@ -330,8 +340,10 @@ func (b *ServerBuilder) Build() (Server, error) {
 		server.acquirerFactory = b.acquirerFactory
 	}
 	if b.useDefaultAcquirer {
+		// Capture only the logger to avoid long-lived builder capture
+		logger := b.logger
 		server.acquirerFactory = func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
-			transfers := b.createDefaultTransfers(dhtNode)
+			transfers := createDefaultTransfersWithLogger(dhtNode, logger)
 			return liblbry.NewBlobAcquirer(transfers, store)
 		}
 	}
