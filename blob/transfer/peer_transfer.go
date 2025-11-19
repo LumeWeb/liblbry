@@ -15,6 +15,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// DefaultMaxConcurrency is the default number of concurrent peer connections
+	DefaultMaxConcurrency = 5
+)
+
 // taskResult represents the result of a peer download attempt
 type taskResult struct {
 	data []byte
@@ -43,6 +48,7 @@ type PeerTransfer struct {
 
 	// Concurrent execution fields
 	workerPool     *workerpool.WorkerPool
+	workerPoolMu   sync.RWMutex // protects workerPool access
 	backlog        map[string]*blobRequest
 	backlogMu      sync.RWMutex
 	maxConcurrency int
@@ -79,10 +85,17 @@ func WithPeerTransferLogger(logger *zap.Logger) PeerTransferOption {
 }
 
 // WithPeerTransferMaxConcurrency sets the maximum number of concurrent peer connections
+// Values less than 1 are treated as invalid and will be rejected with a warning
 func WithPeerTransferMaxConcurrency(maxConcurrency int) PeerTransferOption {
 	return func(t *PeerTransfer) {
 		if maxConcurrency < 1 {
-			maxConcurrency = 5
+			if t.logger != nil {
+				t.logger.Warn("Invalid maxConcurrency value provided, must be >= 1. Using default value instead.",
+					zap.Int("provided", maxConcurrency),
+					zap.Int("default", DefaultMaxConcurrency))
+			}
+			// Keep the existing default value instead of silently changing it
+			return
 		}
 		t.maxConcurrency = maxConcurrency
 	}
@@ -102,7 +115,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 		timeout:           30 * time.Second,
 		maxPeers:          5,
 		logger:            zap.NewNop(),
-		maxConcurrency:    5,
+		maxConcurrency:    DefaultMaxConcurrency,
 		backlog:           make(map[string]*blobRequest),
 		clientFactory:     peerClientFactory, // store factory for pool recreation
 	}
@@ -177,6 +190,9 @@ func (t *PeerTransfer) createClientPool() {
 
 // createWorkerPool creates a new worker pool with the configured concurrency
 func (t *PeerTransfer) createWorkerPool() {
+	t.workerPoolMu.Lock()
+	defer t.workerPoolMu.Unlock()
+
 	if t.workerPool == nil {
 		t.workerPool = workerpool.New(t.maxConcurrency)
 	}
@@ -416,7 +432,16 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		peerAddrCopy := peerAddr
 		hashCopy := hash
 
-		t.workerPool.Submit(func() {
+		t.workerPoolMu.RLock()
+		workerPool := t.workerPool
+		t.workerPoolMu.RUnlock()
+
+		if workerPool == nil {
+			t.logger.Debug("Worker pool is nil, cannot submit task")
+			return
+		}
+
+		workerPool.Submit(func() {
 			t.logger.Debug("Attempting peer download",
 				zap.String("hash", hashCopy),
 				zap.String("peer", peerAddrCopy))
@@ -489,6 +514,9 @@ func (t *PeerTransfer) Start() {
 func (t *PeerTransfer) Stop() {
 	// Set stopped flag atomically to prevent new operations
 	atomic.StoreInt32(&t.stopped, 1)
+
+	t.workerPoolMu.Lock()
+	defer t.workerPoolMu.Unlock()
 
 	if t.workerPool != nil {
 		t.workerPool.Stop()
