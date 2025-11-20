@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -426,7 +427,14 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 
 	for i := 0; i < peersToTry; i++ {
 		contact := contacts[i]
-		peerAddr := contact.Addr().String()
+
+		// Use peer's specific port if available, otherwise use the address from Addr()
+		var peerAddr string
+		if contact.PeerPort != 0 {
+			peerAddr = net.JoinHostPort(contact.IP.String(), fmt.Sprintf("%d", contact.PeerPort))
+		} else {
+			peerAddr = contact.Addr().String()
+		}
 
 		// Capture loop variables
 		peerAddrCopy := peerAddr
