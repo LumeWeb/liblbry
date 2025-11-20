@@ -32,6 +32,11 @@ func (w *managedDHTNode) isActive() bool {
 }
 
 // NewDHTNode creates a new DHT node instance. If dhtImpl is nil, it creates a new DHT instance.
+// Note: When an external DHT implementation is supplied (dhtImpl != nil), the watchdog created
+// by this wrapper is a wrapper-level helper and is NOT wired into the external DHT implementation.
+// The watchdog returned by Watchdog() may not be the same validator used by the underlying DHT
+// in this case. For internally managed DHTs (dhtImpl == nil), the watchdog is properly wired
+// as the validator for the DHT.
 func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	config, err := NewDHTConfig()
 	if err != nil {
@@ -137,6 +142,11 @@ func (w *managedDHTNode) Shutdown() {
 
 	// Shutdown the DHT
 	dhtInstance.Shutdown()
+
+	// Stop the watchdog to clean up its goroutines and resources
+	if w.watchdog != nil {
+		w.watchdog.Stop()
+	}
 
 	// Wait for all goroutines to finish
 	w.wg.Wait()
@@ -302,7 +312,10 @@ func (w *managedDHTNode) Restart() error {
 	return nil
 }
 
-// Watchdog returns the DHT watchdog instance for contact validation
+// Watchdog returns the DHT watchdog instance for contact validation.
+// Note: For externally managed DHTs (when a DHT implementation was supplied to NewDHTNode),
+// this watchdog is a wrapper-level helper and may not be the same validator used by the
+// underlying DHT implementation. For internally managed DHTs, this is the active validator.
 func (w *managedDHTNode) Watchdog() watchdog.DHTWatchdog {
 	return w.watchdog
 }

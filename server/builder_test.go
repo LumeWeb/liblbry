@@ -733,29 +733,24 @@ func TestServerBuilder_DefaultLogger(t *testing.T) {
 // TestServerBuilder_WithDHTSeedNodes verifies that WithDHTSeedNodes correctly sets seed nodes on the DHT config
 func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 	tests := []struct {
-		name              string
-		seedNodes         []string
-		expectedSeedNodes []string
+		name      string
+		seedNodes []string
 	}{
 		{
-			name:              "SingleSeedNode",
-			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
-			expectedSeedNodes: []string{"127.0.0.1:4444"},
+			name:      "SingleSeedNode",
+			seedNodes: []string{"127.0.0.1:4444"},
 		},
 		{
-			name:              "MultipleSeedNodes",
-			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
-			expectedSeedNodes: []string{"127.0.0.1:4444", "127.0.0.1:4445"},
+			name:      "MultipleSeedNodes",
+			seedNodes: []string{"127.0.0.1:4444", "127.0.0.1:4445"},
 		},
 		{
-			name:              "EmptySeedNodes",
-			seedNodes:         []string{},
-			expectedSeedNodes: []string{},
+			name:      "EmptySeedNodes",
+			seedNodes: []string{},
 		},
 		{
-			name:              "NilSeedNodes",
-			seedNodes:         nil,
-			expectedSeedNodes: []string{},
+			name:      "NilSeedNodes",
+			seedNodes: nil,
 		},
 	}
 
@@ -969,13 +964,24 @@ func TestServerBuilder_WithDHTSeedNodesMultipleCalls(t *testing.T) {
 	assert.NotContains(t, builder.config, ProtocolDHT)
 
 	// Third call - should overwrite again
-	seedNodes3 := []string{"/ip4/127.0.0.1/tcp/4446/p2p/QmSeedNode3"}
+	seedNodes3 := []string{"127.0.0.1:4446"}
 	builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes3))
 
 	// Verify DHT options are updated (now has 3 options)
 	assert.Len(t, builder.dhtOptions, 3)
 	// The DHT config should still not exist
 	assert.NotContains(t, builder.config, ProtocolDHT)
+
+	// Now build the server to verify effective seed nodes
+	builder.WithStorage(memory.NewMemoryStore())
+	builder.WithDHT() // Enable DHT protocol to apply the stored options
+	server, err := builder.Build()
+	require.NoError(t, err)
+
+	// Verify the final DHT config has the last seed nodes
+	defaultServer := server.(*DefaultServer)
+	dhtConfig := defaultServer.config[ProtocolDHT].(*DHTConfig)
+	assert.Equal(t, seedNodes3, dhtConfig.SeedNodes, "Final DHT config should have the last seed nodes")
 }
 
 // TestServerBuilder_WithExistingDHT_Tests tests the WithExistingDHT functionality

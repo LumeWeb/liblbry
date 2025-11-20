@@ -36,6 +36,9 @@ type DHTWatchdog interface {
 
 	// Name returns the watchdog name
 	Name() string
+
+	// Stop stops the watchdog and cleans up resources
+	Stop()
 }
 
 // WatchdogStats contains statistics about the watchdog state
@@ -140,6 +143,9 @@ type DefaultDHTWatchdog struct {
 	blacklist   map[bits.Bitmap]*blacklistedContact
 	mutex       sync.RWMutex
 	lastCleanup time.Time
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 // New creates a new DHT watchdog with the given options
@@ -149,14 +155,19 @@ func New(options ...WatchdogOption) *DefaultDHTWatchdog {
 		option(config)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	w := &DefaultDHTWatchdog{
 		config:      config,
 		cache:       make(map[bits.Bitmap]*cachedContact),
 		blacklist:   make(map[bits.Bitmap]*blacklistedContact),
 		lastCleanup: time.Now(),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	// Start cleanup goroutine
+	w.wg.Add(1)
 	go w.cleanupRoutine()
 
 	return w
@@ -170,7 +181,8 @@ func (w *DefaultDHTWatchdog) ValidateContactForHash(blobHash bits.Bitmap, contac
 	return w.ValidateContact(ctx, &contact)
 }
 
-// ValidateContact tests connectivity to a contact and updates its port information
+// ValidateContact tests connectivity to a contact and updates its port information.
+// Note: This method may mutate the contact's PeerPort field if it is 0 and a working port is discovered.
 func (w *DefaultDHTWatchdog) ValidateContact(ctx context.Context, contact *dht.Contact) bool {
 	if contact == nil {
 		return false
@@ -204,8 +216,9 @@ func (w *DefaultDHTWatchdog) ValidateContact(ctx context.Context, contact *dht.C
 
 	if success {
 		// Cache the successful validation and update contact port
+		contactCopy := *contact
 		w.cache[contactID] = &cachedContact{
-			contact:   contact,
+			contact:   &contactCopy,
 			timestamp: time.Now(),
 		}
 
@@ -397,10 +410,23 @@ func (w *DefaultDHTWatchdog) testPort(ctx context.Context, ip string, port int) 
 
 // cleanupRoutine runs periodic cleanup of expired entries
 func (w *DefaultDHTWatchdog) cleanupRoutine() {
+	defer w.wg.Done()
+
 	ticker := time.NewTicker(w.config.CleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		w.CleanupExpired()
+	for {
+		select {
+		case <-ticker.C:
+			w.CleanupExpired()
+		case <-w.ctx.Done():
+			return
+		}
 	}
+}
+
+// Stop stops the watchdog and waits for the cleanup goroutine to finish
+func (w *DefaultDHTWatchdog) Stop() {
+	w.cancel()
+	w.wg.Wait()
 }

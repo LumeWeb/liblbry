@@ -124,7 +124,10 @@ func applyDHTOptionsToConfig(config *protocol.DHTConfig, options []protocol.DHTO
 	return config
 }
 
-// extractSeedNodesFromOptions extracts seed nodes from stored DHT options and applies them to server config
+// extractSeedNodesFromOptions extracts seed nodes from stored DHT options and applies them to server config.
+// Note: This function applies the full DHT options list to a temporary config, which may surface
+// panics from option validation if invalid options are provided. Callers should ensure that
+// DHT options are valid before calling this method.
 func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
 	// Create a temporary protocol config using the default config to avoid validation panics
 	// when applying options like WithDHTAddress that trigger validation
@@ -199,7 +202,13 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 	b.extractSeedNodesFromOptions(dhtConfig)
 
 	// Also add the DHT address option using the port for consistency with new approach
-	address := net.JoinHostPort(strings.Split(protocol.DefaultDHTAddress, ":")[0], fmt.Sprintf("%d", p))
+	// Use net.SplitHostPort for robustness against IPv6 literals and future format changes
+	host, _, err := net.SplitHostPort(protocol.DefaultDHTAddress)
+	if err != nil {
+		// Fallback to the original approach if SplitHostPort fails
+		host = strings.Split(protocol.DefaultDHTAddress, ":")[0]
+	}
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", p))
 	return b.WithDHTOptions(protocol.WithDHTAddress(address))
 }
 
