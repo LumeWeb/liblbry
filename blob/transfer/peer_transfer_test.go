@@ -978,7 +978,6 @@ func TestPeerTransfer_Get_ConcurrentSameHash(t *testing.T) {
 
 // TestPeerTransferOptionAdapter tests the PeerTransferOptionAdapter functionality
 func TestPeerTransferOptionAdapter(t *testing.T) {
-	_ = zaptest.NewLogger(t) // logger available for subtests but not used directly
 	dhtNode := protocolMocks.NewMockDHTNode(t)
 	peerClientFactory := protocol.DefaultPeerClientFactory()
 
@@ -1112,7 +1111,6 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 
 // TestTransferOptionConvenienceFunctions tests the convenience functions
 func TestTransferOptionConvenienceFunctions(t *testing.T) {
-	_ = zaptest.NewLogger(t) // logger available for subtests but not used directly
 	dhtNode := protocolMocks.NewMockDHTNode(t)
 	peerClientFactory := protocol.DefaultPeerClientFactory()
 

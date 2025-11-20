@@ -318,7 +318,11 @@ func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logg
 		// Apply transfer options to the peer transfer
 		for _, option := range transferOptions {
 			if err := option.Apply(peerTransfer); err != nil {
-				logger.Warn("Failed to apply transfer option", zap.Error(err))
+				logger.Warn(
+					"Failed to apply transfer option",
+					zap.Error(err),
+					zap.String("option_type", fmt.Sprintf("%T", option)),
+				)
 				// Continue with other options even if one fails
 			}
 		}

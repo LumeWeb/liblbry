@@ -551,6 +551,42 @@ func TestWithTransferOptions(t *testing.T) {
 		err = server.Stop(ctx)
 		require.NoError(t, err)
 	})
+
+	t.Run("WithTransferOptionsNilOption", func(t *testing.T) {
+		// Create fresh mocks for this test to avoid conflicts
+		testMocks := setupBuilderMocks(t)
+
+		// Set up mock expectations for List method calls during DHT blob announcement
+		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+
+		// Test that nil options are handled gracefully (ignored and logged)
+		builder := NewServerBuilder().
+			WithStorage(testMocks.storage).
+			WithPeer(getFreePort(t)).
+			WithDHT(getFreePort(t)).
+			WithDefaultAcquirer().
+			WithTransferOptions(
+				transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid option
+				nil, // Nil option should be ignored
+				transfer.WithPeerTransferMaxPeersOption(5), // Another valid option
+			).
+			WithLogger(testMocks.logger)
+
+		// Should have 2 valid options (nil option filtered out)
+		assert.Len(t, builder.transferOptions, 2)
+
+		server, err := builder.Build()
+		require.NoError(t, err)
+		assert.NotNil(t, server)
+
+		// Server should work normally despite nil option
+		ctx := context.Background()
+		err = server.Start(ctx)
+		require.NoError(t, err)
+
+		err = server.Stop(ctx)
+		require.NoError(t, err)
+	})
 }
 
 // TestTransferOptionsIntegration tests the full integration of transfer options
