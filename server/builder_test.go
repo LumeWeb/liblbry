@@ -683,32 +683,18 @@ func TestServerBuilder_ProtocolOverwrite(t *testing.T) {
 	tests := []struct {
 		name         string
 		protocolName string
-		setupFunc    func(*ServerBuilder)
-		expectedPort int
 	}{
 		{
 			name:         "PeerProtocol",
 			protocolName: ProtocolPeer,
-			setupFunc: func(b *ServerBuilder) {
-				b.WithPeer(getFreePort(t)).WithPeer(getFreePort(t))
-			},
-			expectedPort: 0, // Will be set in test
 		},
 		{
 			name:         "ReflectorProtocol",
 			protocolName: ProtocolReflector,
-			setupFunc: func(b *ServerBuilder) {
-				b.WithReflector(getFreePort(t)).WithReflector(getFreePort(t))
-			},
-			expectedPort: 0, // Will be set in test
 		},
 		{
 			name:         "DHTProtocol",
 			protocolName: ProtocolDHT,
-			setupFunc: func(b *ServerBuilder) {
-				b.WithDHT(getFreePort(t)).WithDHT(getFreePort(t))
-			},
-			expectedPort: 0, // Will be set in test
 		},
 	}
 
@@ -717,31 +703,26 @@ func TestServerBuilder_ProtocolOverwrite(t *testing.T) {
 			testMocks := setupBuilderMocks(t)
 			builder := NewServerBuilder().WithStorage(testMocks.storage)
 
-			// For protocol overwrite tests, we need to capture the final port
-			var finalPort int
+			// Test protocol overwrite by configuring the same protocol twice
+			// The second configuration should overwrite the first one
+			firstPort := getFreePort(t)
+			secondPort := getFreePort(t)
+
 			switch tt.name {
 			case "PeerProtocol":
-				firstPort := getFreePort(t)
-				secondPort := getFreePort(t)
 				builder.WithPeer(firstPort).WithPeer(secondPort)
-				finalPort = secondPort
 			case "ReflectorProtocol":
-				firstPort := getFreePort(t)
-				secondPort := getFreePort(t)
 				builder.WithReflector(firstPort).WithReflector(secondPort)
-				finalPort = secondPort
 			case "DHTProtocol":
-				firstPort := getFreePort(t)
-				secondPort := getFreePort(t)
 				builder.WithDHT(firstPort).WithDHT(secondPort)
-				finalPort = secondPort
 			}
 
 			server, err := builder.Build()
 			require.NoError(t, err)
 
 			defaultServer := server.(*DefaultServer)
-			assertServerProtocolConfig(t, defaultServer, tt.protocolName, finalPort)
+			// The final port should be the second port (overwrite behavior)
+			assertServerProtocolConfig(t, defaultServer, tt.protocolName, secondPort)
 		})
 	}
 }
