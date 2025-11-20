@@ -105,10 +105,16 @@ func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
 	}
 
 	// If it doesn't exist, create new config with default values
+	// Use protocol.NewDHTConfig() to get proper defaults and copy relevant fields
+	protocolConfig, err := protocol.NewDHTConfig()
+	if err != nil {
+		return nil
+	}
+
 	newConfig := &DHTConfig{
 		Port:      DefaultDHTPort,
 		Address:   "",
-		SeedNodes: []string{}, // Empty slice instead of nil
+		SeedNodes: protocolConfig.SeedNodes,
 	}
 	b.config[ProtocolDHT] = newConfig
 
@@ -139,13 +145,15 @@ func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
 // any options that could trigger validation panics. This is a safer and more efficient approach
 // than creating a temporary config and applying all options.
 func (b *ServerBuilder) extractSeedNodesFromOptionsOnly() []string {
+	var lastSeedNodes []string
+
 	for _, option := range b.dhtOptions {
 		// Create a temporary config to test what this option does
-		tempConfig := &protocol.DHTConfig{
-			SeedNodes:        []string{},
-			Address:          "127.0.0.1:4444",
-			PeerProtocolPort: DefaultDHTPort,
-			RPCPort:          DefaultDHTPort,
+		tempConfig, err := protocol.NewDHTConfig()
+		if err != nil {
+			// If we can't create a temp config, skip this option
+			// This is a safe fallback since we're just trying to extract seed nodes
+			continue
 		}
 
 		// Store original seed nodes to detect if this option changes them
@@ -157,10 +165,11 @@ func (b *ServerBuilder) extractSeedNodesFromOptionsOnly() []string {
 
 		// If seed nodes changed and this wasn't just a no-op, this is likely a WithDHTSeedNodes option
 		if !reflect.DeepEqual(originalSeedNodes, tempConfig.SeedNodes) && len(tempConfig.SeedNodes) > 0 {
-			return tempConfig.SeedNodes
+			lastSeedNodes = tempConfig.SeedNodes
 		}
 	}
-	return nil
+
+	return lastSeedNodes
 }
 
 // withProtocolConfig adds a protocol configuration with the specified port and default.

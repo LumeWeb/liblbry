@@ -104,6 +104,17 @@ type DHTConfig struct {
 // DHTOption configures DHT peer instances
 type DHTOption func(*DHTConfig)
 
+// validateDHTConfigIfNeeded validates the config only if it appears to be fully initialized
+// This allows partial configs during building phase without triggering validation panics
+func validateDHTConfigIfNeeded(c *DHTConfig) {
+	// Only validate if the config appears to be fully initialized
+	if c.ReannounceTime > 0 && c.AnnounceRate > 0 {
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
+	}
+}
+
 // validateDHTConfig checks configuration values are valid
 func validateDHTConfig(c *DHTConfig) error {
 	if c.Address == "" {
@@ -148,9 +159,7 @@ func NewDHTConfig() (*DHTConfig, error) {
 func WithDHTAddress(addr string) DHTOption {
 	return func(c *DHTConfig) {
 		c.Address = addr
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -172,9 +181,7 @@ func WithDHTNodeID(id string) DHTOption {
 func WithDHTPeerProtocolPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.PeerProtocolPort = port
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -182,9 +189,7 @@ func WithDHTPeerProtocolPort(port int) DHTOption {
 func WithDHTRPCPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.RPCPort = port
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -192,9 +197,7 @@ func WithDHTRPCPort(port int) DHTOption {
 func WithDHTReannounceTime(interval time.Duration) DHTOption {
 	return func(c *DHTConfig) {
 		c.ReannounceTime = interval
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -202,9 +205,7 @@ func WithDHTReannounceTime(interval time.Duration) DHTOption {
 func WithDHTAnnounceRate(rate int) DHTOption {
 	return func(c *DHTConfig) {
 		c.AnnounceRate = rate
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
