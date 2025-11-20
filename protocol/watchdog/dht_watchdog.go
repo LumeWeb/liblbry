@@ -1,3 +1,8 @@
+// Package watchdog provides DHT contact validation with caching and blacklisting functionality.
+//
+// IMPORTANT: The validation methods in this package may mutate contact parameters by updating
+// the PeerPort field when a working port is discovered. This behavior is intentional for DHT
+// integration to dynamically update contact information with discovered working ports.
 package watchdog
 
 import (
@@ -175,15 +180,15 @@ func New(options ...WatchdogOption) *DefaultDHTWatchdog {
 
 // ValidateContactForHash implements dht.ContactValidator interface
 // Validates if a contact is suitable for storing/returning for a specific blob hash
-func (w *DefaultDHTWatchdog) ValidateContactForHash(blobHash bits.Bitmap, contact dht.Contact) bool {
+func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact dht.Contact) bool {
 	// Use our port testing validation logic
-	ctx := context.Background()
-	return w.ValidateContact(ctx, &contact)
+	return w.ValidateAndUpdateContact(w.ctx, &contact)
 }
 
-// ValidateContact tests connectivity to a contact and updates its port information.
-// Note: This method may mutate the contact's PeerPort field if it is 0 and a working port is discovered.
-func (w *DefaultDHTWatchdog) ValidateContact(ctx context.Context, contact *dht.Contact) bool {
+// ValidateAndUpdateContact tests connectivity to a contact and updates its port information.
+// This method mutates the contact's PeerPort field if it is 0 and a working port is discovered.
+// The mutation is intentional for DHT integration to update contact information with discovered working ports.
+func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, contact *dht.Contact) bool {
 	if contact == nil {
 		return false
 	}

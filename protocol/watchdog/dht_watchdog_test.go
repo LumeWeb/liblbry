@@ -98,7 +98,7 @@ func TestValidateContact_Cached(t *testing.T) {
 
 	// First validation should succeed (we'll mock the port test)
 	// Since we can't actually connect, this will fail and blacklist
-	result := watchdog.ValidateContact(ctx, contact)
+	result := watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result) // Should fail due to no actual server
 
 	// Contact should now be blacklisted
@@ -115,7 +115,7 @@ func TestValidateContact_Cached(t *testing.T) {
 	}
 
 	// Now validation should return true due to cache
-	result = watchdog.ValidateContact(ctx, contact)
+	result = watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.True(t, result)
 }
 
@@ -131,14 +131,14 @@ func TestValidateContact_Blacklisted(t *testing.T) {
 	ctx := context.Background()
 
 	// First validation should fail and blacklist
-	result := watchdog.ValidateContact(ctx, contact)
+	result := watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result)
 
 	// Contact should be blacklisted
 	assert.True(t, watchdog.IsBlacklisted(contact.ID))
 
 	// Second validation should return false due to blacklist
-	result = watchdog.ValidateContact(ctx, contact)
+	result = watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result)
 }
 
@@ -311,7 +311,7 @@ func TestConcurrentAccess(t *testing.T) {
 				contact.ID = bits.Bitmap{byte(i), byte(j)} // Unique ID per goroutine/operation
 
 				ctx := context.Background()
-				watchdog.ValidateContact(ctx, contact)
+				watchdog.ValidateAndUpdateContact(ctx, contact)
 				watchdog.IsCached(contact.ID)
 				watchdog.IsBlacklisted(contact.ID)
 				watchdog.GetStats()
@@ -411,7 +411,7 @@ func TestValidateContact_WithRealServer(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result := watchdog.ValidateContact(ctx, contact)
+	result := watchdog.ValidateAndUpdateContact(ctx, contact)
 
 	// Should succeed since we have a server running
 	assert.True(t, result)
@@ -422,4 +422,68 @@ func TestValidateContact_WithRealServer(t *testing.T) {
 	if contact.PeerPort == 0 {
 		assert.Equal(t, port, contact.PeerPort)
 	}
+}
+
+func TestValidateAndUpdateContact_MutationBehavior(t *testing.T) {
+	// Test that ValidateAndUpdateContact has the correct mutation behavior
+	// even when connection fails (no server needed)
+	port := liblbrytesting.GetFreePort(t)
+
+	watchdog := New(
+		WithTestPorts(port),
+		WithTestTimeout(time.Millisecond*100), // Fast timeout for test
+	)
+
+	// Create contact with PeerPort = 0 to test mutation behavior
+	contact := &dht.Contact{
+		ID:       bits.Bitmap{1, 2, 3},
+		IP:       net.ParseIP("127.0.0.1"),
+		Port:     port,
+		PeerPort: 0, // Explicitly set to 0
+	}
+
+	// Verify initial state
+	assert.Equal(t, 0, contact.PeerPort)
+
+	ctx := context.Background()
+	result := watchdog.ValidateAndUpdateContact(ctx, contact)
+
+	// Should fail due to no server, but mutation behavior is tested
+	assert.False(t, result)
+	assert.True(t, watchdog.IsBlacklisted(contact.ID))
+
+	// The key test: PeerPort should remain 0 since no successful connection was made
+	assert.Equal(t, 0, contact.PeerPort)
+}
+
+func TestValidateContactForHash_UsesValidateAndUpdateContact(t *testing.T) {
+	// Test that ValidateContactForHash properly uses ValidateAndUpdateContact
+	port := liblbrytesting.GetFreePort(t)
+
+	watchdog := New(
+		WithTestPorts(port),
+		WithTestTimeout(time.Millisecond*100), // Fast timeout for test
+	)
+
+	contact := &dht.Contact{
+		ID:       bits.Bitmap{1, 2, 3},
+		IP:       net.ParseIP("127.0.0.1"),
+		Port:     port,
+		PeerPort: 0, // Explicitly set to 0
+	}
+
+	blobHash := bits.Bitmap{9, 8, 7}
+
+	// Verify initial state
+	assert.Equal(t, 0, contact.PeerPort)
+
+	// This should use ValidateAndUpdateContact internally
+	result := watchdog.ValidateContactForHash(blobHash, *contact)
+
+	// Should fail due to no server, but the method should work
+	assert.False(t, result)
+	assert.True(t, watchdog.IsBlacklisted(contact.ID))
+
+	// PeerPort should remain 0 since no successful connection
+	assert.Equal(t, 0, contact.PeerPort)
 }

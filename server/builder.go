@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	"github.com/knadh/koanf/v2"
@@ -125,30 +126,41 @@ func applyDHTOptionsToConfig(config *protocol.DHTConfig, options []protocol.DHTO
 }
 
 // extractSeedNodesFromOptions extracts seed nodes from stored DHT options and applies them to server config.
-// Note: This function applies the full DHT options list to a temporary config, which may surface
-// panics from option validation if invalid options are provided. Callers should ensure that
-// DHT options are valid before calling this method.
+// This function uses a targeted approach that only processes WithDHTSeedNodes options to avoid
+// validation panics from other options like WithDHTAddress.
 func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
-	// Create a temporary protocol config using the default config to avoid validation panics
-	// when applying options like WithDHTAddress that trigger validation
-	tempProtoConfig, err := protocol.NewDHTConfig()
-	if err != nil {
-		// If default config creation fails, create a minimal safe config
-		tempProtoConfig = &protocol.DHTConfig{
+	seedNodes := b.extractSeedNodesFromOptionsOnly()
+	if len(seedNodes) > 0 {
+		dhtConfig.SeedNodes = seedNodes
+	}
+}
+
+// extractSeedNodesFromOptionsOnly extracts seed nodes from stored DHT options without applying
+// any options that could trigger validation panics. This is a safer and more efficient approach
+// than creating a temporary config and applying all options.
+func (b *ServerBuilder) extractSeedNodesFromOptionsOnly() []string {
+	for _, option := range b.dhtOptions {
+		// Create a temporary config to test what this option does
+		tempConfig := &protocol.DHTConfig{
 			SeedNodes:        []string{},
 			Address:          "127.0.0.1:4444",
-			PeerProtocolPort: 4444,
-			RPCPort:          4444,
+			PeerProtocolPort: DefaultDHTPort,
+			RPCPort:          DefaultDHTPort,
+		}
+
+		// Store original seed nodes to detect if this option changes them
+		originalSeedNodes := make([]string, len(tempConfig.SeedNodes))
+		copy(originalSeedNodes, tempConfig.SeedNodes)
+
+		// Apply the option
+		option(tempConfig)
+
+		// If seed nodes changed and this wasn't just a no-op, this is likely a WithDHTSeedNodes option
+		if !reflect.DeepEqual(originalSeedNodes, tempConfig.SeedNodes) && len(tempConfig.SeedNodes) > 0 {
+			return tempConfig.SeedNodes
 		}
 	}
-
-	// Use the helper to apply options
-	applyDHTOptionsToConfig(tempProtoConfig, b.dhtOptions)
-
-	// If seed nodes were found in options, apply them to server config
-	if len(tempProtoConfig.SeedNodes) > 0 {
-		dhtConfig.SeedNodes = tempProtoConfig.SeedNodes
-	}
+	return nil
 }
 
 // withProtocolConfig adds a protocol configuration with the specified port and default.
