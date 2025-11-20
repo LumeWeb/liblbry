@@ -61,6 +61,7 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			// behavior for different nodes, set the logger once during application startup before any
 			// dht.New() calls, or manage logging at a higher level.
 			dht.UseLogger(config.Logger)
+			dht.NodeFinderUseLogger(config.Logger)
 		}
 	}
 
