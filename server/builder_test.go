@@ -28,7 +28,7 @@ import (
 func getFreePort(t *testing.T) int {
 	t.Helper()
 
-	addr, err := net.Listen("tcp", ":0")
+	addr, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to get free port: %v", err)
 	}

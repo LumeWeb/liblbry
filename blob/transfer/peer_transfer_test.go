@@ -1116,48 +1116,63 @@ func TestTransferOptionConvenienceFunctions(t *testing.T) {
 	dhtNode := protocolMocks.NewMockDHTNode(t)
 	peerClientFactory := protocol.DefaultPeerClientFactory()
 
-	transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
-	require.NoError(t, err)
-
 	t.Run("WithPeerTransferTimeoutOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		option := WithPeerTransferTimeoutOption(90 * time.Second)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 90*time.Second, transfer.timeout)
 	})
 
 	t.Run("WithPeerTransferMaxPeersOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		option := WithPeerTransferMaxPeersOption(20)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 20, transfer.maxPeers)
 	})
 
 	t.Run("WithPeerTransferLoggerOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		customLogger := zaptest.NewLogger(t).Named("convenience_test")
 		option := WithPeerTransferLoggerOption(customLogger)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, customLogger, transfer.logger)
 	})
 
 	t.Run("WithPeerTransferMaxConcurrencyOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		option := WithPeerTransferMaxConcurrencyOption(12)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 12, transfer.maxConcurrency)
 	})
 
 	t.Run("WithPeerTransferDHTRetryAttemptsOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		option := WithPeerTransferDHTRetryAttemptsOption(7)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 7, transfer.dhtRetryAttempts)
 	})
 
 	t.Run("WithPeerTransferDHTRetryDelayOption", func(t *testing.T) {
+		transfer, err := NewPeerTransfer(dhtNode, peerClientFactory)
+		require.NoError(t, err)
+
 		option := WithPeerTransferDHTRetryDelayOption(300 * time.Millisecond)
-		err := option.Apply(transfer)
+		err = option.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 300*time.Millisecond, transfer.dhtRetryDelay)
 	})
