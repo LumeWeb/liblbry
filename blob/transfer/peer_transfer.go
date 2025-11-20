@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gammazero/workerpool"
+	"go.lumeweb.com/lbry-dht"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/stream"
@@ -45,6 +46,7 @@ type PeerTransfer struct {
 	peerClientFactory protocol.PeerClientFactory
 	timeout           time.Duration
 	maxPeers          int
+	dhtRetryAttempts  int
 	logger            *zap.Logger
 
 	// Concurrent execution fields
@@ -102,6 +104,23 @@ func WithPeerTransferMaxConcurrency(maxConcurrency int) PeerTransferOption {
 	}
 }
 
+// WithPeerTransferDHTRetryAttempts sets the number of retry attempts when DHT returns 0 contacts
+// Values less than 0 are treated as invalid and will be rejected with a warning
+func WithPeerTransferDHTRetryAttempts(retryAttempts int) PeerTransferOption {
+	return func(t *PeerTransfer) {
+		if retryAttempts < 0 {
+			if t.logger != nil {
+				t.logger.Warn("Invalid dhtRetryAttempts value provided, must be >= 0. Using default value instead.",
+					zap.Int("provided", retryAttempts),
+					zap.Int("default", 0))
+			}
+			// Keep the existing default value instead of silently changing it
+			return
+		}
+		t.dhtRetryAttempts = retryAttempts
+	}
+}
+
 // NewPeerTransfer creates a new PeerTransfer with the specified DHT node and peer client factory
 // Returns an error if peerClientFactory is nil
 func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerClientFactory, options ...PeerTransferOption) (*PeerTransfer, error) {
@@ -115,6 +134,7 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 		peerClientFactory: peerClientFactory,
 		timeout:           30 * time.Second,
 		maxPeers:          5,
+		dhtRetryAttempts:  0, // Default to no retries
 		logger:            zap.NewNop(),
 		maxConcurrency:    DefaultMaxConcurrency,
 		backlog:           make(map[string]*blobRequest),
@@ -371,14 +391,38 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to parse hash for DHT lookup: %w", err)
 	}
 
-	contacts, err := t.dhtNode.Get(hashBitmap)
-	if err != nil {
-		// Complete the placeholder request with error so waiters are unblocked
-		req.once.Do(func() {
-			req.result = taskResult{err: fmt.Errorf("failed to discover peers via DHT: %w", err)}
-			close(req.done)
-		})
-		return nil, fmt.Errorf("failed to discover peers via DHT: %w", err)
+	// Retry logic for DHT contact discovery
+	var contacts []dht.Contact
+
+	for attempt := 0; attempt <= t.dhtRetryAttempts; attempt++ {
+		if attempt > 0 {
+			t.logger.Debug("Retrying DHT contact discovery",
+				zap.String("hash", hash),
+				zap.Int("attempt", attempt),
+				zap.Int("maxAttempts", t.dhtRetryAttempts))
+		}
+
+		contacts, err = t.dhtNode.Get(hashBitmap)
+		if err != nil {
+			// Complete the placeholder request with error so waiters are unblocked
+			req.once.Do(func() {
+				req.result = taskResult{err: fmt.Errorf("failed to discover peers via DHT: %w", err)}
+				close(req.done)
+			})
+			return nil, fmt.Errorf("failed to discover peers via DHT: %w", err)
+		}
+
+		// If we found contacts, break out of retry loop
+		if len(contacts) > 0 {
+			break
+		}
+
+		// If this was the last attempt, we'll fall through to the error handling below
+		if attempt == t.dhtRetryAttempts {
+			t.logger.Debug("No contacts found after all retry attempts",
+				zap.String("hash", hash),
+				zap.Int("totalAttempts", t.dhtRetryAttempts+1))
+		}
 	}
 
 	if len(contacts) == 0 {
