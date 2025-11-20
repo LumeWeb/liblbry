@@ -47,6 +47,7 @@ type PeerTransfer struct {
 	timeout           time.Duration
 	maxPeers          int
 	dhtRetryAttempts  int
+	dhtRetryDelay     time.Duration
 	logger            *zap.Logger
 
 	// Concurrent execution fields
@@ -121,6 +122,23 @@ func WithPeerTransferDHTRetryAttempts(retryAttempts int) PeerTransferOption {
 	}
 }
 
+// WithPeerTransferDHTRetryDelay sets the delay between DHT retry attempts
+// Values less than or equal to 0 are treated as invalid and will be rejected with a warning
+func WithPeerTransferDHTRetryDelay(delay time.Duration) PeerTransferOption {
+	return func(t *PeerTransfer) {
+		if delay <= 0 {
+			if t.logger != nil {
+				t.logger.Warn("Invalid dhtRetryDelay value provided, must be > 0. Using default value instead.",
+					zap.Duration("provided", delay),
+					zap.Duration("default", 100*time.Millisecond))
+			}
+			// Keep the existing default value instead of silently changing it
+			return
+		}
+		t.dhtRetryDelay = delay
+	}
+}
+
 // NewPeerTransfer creates a new PeerTransfer with the specified DHT node and peer client factory
 // Returns an error if peerClientFactory is nil
 func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerClientFactory, options ...PeerTransferOption) (*PeerTransfer, error) {
@@ -134,7 +152,8 @@ func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerCl
 		peerClientFactory: peerClientFactory,
 		timeout:           30 * time.Second,
 		maxPeers:          5,
-		dhtRetryAttempts:  0, // Default to no retries
+		dhtRetryAttempts:  0,                      // Default to no retries
+		dhtRetryDelay:     100 * time.Millisecond, // Default retry delay
 		logger:            zap.NewNop(),
 		maxConcurrency:    DefaultMaxConcurrency,
 		backlog:           make(map[string]*blobRequest),
@@ -395,11 +414,32 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	var contacts []dht.Contact
 
 	for attempt := 0; attempt <= t.dhtRetryAttempts; attempt++ {
+		// Check if context is cancelled before retrying
+		if ctx.Err() != nil {
+			req.once.Do(func() {
+				req.result = taskResult{err: ctx.Err()}
+				close(req.done)
+			})
+			return nil, ctx.Err()
+		}
+
 		if attempt > 0 {
 			t.logger.Debug("Retrying DHT contact discovery",
 				zap.String("hash", hash),
 				zap.Int("attempt", attempt),
 				zap.Int("maxAttempts", t.dhtRetryAttempts))
+
+			// Add delay between retries using configurable delay with simple backoff
+			delay := time.Duration(attempt) * t.dhtRetryDelay
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				req.once.Do(func() {
+					req.result = taskResult{err: ctx.Err()}
+					close(req.done)
+				})
+				return nil, ctx.Err()
+			}
 		}
 
 		contacts, err = t.dhtNode.Get(hashBitmap)
