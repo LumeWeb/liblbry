@@ -509,9 +509,11 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("DHT port alignment when no fixed port", func(t *testing.T) {
 		// When no fixed port is specified, DHT should announce peer port = DHT port
+		peerPort := getFreePort(t)
+		dhtPort := getFreePort(t)
 		builder := NewServerBuilder().
-			WithPeer(testPortPeer).
-			WithDHT(testPortDHT).
+			WithPeer(peerPort).
+			WithDHT(dhtPort).
 			WithStorage(builderMocks.storage).
 			WithAcquirer(builderMocks.acquirer)
 
@@ -522,9 +524,9 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
 		dhtConfig := defaultServer.config[ProtocolDHT].(*DHTConfig)
 
-		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be configured")
+		assert.Equal(t, peerPort, peerConfig.Port, "Peer port should be configured")
 		assert.Equal(t, 0, peerConfig.FixedPort, "Fixed port should be 0 (disabled)")
-		assert.Equal(t, testPortDHT, dhtConfig.Port, "DHT port should be configured")
+		assert.Equal(t, dhtPort, dhtConfig.Port, "DHT port should be configured")
 
 		// The DHT announcement logic should align peer port with DHT port when no fixed port
 		// This is tested indirectly through the startDHT logic
@@ -532,10 +534,13 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("Fixed port takes precedence", func(t *testing.T) {
 		// When fixed port is specified, it should be used for DHT announcements
+		peerPort := getFreePort(t)
+		fixedPort := getFreePort(t)
+		dhtPort := getFreePort(t)
 		builder := NewServerBuilder().
-			WithPeer(testPortPeer).
-			WithFixedPeerPort(testPortPeer2).
-			WithDHT(testPortDHT).
+			WithPeer(peerPort).
+			WithFixedPeerPort(fixedPort).
+			WithDHT(dhtPort).
 			WithStorage(builderMocks.storage).
 			WithAcquirer(builderMocks.acquirer)
 
@@ -546,9 +551,9 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 		peerConfig := defaultServer.config[ProtocolPeer].(*PeerConfig)
 		dhtConfig := defaultServer.config[ProtocolDHT].(*DHTConfig)
 
-		assert.Equal(t, testPortPeer, peerConfig.Port, "Peer port should be configured")
-		assert.Equal(t, testPortPeer2, peerConfig.FixedPort, "Fixed port should be set")
-		assert.Equal(t, testPortDHT, dhtConfig.Port, "DHT port should be configured")
+		assert.Equal(t, peerPort, peerConfig.Port, "Peer port should be configured")
+		assert.Equal(t, fixedPort, peerConfig.FixedPort, "Fixed port should be set")
+		assert.Equal(t, dhtPort, dhtConfig.Port, "DHT port should be configured")
 	})
 }
 

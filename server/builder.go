@@ -25,6 +25,7 @@ type ServerBuilder struct {
 	logger             *zap.Logger
 	dhtWorkers         int
 	dhtBatchSize       int
+	transferOptions    []transfer.TransferOption
 }
 
 // NewServerBuilder creates a new ServerBuilder instance
@@ -39,6 +40,7 @@ func NewServerBuilder() *ServerBuilder {
 		logger:             zap.NewNop(),                    // Default to no-op logger
 		dhtWorkers:         DefaultDHTAnnouncerWorkers,      // Default value
 		dhtBatchSize:       DefaultDHTAnnouncementBatchSize, // Default batch size
+		transferOptions:    make([]transfer.TransferOption, 0),
 	}
 }
 
@@ -238,6 +240,13 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 	return b
 }
 
+// WithTransferOptions sets transfer options that will be applied to all transfer implementations
+// These options are applied during transfer creation and allow fine-tuning of transfer behavior
+func (b *ServerBuilder) WithTransferOptions(options ...transfer.TransferOption) *ServerBuilder {
+	b.transferOptions = append(b.transferOptions, options...)
+	return b
+}
+
 // WithDHTWorkers sets the number of workers for DHT announcements
 func (b *ServerBuilder) WithDHTWorkers(workers int) *ServerBuilder {
 	if workers <= 0 {
@@ -275,13 +284,13 @@ func (b *ServerBuilder) WithExistingDHT(dhtNode protocol.DHTNode) *ServerBuilder
 // createDefaultTransfers creates a slice of transfer.Transfer instances based on enabled protocols.
 // Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
 func (b *ServerBuilder) createDefaultTransfers(dhtNode protocol.DHTNode) ([]transfer.Transfer, error) {
-	return createDefaultTransfersWithLogger(dhtNode, b.logger)
+	return createDefaultTransfersWithLogger(dhtNode, b.logger, b.transferOptions)
 }
 
 // createDefaultTransfersWithLogger creates a slice of transfer.Transfer instances based on enabled protocols.
 // This is a standalone helper function that avoids capturing the ServerBuilder instance.
 // Returns an empty slice if no DHT node is provided, as DHT is required for peer-based transfers.
-func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger) ([]transfer.Transfer, error) {
+func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logger, transferOptions []transfer.TransferOption) ([]transfer.Transfer, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -299,6 +308,15 @@ func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logg
 		if err != nil {
 			return nil, fmt.Errorf("failed to create peer transfer: %w", err)
 		}
+
+		// Apply transfer options to the peer transfer
+		for _, option := range transferOptions {
+			if err := option.Apply(peerTransfer); err != nil {
+				logger.Warn("Failed to apply transfer option", zap.Error(err))
+				// Continue with other options even if one fails
+			}
+		}
+
 		transfers = append(transfers, peerTransfer)
 	}
 
@@ -347,10 +365,12 @@ func (b *ServerBuilder) Build() (Server, error) {
 		server.acquirerFactory = b.acquirerFactory
 	}
 	if b.useDefaultAcquirer {
-		// Capture only the logger to avoid long-lived builder capture
+		// Capture only the logger and transfer options to avoid long-lived builder capture
 		logger := b.logger
+		transferOptions := make([]transfer.TransferOption, len(b.transferOptions))
+		copy(transferOptions, b.transferOptions)
 		server.acquirerFactory = func(dhtNode protocol.DHTNode, store storage.BlobStore) (liblbry.BlobAcquirer, error) {
-			transfers, err := createDefaultTransfersWithLogger(dhtNode, logger)
+			transfers, err := createDefaultTransfersWithLogger(dhtNode, logger, transferOptions)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create default transfers: %w", err)
 			}
