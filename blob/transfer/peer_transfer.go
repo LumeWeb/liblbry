@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -429,10 +430,17 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 				zap.Int("attempt", attempt),
 				zap.Int("maxAttempts", t.dhtRetryAttempts))
 
-			// Add delay between retries using configurable delay with simple backoff
-			delay := time.Duration(attempt) * t.dhtRetryDelay
+			// Add delay between retries using configurable delay with exponential backoff
+			// Exponential backoff: base_delay × 2^(attempt-1) with jitter
+			backoffFactor := time.Duration(1 << uint(attempt-1)) // 1, 2, 4, 8...
+			delay := backoffFactor * t.dhtRetryDelay
+			// Add jitter: ±25% randomization
+			jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+			delay = delay - delay/4 + jitter
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
 			select {
-			case <-time.After(delay):
+			case <-timer.C:
 			case <-ctx.Done():
 				req.once.Do(func() {
 					req.result = taskResult{err: ctx.Err()}
