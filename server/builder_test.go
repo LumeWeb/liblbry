@@ -612,9 +612,10 @@ func TestTransferOptionsIntegration(t *testing.T) {
 		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Test creating a custom transfer option
-		customOption := transfer.NewPeerTransferOptionAdapter(
+		customOption, err := transfer.NewPeerTransferOptionAdapter(
 			transfer.WithPeerTransferTimeout(120 * time.Second),
 		)
+		require.NoError(t, err)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).

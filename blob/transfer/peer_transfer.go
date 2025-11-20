@@ -73,12 +73,20 @@ type PeerTransferOptionAdapter struct {
 }
 
 // NewPeerTransferOptionAdapter creates a new adapter from a PeerTransferOption
-func NewPeerTransferOptionAdapter(option PeerTransferOption) *PeerTransferOptionAdapter {
-	return &PeerTransferOptionAdapter{option: option}
+// Returns an error if the provided option is nil to prevent runtime panics
+func NewPeerTransferOptionAdapter(option PeerTransferOption) (*PeerTransferOptionAdapter, error) {
+	if option == nil {
+		return nil, fmt.Errorf("PeerTransferOption cannot be nil")
+	}
+	return &PeerTransferOptionAdapter{option: option}, nil
 }
 
 // Apply applies the wrapped PeerTransferOption to a PeerTransfer instance
 func (a *PeerTransferOptionAdapter) Apply(transfer any) error {
+	if a.option == nil {
+		return fmt.Errorf("PeerTransferOptionAdapter has nil option")
+	}
+
 	peerTransfer, ok := transfer.(*PeerTransfer)
 	if !ok {
 		return fmt.Errorf("expected *PeerTransfer, got %T", transfer)
@@ -166,32 +174,62 @@ func WithPeerTransferDHTRetryDelay(delay time.Duration) PeerTransferOption {
 
 // WithPeerTransferTimeoutOption creates a TransferOption for setting peer transfer timeout
 func WithPeerTransferTimeoutOption(timeout time.Duration) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferTimeout(timeout))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferTimeout(timeout))
+	if err != nil {
+		// This should never happen since WithPeerTransferTimeout never returns nil
+		panic(fmt.Errorf("failed to create peer transfer timeout option: %w", err))
+	}
+	return adapter
 }
 
 // WithPeerTransferMaxPeersOption creates a TransferOption for setting max peers
 func WithPeerTransferMaxPeersOption(maxPeers int) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferMaxPeers(maxPeers))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferMaxPeers(maxPeers))
+	if err != nil {
+		// This should never happen since WithPeerTransferMaxPeers never returns nil
+		panic(fmt.Errorf("failed to create peer transfer max peers option: %w", err))
+	}
+	return adapter
 }
 
 // WithPeerTransferLoggerOption creates a TransferOption for setting peer transfer logger
 func WithPeerTransferLoggerOption(logger *zap.Logger) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferLogger(logger))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferLogger(logger))
+	if err != nil {
+		// This should never happen since WithPeerTransferLogger never returns nil
+		panic(fmt.Errorf("failed to create peer transfer logger option: %w", err))
+	}
+	return adapter
 }
 
 // WithPeerTransferMaxConcurrencyOption creates a TransferOption for setting max concurrency
 func WithPeerTransferMaxConcurrencyOption(maxConcurrency int) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferMaxConcurrency(maxConcurrency))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferMaxConcurrency(maxConcurrency))
+	if err != nil {
+		// This should never happen since WithPeerTransferMaxConcurrency never returns nil
+		panic(fmt.Errorf("failed to create peer transfer max concurrency option: %w", err))
+	}
+	return adapter
 }
 
 // WithPeerTransferDHTRetryAttemptsOption creates a TransferOption for setting DHT retry attempts
 func WithPeerTransferDHTRetryAttemptsOption(retryAttempts int) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferDHTRetryAttempts(retryAttempts))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferDHTRetryAttempts(retryAttempts))
+	if err != nil {
+		// This should never happen since WithPeerTransferDHTRetryAttempts never returns nil
+		panic(fmt.Errorf("failed to create peer transfer DHT retry attempts option: %w", err))
+	}
+	return adapter
 }
 
 // WithPeerTransferDHTRetryDelayOption creates a TransferOption for setting DHT retry delay
 func WithPeerTransferDHTRetryDelayOption(delay time.Duration) TransferOption {
-	return NewPeerTransferOptionAdapter(WithPeerTransferDHTRetryDelay(delay))
+	adapter, err := NewPeerTransferOptionAdapter(WithPeerTransferDHTRetryDelay(delay))
+	if err != nil {
+		// This should never happen since WithPeerTransferDHTRetryDelay never returns nil
+		panic(fmt.Errorf("failed to create peer transfer DHT retry delay option: %w", err))
+	}
+	return adapter
 }
 
 // NewPeerTransfer creates a new PeerTransfer with the specified DHT node and peer client factory

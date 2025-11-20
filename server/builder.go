@@ -240,10 +240,15 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 	return b
 }
 
-// WithTransferOptions sets transfer options that will be applied to all transfer implementations
+// WithTransferOptions adds transfer options that will be applied to all transfer implementations
 // These options are applied during transfer creation and allow fine-tuning of transfer behavior
 func (b *ServerBuilder) WithTransferOptions(options ...transfer.TransferOption) *ServerBuilder {
-	b.transferOptions = append(b.transferOptions, options...)
+	// Filter out nil options to prevent nil interface panics when Apply is called
+	for _, option := range options {
+		if option != nil {
+			b.transferOptions = append(b.transferOptions, option)
+		}
+	}
 	return b
 }
 

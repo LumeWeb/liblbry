@@ -987,12 +987,29 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, transfer)
 
+	t.Run("NewPeerTransferOptionAdapterWithNil", func(t *testing.T) {
+		// Test creating adapter with nil option
+		adapter, err := NewPeerTransferOptionAdapter(nil)
+		assert.Error(t, err)
+		assert.Nil(t, adapter)
+		assert.Contains(t, err.Error(), "PeerTransferOption cannot be nil")
+	})
+
+	t.Run("ApplyWithNilOption", func(t *testing.T) {
+		// Test applying adapter with nil option (shouldn't happen with constructor validation, but test defensive check)
+		adapter := &PeerTransferOptionAdapter{option: nil}
+		err = adapter.Apply(transfer)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "PeerTransferOptionAdapter has nil option")
+	})
+
 	t.Run("ApplyWithValidPeerTransfer", func(t *testing.T) {
 		// Test applying option to valid PeerTransfer
 		option := WithPeerTransferTimeout(60 * time.Second)
-		adapter := NewPeerTransferOptionAdapter(option)
+		adapter, err := NewPeerTransferOptionAdapter(option)
+		require.NoError(t, err)
 
-		err := adapter.Apply(transfer)
+		err = adapter.Apply(transfer)
 		assert.NoError(t, err)
 		assert.Equal(t, 60*time.Second, transfer.timeout)
 	})
@@ -1000,9 +1017,10 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 	t.Run("ApplyWithInvalidType", func(t *testing.T) {
 		// Test applying option to invalid type
 		option := WithPeerTransferTimeout(60 * time.Second)
-		adapter := NewPeerTransferOptionAdapter(option)
+		adapter, err := NewPeerTransferOptionAdapter(option)
+		require.NoError(t, err)
 
-		err := adapter.Apply("not a peer transfer")
+		err = adapter.Apply("not a peer transfer")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "expected *PeerTransfer, got string")
 	})
@@ -1010,9 +1028,10 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 	t.Run("ApplyWithNil", func(t *testing.T) {
 		// Test applying option to nil
 		option := WithPeerTransferTimeout(60 * time.Second)
-		adapter := NewPeerTransferOptionAdapter(option)
+		adapter, err := NewPeerTransferOptionAdapter(option)
+		require.NoError(t, err)
 
-		err := adapter.Apply(nil)
+		err = adapter.Apply(nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "expected *PeerTransfer, got <nil>")
 	})
@@ -1031,8 +1050,9 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 		}
 
 		for _, option := range options {
-			adapter := NewPeerTransferOptionAdapter(option)
-			err := adapter.Apply(transfer2)
+			adapter, err := NewPeerTransferOptionAdapter(option)
+			require.NoError(t, err)
+			err = adapter.Apply(transfer2)
 			assert.NoError(t, err)
 		}
 
@@ -1050,7 +1070,8 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 		require.NoError(t, err)
 
 		option := WithPeerTransferLogger(customLogger)
-		adapter := NewPeerTransferOptionAdapter(option)
+		adapter, err := NewPeerTransferOptionAdapter(option)
+		require.NoError(t, err)
 
 		err = adapter.Apply(transfer3)
 		assert.NoError(t, err)
@@ -1076,8 +1097,9 @@ func TestPeerTransferOptionAdapter(t *testing.T) {
 		}
 
 		for _, option := range invalidOptions {
-			adapter := NewPeerTransferOptionAdapter(option)
-			err := adapter.Apply(transfer4)
+			adapter, err := NewPeerTransferOptionAdapter(option)
+			require.NoError(t, err)
+			err = adapter.Apply(transfer4)
 			assert.NoError(t, err, "Invalid options should not return errors, just warn")
 		}
 
