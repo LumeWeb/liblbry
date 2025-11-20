@@ -8,12 +8,14 @@ import (
 
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
 )
 
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
 type managedDHTNode struct {
 	dht      DHT
 	config   *DHTConfig
+	watchdog watchdog.DHTWatchdog
 	mu       sync.RWMutex
 	joined   bool
 	stopped  bool
@@ -41,6 +43,11 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 		option(config)
 	}
 
+	// Set default watchdog if none provided
+	if config.Watchdog == nil {
+		config.Watchdog = watchdog.New()
+	}
+
 	// If no DHT implementation provided, create default one
 	if dhtImpl == nil {
 		// Convert to DHT config
@@ -52,6 +59,7 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			RPCPort:          config.RPCPort,
 			ReannounceTime:   config.ReannounceTime,
 			AnnounceRate:     config.AnnounceRate,
+			Validator:        config.Watchdog,
 		}
 
 		dhtImpl = dht.New(dhtConfig)
@@ -69,6 +77,7 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	wrapper := &managedDHTNode{
 		dht:      dhtImpl,
 		config:   config,
+		watchdog: config.Watchdog,
 		joined:   false,
 		ctx:      ctx,
 		cancel:   cancel,
@@ -291,6 +300,11 @@ func (w *managedDHTNode) Restart() error {
 	w.startJoinGoroutine()
 
 	return nil
+}
+
+// Watchdog returns the DHT watchdog instance for contact validation
+func (w *managedDHTNode) Watchdog() watchdog.DHTWatchdog {
+	return w.watchdog
 }
 
 // startJoinGoroutine starts a goroutine to monitor DHT join status

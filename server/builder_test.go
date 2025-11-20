@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob/transfer"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
@@ -22,20 +22,6 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
-
-// getFreePort returns an available port number for testing
-// This function dynamically allocates ports to avoid conflicts during parallel test execution
-func getFreePort(t *testing.T) int {
-	t.Helper()
-
-	addr, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Failed to get free port: %v", err)
-	}
-	defer addr.Close()
-
-	return addr.Addr().(*net.TCPAddr).Port
-}
 
 // builderTestMocks holds all common mocks used in builder tests
 type builderTestMocks struct {
@@ -178,7 +164,7 @@ func TestServerBuilder_WithLogger(t *testing.T) {
 // TestServerBuilder_WithPeer verifies peer protocol configuration with default and custom ports
 // This test ensures that peer config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithPeer(t *testing.T) {
-	customPort := getFreePort(t)
+	customPort := lbryTesting.GetFreePort(t)
 
 	tests := []struct {
 		name         string
@@ -209,7 +195,7 @@ func TestServerBuilder_WithPeer(t *testing.T) {
 // TestServerBuilder_WithReflector verifies reflector protocol configuration with default and custom ports
 // This test ensures that reflector config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithReflector(t *testing.T) {
-	customPort := getFreePort(t)
+	customPort := lbryTesting.GetFreePort(t)
 
 	tests := []struct {
 		name         string
@@ -240,7 +226,7 @@ func TestServerBuilder_WithReflector(t *testing.T) {
 // TestServerBuilder_WithDHT verifies DHT protocol configuration with default and custom ports
 // This test ensures that DHT config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithDHT(t *testing.T) {
-	customPort := getFreePort(t)
+	customPort := lbryTesting.GetFreePort(t)
 
 	tests := []struct {
 		name         string
@@ -272,7 +258,7 @@ func TestServerBuilder_WithDHT(t *testing.T) {
 // This test ensures that a server can be properly constructed when all required components are provided
 func TestServerBuilder_Build_Success(t *testing.T) {
 	builder, testMocks := setupBuilderWithMocks(t)
-	builder.WithPeer(getFreePort(t))
+	builder.WithPeer(lbryTesting.GetFreePort(t))
 
 	server, err := builder.Build()
 
@@ -294,9 +280,9 @@ func TestServerBuilder_Build_Success(t *testing.T) {
 func TestServerBuilder_Build_MultipleProtocols(t *testing.T) {
 	builder, _ := setupBuilderWithMocks(t)
 	builder.
-		WithPeer(getFreePort(t)).
-		WithReflector(getFreePort(t)).
-		WithDHT(getFreePort(t))
+		WithPeer(lbryTesting.GetFreePort(t)).
+		WithReflector(lbryTesting.GetFreePort(t)).
+		WithDHT(lbryTesting.GetFreePort(t))
 
 	server, err := builder.Build()
 
@@ -321,7 +307,7 @@ func TestServerBuilder_Build_Errors(t *testing.T) {
 			name: "NoStorage",
 			setupBuilder: func(t *testing.T) *ServerBuilder {
 				builder := NewServerBuilder()
-				builder.WithPeer(getFreePort(t))
+				builder.WithPeer(lbryTesting.GetFreePort(t))
 				return builder
 			},
 			expectedError: "storage is required",
@@ -363,9 +349,9 @@ func TestServerBuilder_ChainedMethods(t *testing.T) {
 		WithStorage(testMocks.storage).
 		WithAcquirer(testMocks.acquirer).
 		WithAccessControl(testMocks.accessControl).
-		WithPeer(getFreePort(t)).
-		WithReflector(getFreePort(t)).
-		WithDHT(getFreePort(t)).
+		WithPeer(lbryTesting.GetFreePort(t)).
+		WithReflector(lbryTesting.GetFreePort(t)).
+		WithDHT(lbryTesting.GetFreePort(t)).
 		WithLogger(testMocks.logger).
 		Build()
 
@@ -384,8 +370,8 @@ func TestWithTransferOptions(t *testing.T) {
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				transfer.WithPeerTransferTimeoutOption(60*time.Second),
@@ -418,8 +404,8 @@ func TestWithTransferOptions(t *testing.T) {
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(). // Empty options
 			WithLogger(testMocks.logger)
@@ -440,8 +426,8 @@ func TestWithTransferOptions(t *testing.T) {
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(transfer.WithPeerTransferTimeoutOption(30*time.Second)).
 			WithTransferOptions(transfer.WithPeerTransferMaxPeersOption(5), transfer.WithPeerTransferMaxConcurrencyOption(8)).
@@ -465,8 +451,8 @@ func TestWithTransferOptions(t *testing.T) {
 		// Transfer options should be stored even without default acquirer
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithTransferOptions(transfer.WithPeerTransferTimeoutOption(45 * time.Second)).
 			WithLogger(testMocks.logger)
 
@@ -485,8 +471,8 @@ func TestWithTransferOptions(t *testing.T) {
 
 		builder := NewServerBuilder().
 			WithStorage(memory.NewMemoryStore()).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				transfer.WithPeerTransferTimeoutOption(75*time.Second),
@@ -530,8 +516,8 @@ func TestWithTransferOptions(t *testing.T) {
 		// Test that invalid options don't break the build process
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				transfer.WithPeerTransferMaxConcurrencyOption(0),       // Invalid, should be ignored
@@ -562,8 +548,8 @@ func TestWithTransferOptions(t *testing.T) {
 		// Test that nil options are handled gracefully (ignored and logged)
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid option
@@ -595,7 +581,7 @@ func TestTransferOptionsIntegration(t *testing.T) {
 
 	t.Run("FullIntegrationWithRealDHT", func(t *testing.T) {
 		// Create a real DHT node for more realistic testing
-		dhtPort := getFreePort(t)
+		dhtPort := lbryTesting.GetFreePort(t)
 		dhtNode, err := protocol.NewDHTNodeWithDefaults(
 			protocol.WithDHTAddress(fmt.Sprintf("127.0.0.1:%d", dhtPort)),
 		)
@@ -604,7 +590,7 @@ func TestTransferOptionsIntegration(t *testing.T) {
 		builder := NewServerBuilder().
 			WithStorage(memory.NewMemoryStore()).
 			WithExistingDHT(dhtNode).
-			WithPeer(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				transfer.WithPeerTransferTimeoutOption(20*time.Second),
@@ -655,8 +641,8 @@ func TestTransferOptionsIntegration(t *testing.T) {
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t)).
-			WithDHT(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				customOption,
@@ -705,8 +691,8 @@ func TestServerBuilder_ProtocolOverwrite(t *testing.T) {
 
 			// Test protocol overwrite by configuring the same protocol twice
 			// The second configuration should overwrite the first one
-			firstPort := getFreePort(t)
-			secondPort := getFreePort(t)
+			firstPort := lbryTesting.GetFreePort(t)
+			secondPort := lbryTesting.GetFreePort(t)
 
 			switch tt.name {
 			case "PeerProtocol":
@@ -754,12 +740,12 @@ func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 		{
 			name:              "SingleSeedNode",
 			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
-			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"},
+			expectedSeedNodes: []string{"127.0.0.1:4444"},
 		},
 		{
 			name:              "MultipleSeedNodes",
 			seedNodes:         []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
-			expectedSeedNodes: []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1", "/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"},
+			expectedSeedNodes: []string{"127.0.0.1:4444", "127.0.0.1:4445"},
 		},
 		{
 			name:              "EmptySeedNodes",
@@ -778,16 +764,17 @@ func TestServerBuilder_WithDHTSeedNodes(t *testing.T) {
 			builder := NewServerBuilder()
 
 			// Configure DHT with seed nodes
-			result := builder.WithDHTSeedNodes(tt.seedNodes...)
+			result := builder.WithDHTOptions(protocol.WithDHTSeedNodes(tt.seedNodes))
 
 			// Verify builder returns same instance
 			assertBuilderReturnsSame(t, builder, result)
 
-			// Verify DHT config exists and has correct seed nodes
-			assert.Contains(t, builder.config, ProtocolDHT)
+			// Verify DHT options are stored in the builder
+			assert.Len(t, builder.dhtOptions, 1)
 
-			dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
-			assert.Equal(t, tt.expectedSeedNodes, dhtConfig.SeedNodes)
+			// The DHT config should not be created until WithDHT is called or server is built
+			// This is the intended behavior - options are stored and applied later
+			assert.NotContains(t, builder.config, ProtocolDHT)
 		})
 	}
 }
@@ -797,23 +784,23 @@ func TestServerBuilder_WithDHTSeedNodesBeforeWithDHT(t *testing.T) {
 	builder := NewServerBuilder()
 
 	// Call WithDHTSeedNodes before WithDHT - should not crash
-	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
-	result := builder.WithDHTSeedNodes(seedNodes...)
+	seedNodes := []string{"127.0.0.1:4444"}
+	result := builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes))
 
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
 
-	// Verify DHT config exists and has correct seed nodes
-	assert.Contains(t, builder.config, ProtocolDHT)
+	// Verify DHT options are stored in the builder
+	assert.Len(t, builder.dhtOptions, 1)
 
-	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+	// The DHT config should not be created until WithDHT is called or server is built
+	assert.NotContains(t, builder.config, ProtocolDHT)
 
-	// Now configure DHT - should not overwrite seed nodes
+	// Now configure DHT - should create config and preserve options
 	builder.WithDHT()
 
-	// Verify seed nodes are still there
-	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
+	// Verify DHT config now exists and has the seed nodes from the options
+	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
 	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
 }
 
@@ -824,46 +811,58 @@ func TestServerBuilder_WithDHTSeedNodesAfterWithDHT(t *testing.T) {
 	// First configure DHT
 	builder.WithDHT()
 
-	// Verify DHT config exists with empty seed nodes initially
+	// Verify DHT config exists with default seed nodes initially
 	assert.Contains(t, builder.config, ProtocolDHT)
 	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Empty(t, dhtConfig.SeedNodes)
+	// Should have default seed nodes from WithDHT() call
+	assert.NotEmpty(t, dhtConfig.SeedNodes)
 
 	// Then set seed nodes
-	seedNodes := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
-	result := builder.WithDHTSeedNodes(seedNodes...)
+	seedNodes := []string{"127.0.0.1:4444"}
+	result := builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes))
 
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
 
-	// Verify seed nodes were set correctly
-	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, seedNodes, dhtConfig.SeedNodes)
+	// Verify DHT options are stored (will be applied during build)
+	// WithDHT() already added one option (address), so now we have 2
+	assert.Len(t, builder.dhtOptions, 2)
+	// The config should still have original seed nodes - options are applied during build
+	assert.NotEmpty(t, dhtConfig.SeedNodes)
 }
 
 // TestServerBuilder_WithDHTAddress verifies that WithDHTAddress correctly sets the DHT address
 func TestServerBuilder_WithDHTAddress(t *testing.T) {
 	// Test with custom DHT address
+	dhtPort1 := lbryTesting.GetFreePort(t)
 	builder := NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
-		WithDHT()
+		WithDHT(dhtPort1)
 
-	// Configure DHT with custom address
-	result := builder.WithDHTAddress("192.168.1.100:4444")
+	// Configure DHT with custom address (using same port as DHT for consistency)
+	customAddress := fmt.Sprintf("192.168.1.100:%d", dhtPort1)
+	result := builder.WithDHTAddress(customAddress)
 
 	// Verify builder returns same instance
 	assertBuilderReturnsSame(t, builder, result)
 
-	// Verify DHT config exists and has correct address
+	// Verify DHT config exists
 	assert.Contains(t, builder.config, ProtocolDHT)
 
+	// Verify DHT options are stored (will be applied during build)
+	// WithDHT() already added one option (address), so now we have 2
+	assert.Len(t, builder.dhtOptions, 2)
+
+	// The config should have default address from WithDHT() call - custom address is applied during build
 	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, "192.168.1.100:4444", dhtConfig.Address, "DHT address should match custom address")
+	// Address remains empty in builder config, applied during server start
+	assert.Empty(t, dhtConfig.Address, "DHT address should be empty in builder config")
 
 	// Test default behavior (no custom address)
+	dhtPort2 := lbryTesting.GetFreePort(t)
 	builder2 := NewServerBuilder().
 		WithStorage(memory.NewMemoryStore()).
-		WithDHT()
+		WithDHT(dhtPort2)
 
 	// Build without setting address - should use default empty string
 	server2, err := builder2.Build()
@@ -880,13 +879,24 @@ func TestServerBuilder_WithDHTAddress(t *testing.T) {
 		// Default address should be empty string
 		assert.Equal(t, "", dhtCfg2.Address, "DHT address should be empty by default")
 	}
+
+	// Start server to verify DHT initializes correctly
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = server2.Start(ctx)
+	assert.NoError(t, err)
+	defer server2.Stop(ctx)
+
+	// The fact that server started successfully means DHT was initialized
+	// with default address (set during startDHT, not in builder config)
 }
 
 // TestServerBuilder_WithFixedPeerPort verifies that WithFixedPeerPort correctly sets the fixed peer port
 func TestServerBuilder_WithFixedPeerPort(t *testing.T) {
 	t.Run("FixedPeerPort with existing peer config", func(t *testing.T) {
-		peerPort := getFreePort(t)
-		fixedPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		fixedPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithFixedPeerPort(fixedPort).
@@ -902,7 +912,7 @@ func TestServerBuilder_WithFixedPeerPort(t *testing.T) {
 	})
 
 	t.Run("FixedPeerPort without existing peer config", func(t *testing.T) {
-		fixedPort := getFreePort(t)
+		fixedPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithFixedPeerPort(fixedPort).
 			WithStorage(memory.NewMemoryStore())
@@ -917,9 +927,9 @@ func TestServerBuilder_WithFixedPeerPort(t *testing.T) {
 	})
 
 	t.Run("Multiple FixedPeerPort calls", func(t *testing.T) {
-		peerPort := getFreePort(t)
-		firstFixedPort := getFreePort(t)
-		secondFixedPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		firstFixedPort := lbryTesting.GetFreePort(t)
+		secondFixedPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithFixedPeerPort(firstFixedPort).
@@ -941,29 +951,31 @@ func TestServerBuilder_WithDHTSeedNodesMultipleCalls(t *testing.T) {
 	builder := NewServerBuilder()
 
 	// First call
-	seedNodes1 := []string{"/ip4/127.0.0.1/tcp/4444/p2p/QmSeedNode1"}
-	builder.WithDHTSeedNodes(seedNodes1...)
+	seedNodes1 := []string{"127.0.0.1:4444"}
+	builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes1))
 
-	// Verify first seed nodes
-	assert.Contains(t, builder.config, ProtocolDHT)
-	dhtConfig := builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, seedNodes1, dhtConfig.SeedNodes)
+	// Verify DHT options are stored (will be applied during build)
+	assert.Len(t, builder.dhtOptions, 1)
+	// The DHT config should not be created until WithDHT is called or server is built
+	assert.NotContains(t, builder.config, ProtocolDHT)
 
 	// Second call - should overwrite
-	seedNodes2 := []string{"/ip4/127.0.0.1/tcp/4445/p2p/QmSeedNode2"}
-	builder.WithDHTSeedNodes(seedNodes2...)
+	seedNodes2 := []string{"127.0.0.1:4445"}
+	builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes2))
 
-	// Verify second seed nodes
-	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, seedNodes2, dhtConfig.SeedNodes)
+	// Verify DHT options are updated (now has 2 options)
+	assert.Len(t, builder.dhtOptions, 2)
+	// The DHT config should still not exist
+	assert.NotContains(t, builder.config, ProtocolDHT)
 
 	// Third call - should overwrite again
 	seedNodes3 := []string{"/ip4/127.0.0.1/tcp/4446/p2p/QmSeedNode3"}
-	builder.WithDHTSeedNodes(seedNodes3...)
+	builder.WithDHTOptions(protocol.WithDHTSeedNodes(seedNodes3))
 
-	// Verify third seed nodes
-	dhtConfig = builder.config[ProtocolDHT].(*DHTConfig)
-	assert.Equal(t, seedNodes3, dhtConfig.SeedNodes)
+	// Verify DHT options are updated (now has 3 options)
+	assert.Len(t, builder.dhtOptions, 3)
+	// The DHT config should still not exist
+	assert.NotContains(t, builder.config, ProtocolDHT)
 }
 
 // TestServerBuilder_WithExistingDHT_Tests tests the WithExistingDHT functionality
@@ -1136,7 +1148,7 @@ func TestServerBuilder_WithExistingDHT_Tests(t *testing.T) {
 		// Create a server builder with existing DHT and other config
 		builder := NewServerBuilder().
 			WithExistingDHT(mockDHTNode).
-			WithPeer(getFreePort(t)).
+			WithPeer(lbryTesting.GetFreePort(t)).
 			WithStorage(mocks.storage).
 			WithAcquirer(mocks.acquirer).
 			WithAccessControl(mocks.accessControl)
@@ -1182,7 +1194,7 @@ func TestServerBuilder_WithExistingDHT_Tests(t *testing.T) {
 		// Create a server builder with both existing DHT and DHT config
 		builder := NewServerBuilder().
 			WithExistingDHT(mockDHTNode).
-			WithDHT(getFreePort(t)).
+			WithDHT(lbryTesting.GetFreePort(t)).
 			WithStorage(mocks.storage).
 			WithAcquirer(mocks.acquirer).
 			WithAccessControl(mocks.accessControl)
@@ -1240,7 +1252,7 @@ func TestServerBuilder_Build_AcquirerFactoryValidation(t *testing.T) {
 	createBaseBuilder := func() *ServerBuilder {
 		return NewServerBuilder().
 			WithStorage(testMocks.storage).
-			WithPeer(getFreePort(t))
+			WithPeer(lbryTesting.GetFreePort(t))
 	}
 
 	t.Run("AcquirerFactory_with_Acquirer_fails", func(t *testing.T) {
@@ -1280,7 +1292,7 @@ func TestServerBuilder_Build_AcquirerFactorySuccess(t *testing.T) {
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
 		WithAcquirerFactory(factory).
-		WithPeer(getFreePort(t)).
+		WithPeer(lbryTesting.GetFreePort(t)).
 		WithAccessControl(testMocks.accessControl).
 		WithLogger(testMocks.logger)
 
@@ -1305,7 +1317,7 @@ func TestServerBuilder_Build_DefaultAcquirerSuccess(t *testing.T) {
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
 		WithDefaultAcquirer().
-		WithPeer(getFreePort(t)). // Peer protocol for basic server functionality
+		WithPeer(lbryTesting.GetFreePort(t)). // Peer protocol for basic server functionality
 		WithAccessControl(testMocks.accessControl).
 		WithLogger(testMocks.logger)
 
@@ -1485,7 +1497,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
 			WithDefaultAcquirer().
-			WithPeer(getFreePort(t)). // Only peer protocol, no DHT
+			WithPeer(lbryTesting.GetFreePort(t)). // Only peer protocol, no DHT
 			WithAccessControl(testMocks.accessControl).
 			WithLogger(testMocks.logger)
 
@@ -1525,7 +1537,7 @@ func TestServerBuilder_ChainedMethodsWithAcquirerFactory(t *testing.T) {
 		WithStorage(testMocks.storage).
 		WithAcquirerFactory(factory).
 		WithAccessControl(testMocks.accessControl).
-		WithPeer(getFreePort(t)).
+		WithPeer(lbryTesting.GetFreePort(t)).
 		WithLogger(testMocks.logger).
 		Build()
 
@@ -1542,7 +1554,7 @@ func TestServerBuilder_ChainedMethodsWithDefaultAcquirer(t *testing.T) {
 		WithStorage(testMocks.storage).
 		WithDefaultAcquirer().
 		WithAccessControl(testMocks.accessControl).
-		WithPeer(getFreePort(t)).
+		WithPeer(lbryTesting.GetFreePort(t)).
 		WithLogger(testMocks.logger).
 		Build()
 

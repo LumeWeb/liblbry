@@ -2,6 +2,7 @@ package testing
 
 import (
 	"encoding/hex"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,4 +32,18 @@ func Unhex(t *testing.T, s string) []byte {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// GetFreePort returns an available port number for testing
+// This function dynamically allocates ports to avoid conflicts during parallel test execution
+func GetFreePort(t *testing.T) int {
+	t.Helper()
+
+	addr, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+	defer addr.Close()
+
+	return addr.Addr().(*net.TCPAddr).Port
 }

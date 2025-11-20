@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
 	"go.uber.org/zap"
 )
 
@@ -73,6 +74,9 @@ type DHTNode interface {
 
 	// Restart restarts a stopped DHT node
 	Restart() error
+
+	// Watchdog returns the DHT watchdog instance for contact validation
+	Watchdog() watchdog.DHTWatchdog
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -93,6 +97,8 @@ type DHTConfig struct {
 	ReannounceTime time.Duration
 	// Maximum announces per second
 	AnnounceRate int
+	// Watchdog for contact validation with caching and blacklisting
+	Watchdog watchdog.DHTWatchdog
 }
 
 // DHTOption configures DHT peer instances
@@ -210,5 +216,12 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 		} else {
 			c.Logger = NewZapToLogrusAdapter(logger)
 		}
+	}
+}
+
+// WithDHTWatchdog sets the DHT watchdog for contact validation
+func WithDHTWatchdog(watchdog watchdog.DHTWatchdog) DHTOption {
+	return func(c *DHTConfig) {
+		c.Watchdog = watchdog
 	}
 }

@@ -126,6 +126,7 @@ type DefaultServer struct {
 	dhtAnnouncer protocol.DHTAnnouncer
 	notifier     protocol.Notifier
 	dhtBatchSize int
+	dhtOptions   []protocol.DHTOption
 
 	// Runtime state
 	listeners map[string]net.Listener
@@ -336,6 +337,7 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 		address = fmt.Sprintf("%s:%d", strings.Split(protocol.DefaultDHTAddress, ":")[0], config.Port)
 	}
 
+	// Add base configuration options
 	opts = append(opts,
 		protocol.WithDHTAddress(address),
 		protocol.WithDHTPeerProtocolPort(announcePeerPort),
@@ -346,6 +348,9 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 	if len(config.SeedNodes) > 0 {
 		opts = append(opts, protocol.WithDHTSeedNodes(config.SeedNodes))
 	}
+
+	// Add any additional DHT options configured via WithDHTOptions()
+	opts = append(opts, s.dhtOptions...)
 
 	// Create DHT node with all options at once
 	dhtNode, err := protocol.NewDHTNodeWithDefaults(opts...)

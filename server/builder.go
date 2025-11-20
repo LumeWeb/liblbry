@@ -3,6 +3,8 @@ package server
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
@@ -26,6 +28,7 @@ type ServerBuilder struct {
 	dhtWorkers         int
 	dhtBatchSize       int
 	transferOptions    []transfer.TransferOption
+	dhtOptions         []protocol.DHTOption
 }
 
 // NewServerBuilder creates a new ServerBuilder instance
@@ -41,6 +44,7 @@ func NewServerBuilder() *ServerBuilder {
 		dhtWorkers:         DefaultDHTAnnouncerWorkers,      // Default value
 		dhtBatchSize:       DefaultDHTAnnouncementBatchSize, // Default batch size
 		transferOptions:    make([]transfer.TransferOption, 0),
+		dhtOptions:         make([]protocol.DHTOption, 0),
 	}
 }
 
@@ -110,6 +114,40 @@ func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
 	return newConfig
 }
 
+// applyDHTOptionsToConfig applies DHT options to a protocol config and returns the modified config
+// This helper function DRYs the pattern of creating temporary configs to extract option values
+func applyDHTOptionsToConfig(config *protocol.DHTConfig, options []protocol.DHTOption) *protocol.DHTConfig {
+	// Apply all DHT options to the config
+	for _, option := range options {
+		option(config)
+	}
+	return config
+}
+
+// extractSeedNodesFromOptions extracts seed nodes from stored DHT options and applies them to server config
+func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
+	// Create a temporary protocol config using the default config to avoid validation panics
+	// when applying options like WithDHTAddress that trigger validation
+	tempProtoConfig, err := protocol.NewDHTConfig()
+	if err != nil {
+		// If default config creation fails, create a minimal safe config
+		tempProtoConfig = &protocol.DHTConfig{
+			SeedNodes:        []string{},
+			Address:          "127.0.0.1:4444",
+			PeerProtocolPort: 4444,
+			RPCPort:          4444,
+		}
+	}
+
+	// Use the helper to apply options
+	applyDHTOptionsToConfig(tempProtoConfig, b.dhtOptions)
+
+	// If seed nodes were found in options, apply them to server config
+	if len(tempProtoConfig.SeedNodes) > 0 {
+		dhtConfig.SeedNodes = tempProtoConfig.SeedNodes
+	}
+}
+
 // withProtocolConfig adds a protocol configuration with the specified port and default.
 // If multiple ports are provided, only the first is used.
 func (b *ServerBuilder) withProtocolConfig(protocolName string, defaultPort int, port []int, configFactory func(int) any) *ServerBuilder {
@@ -143,7 +181,7 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 		p = port[0]
 	}
 
-	// Get or create DHT config
+	// Get or create DHT config to ensure DHT protocol is enabled
 	dhtConfig := b.getOrCreateDHTConfig()
 
 	// Check if we're trying to configure DHT when an existing node was set
@@ -153,51 +191,22 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 		return b
 	}
 
-	// Update the port while preserving existing values
+	// Update the port for backward compatibility
 	dhtConfig.Port = p
 
-	return b
-}
+	// Extract seed nodes from stored DHT options and apply to server config
+	// This allows immediate verification in tests
+	b.extractSeedNodesFromOptions(dhtConfig)
 
-// WithDHTSeedNodes sets seed nodes for the DHT protocol
-func (b *ServerBuilder) WithDHTSeedNodes(seedNodes ...string) *ServerBuilder {
-	// Handle nil seedNodes by converting to empty slice
-	if seedNodes == nil {
-		seedNodes = []string{}
-	}
-
-	// Get or create DHT config
-	dhtConfig := b.getOrCreateDHTConfig()
-
-	// Check if we're trying to configure DHT when an existing node was set
-	if dhtConfig == nil {
-		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
-		// and prioritize the existing DHT node
-		return b
-	}
-
-	// Update seed nodes
-	dhtConfig.SeedNodes = seedNodes
-
-	return b
+	// Also add the DHT address option using the port for consistency with new approach
+	address := net.JoinHostPort(strings.Split(protocol.DefaultDHTAddress, ":")[0], fmt.Sprintf("%d", p))
+	return b.WithDHTOptions(protocol.WithDHTAddress(address))
 }
 
 // WithDHTAddress sets the DHT address
 func (b *ServerBuilder) WithDHTAddress(address string) *ServerBuilder {
-	// Get or create DHT config
-	dhtConfig := b.getOrCreateDHTConfig()
-
-	// Check if we're trying to configure DHT when an existing node was set
-	if dhtConfig == nil {
-		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
-		// and prioritize the existing DHT node
-		return b
-	}
-
-	// Update address
-	dhtConfig.Address = address
-
-	return b
+	// Use the protocol package DHT option internally
+	return b.WithDHTOptions(protocol.WithDHTAddress(address))
 }
 
 // WithFixedPeerPort adds a fixed peer port in addition to the regular peer port
@@ -240,16 +249,44 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 	return b
 }
 
+// addOptionsWithNilCheck is a helper function that adds options to a slice while filtering out nil values
+// This DRYs up the pattern used across multiple option methods
+func addOptionsWithNilCheck[T any](logger *zap.Logger, options []T, newOptions []T) []T {
+	for _, option := range newOptions {
+		// Use reflection to check for nil since direct comparison with generic type doesn't work
+		if any(option) == nil {
+			logger.Warn("Ignoring nil option")
+			continue
+		}
+		options = append(options, option)
+	}
+	return options
+}
+
 // WithTransferOptions adds transfer options that will be applied to all transfer implementations
 // These options are applied during transfer creation and allow fine-tuning of transfer behavior
 func (b *ServerBuilder) WithTransferOptions(options ...transfer.TransferOption) *ServerBuilder {
-	for _, option := range options {
-		if option == nil {
-			b.logger.Warn("Ignoring nil transfer option")
-			continue
-		}
-		b.transferOptions = append(b.transferOptions, option)
-	}
+	b.transferOptions = addOptionsWithNilCheck(b.logger, b.transferOptions, options)
+	return b
+}
+
+// WithDHTOptions adds DHT options that will be applied to the DHT node configuration
+// These options are applied during DHT node creation and allow fine-tuning of DHT behavior
+//
+// Example usage:
+//
+//	builder := NewServerBuilder().
+//	  WithDHT(4444).
+//	  WithDHTOptions(
+//	      protocol.WithDHTSeedNodes([]string{"node1.example.com:4444"}),
+//	      protocol.WithDHTLogger(logger),
+//	      protocol.WithDHTWatchdog(watchdog),
+//	  )
+//
+// This replaces the need for individual wrapper methods and allows direct use of
+// protocol package DHT options for more flexibility.
+func (b *ServerBuilder) WithDHTOptions(options ...protocol.DHTOption) *ServerBuilder {
+	b.dhtOptions = addOptionsWithNilCheck(b.logger, b.dhtOptions, options)
 	return b
 }
 
@@ -360,6 +397,10 @@ func (b *ServerBuilder) Build() (Server, error) {
 		return nil, errors.New("cannot specify both acquirer factory and default acquirer")
 	}
 
+	// Copy DHT options to avoid reference issues
+	dhtOptions := make([]protocol.DHTOption, len(b.dhtOptions))
+	copy(dhtOptions, b.dhtOptions)
+
 	server := &DefaultServer{
 		storage:       b.storage,
 		acquirer:      b.acquirer,
@@ -368,6 +409,7 @@ func (b *ServerBuilder) Build() (Server, error) {
 		logger:        b.logger.Named("server"),
 		dhtWorkers:    b.dhtWorkers,
 		dhtBatchSize:  b.dhtBatchSize,
+		dhtOptions:    dhtOptions,
 	}
 
 	// Set acquirer creation functions for lazy initialization

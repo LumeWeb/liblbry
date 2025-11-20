@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
@@ -509,8 +510,8 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("DHT port alignment when no fixed port", func(t *testing.T) {
 		// When no fixed port is specified, DHT should announce peer port = DHT port
-		peerPort := getFreePort(t)
-		dhtPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		dhtPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithDHT(dhtPort).
@@ -534,9 +535,9 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("Fixed port takes precedence", func(t *testing.T) {
 		// When fixed port is specified, it should be used for DHT announcements
-		peerPort := getFreePort(t)
-		fixedPort := getFreePort(t)
-		dhtPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		fixedPort := lbryTesting.GetFreePort(t)
+		dhtPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithFixedPeerPort(fixedPort).
