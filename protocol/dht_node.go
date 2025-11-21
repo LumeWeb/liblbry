@@ -11,6 +11,10 @@ import (
 	"go.lumeweb.com/liblbry/protocol/watchdog"
 )
 
+// globalLoggerOnce ensures global logger is set only once per process to prevent data races
+var globalLoggerOnce sync.Once
+var globalLoggerSet bool
+
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
 type managedDHTNode struct {
 	dht      DHT
@@ -73,8 +77,13 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			// All nodes created after this call will use the same logger. If you need different logging
 			// behavior for different nodes, set the logger once during application startup before any
 			// dht.New() calls, or manage logging at a higher level.
-			dht.UseLogger(config.Logger)
-			dht.NodeFinderUseLogger(config.Logger)
+			//
+			// Use sync.Once to ensure global logger is set only once per process to prevent data races
+			globalLoggerOnce.Do(func() {
+				dht.UseLogger(config.Logger)
+				dht.NodeFinderUseLogger(config.Logger)
+				globalLoggerSet = true
+			})
 		}
 	}
 

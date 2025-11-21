@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"time"
+
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
@@ -36,6 +38,98 @@ type MockDHTWatchdog_Expecter struct {
 
 func (_m *MockDHTWatchdog) EXPECT() *MockDHTWatchdog_Expecter {
 	return &MockDHTWatchdog_Expecter{mock: &_m.Mock}
+}
+
+// AddToBlacklist provides a mock function for the type MockDHTWatchdog
+func (_mock *MockDHTWatchdog) AddToBlacklist(contactID bits.Bitmap, timestamp time.Time) {
+	_mock.Called(contactID, timestamp)
+	return
+}
+
+// MockDHTWatchdog_AddToBlacklist_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddToBlacklist'
+type MockDHTWatchdog_AddToBlacklist_Call struct {
+	*mock.Call
+}
+
+// AddToBlacklist is a helper method to define mock.On call
+//   - contactID bits.Bitmap
+//   - timestamp time.Time
+func (_e *MockDHTWatchdog_Expecter) AddToBlacklist(contactID interface{}, timestamp interface{}) *MockDHTWatchdog_AddToBlacklist_Call {
+	return &MockDHTWatchdog_AddToBlacklist_Call{Call: _e.mock.On("AddToBlacklist", contactID, timestamp)}
+}
+
+func (_c *MockDHTWatchdog_AddToBlacklist_Call) Run(run func(contactID bits.Bitmap, timestamp time.Time)) *MockDHTWatchdog_AddToBlacklist_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTWatchdog_AddToBlacklist_Call) Return() *MockDHTWatchdog_AddToBlacklist_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockDHTWatchdog_AddToBlacklist_Call) RunAndReturn(run func(contactID bits.Bitmap, timestamp time.Time)) *MockDHTWatchdog_AddToBlacklist_Call {
+	_c.Run(run)
+	return _c
+}
+
+// AddToCache provides a mock function for the type MockDHTWatchdog
+func (_mock *MockDHTWatchdog) AddToCache(contact *dht.Contact, timestamp time.Time) {
+	_mock.Called(contact, timestamp)
+	return
+}
+
+// MockDHTWatchdog_AddToCache_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddToCache'
+type MockDHTWatchdog_AddToCache_Call struct {
+	*mock.Call
+}
+
+// AddToCache is a helper method to define mock.On call
+//   - contact *dht.Contact
+//   - timestamp time.Time
+func (_e *MockDHTWatchdog_Expecter) AddToCache(contact interface{}, timestamp interface{}) *MockDHTWatchdog_AddToCache_Call {
+	return &MockDHTWatchdog_AddToCache_Call{Call: _e.mock.On("AddToCache", contact, timestamp)}
+}
+
+func (_c *MockDHTWatchdog_AddToCache_Call) Run(run func(contact *dht.Contact, timestamp time.Time)) *MockDHTWatchdog_AddToCache_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *dht.Contact
+		if args[0] != nil {
+			arg0 = args[0].(*dht.Contact)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTWatchdog_AddToCache_Call) Return() *MockDHTWatchdog_AddToCache_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockDHTWatchdog_AddToCache_Call) RunAndReturn(run func(contact *dht.Contact, timestamp time.Time)) *MockDHTWatchdog_AddToCache_Call {
+	_c.Run(run)
+	return _c
 }
 
 // CleanupExpired provides a mock function for the type MockDHTWatchdog
@@ -337,6 +431,39 @@ func (_c *MockDHTWatchdog_RemoveFromCache_Call) Return() *MockDHTWatchdog_Remove
 }
 
 func (_c *MockDHTWatchdog_RemoveFromCache_Call) RunAndReturn(run func(contactID bits.Bitmap)) *MockDHTWatchdog_RemoveFromCache_Call {
+	_c.Run(run)
+	return _c
+}
+
+// Stop provides a mock function for the type MockDHTWatchdog
+func (_mock *MockDHTWatchdog) Stop() {
+	_mock.Called()
+	return
+}
+
+// MockDHTWatchdog_Stop_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Stop'
+type MockDHTWatchdog_Stop_Call struct {
+	*mock.Call
+}
+
+// Stop is a helper method to define mock.On call
+func (_e *MockDHTWatchdog_Expecter) Stop() *MockDHTWatchdog_Stop_Call {
+	return &MockDHTWatchdog_Stop_Call{Call: _e.mock.On("Stop")}
+}
+
+func (_c *MockDHTWatchdog_Stop_Call) Run(run func()) *MockDHTWatchdog_Stop_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHTWatchdog_Stop_Call) Return() *MockDHTWatchdog_Stop_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockDHTWatchdog_Stop_Call) RunAndReturn(run func()) *MockDHTWatchdog_Stop_Call {
 	_c.Run(run)
 	return _c
 }

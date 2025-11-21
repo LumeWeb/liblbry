@@ -108,7 +108,9 @@ type DHTOption func(*DHTConfig)
 // This allows partial configs during building phase without triggering validation panics
 func validateDHTConfigIfNeeded(c *DHTConfig) {
 	// Only validate if all required fields appear to be initialized
-	// This heuristic prevents validation panics when configs are built incrementally
+	// This heuristic prevents validation panics when configs are built incrementally.
+	// Note: RPCPort >= 0 is always true, but we include it for completeness and
+	// to align with the validateDHTConfig check.
 	if c.Address != "" &&
 		c.PeerProtocolPort > 0 &&
 		c.RPCPort >= 0 &&

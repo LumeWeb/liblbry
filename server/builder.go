@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 
 	"github.com/knadh/koanf/v2"
@@ -28,7 +27,7 @@ type ServerBuilder struct {
 	dhtWorkers         int
 	dhtBatchSize       int
 	transferOptions    []transfer.TransferOption
-	dhtOptions         []protocol.DHTOption
+	dhtBuilder         *DHTBuilder
 }
 
 // NewServerBuilder creates a new ServerBuilder instance
@@ -44,7 +43,7 @@ func NewServerBuilder() *ServerBuilder {
 		dhtWorkers:         DefaultDHTAnnouncerWorkers,      // Default value
 		dhtBatchSize:       DefaultDHTAnnouncementBatchSize, // Default batch size
 		transferOptions:    make([]transfer.TransferOption, 0),
-		dhtOptions:         make([]protocol.DHTOption, 0),
+		dhtBuilder:         nil, // DHTBuilder created on demand
 	}
 }
 
@@ -82,96 +81,17 @@ func (b *ServerBuilder) WithAccessControl(ac storage.AccessControl) *ServerBuild
 	return b
 }
 
-// getOrCreateDHTConfig retrieves the existing DHT config or creates a new one with default values
-// Returns nil if an existing DHT node (from WithExistingDHT) is already configured
-func (b *ServerBuilder) getOrCreateDHTConfig() *DHTConfig {
-	// Check if DHT protocol config already exists
-	dhtConfig, exists := b.config[ProtocolDHT]
-
-	if exists {
-		// If it exists, check if it's a DHTNode (from WithExistingDHT)
-		if _, isNode := dhtConfig.(protocol.DHTNode); isNode {
-			// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
-			// and prioritize the existing DHT node
-			return nil
+// getOrCreateDHTBuilder retrieves existing DHTBuilder or creates a new one
+func (b *ServerBuilder) getOrCreateDHTBuilder() (*DHTBuilder, error) {
+	if b.dhtBuilder == nil {
+		var err error
+		b.dhtBuilder, err = NewDHTBuilder(b.logger)
+		if err != nil {
+			// Return the error to let caller handle it
+			return nil, fmt.Errorf("failed to create DHTBuilder: %w", err)
 		}
-
-		// If it's a *DHTConfig, return it
-		if dhtCfg, ok := dhtConfig.(*DHTConfig); ok {
-			return dhtCfg
-		}
-		// If it's neither a *DHTConfig nor a DHTNode, create a new one (shouldn't happen in practice)
 	}
-
-	// If it doesn't exist, create new config with default values
-	// Use protocol.NewDHTConfig() to get proper defaults and copy relevant fields
-	protocolConfig, err := protocol.NewDHTConfig()
-	if err != nil {
-		return nil
-	}
-
-	newConfig := &DHTConfig{
-		Port:      DefaultDHTPort,
-		Address:   "",
-		SeedNodes: protocolConfig.SeedNodes,
-	}
-	b.config[ProtocolDHT] = newConfig
-
-	return newConfig
-}
-
-// applyDHTOptionsToConfig applies DHT options to a protocol config and returns the modified config
-// This helper function DRYs the pattern of creating temporary configs to extract option values
-func applyDHTOptionsToConfig(config *protocol.DHTConfig, options []protocol.DHTOption) *protocol.DHTConfig {
-	// Apply all DHT options to the config
-	for _, option := range options {
-		option(config)
-	}
-	return config
-}
-
-// extractSeedNodesFromOptions extracts seed nodes from stored DHT options and applies them to server config.
-// This function uses a targeted approach that only processes WithDHTSeedNodes options to avoid
-// validation panics from other options like WithDHTAddress.
-func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
-	seedNodes := b.extractSeedNodesFromOptionsOnly()
-	if len(seedNodes) > 0 {
-		dhtConfig.SeedNodes = seedNodes
-	}
-}
-
-// extractSeedNodesFromOptionsOnly extracts seed nodes from stored DHT options without applying
-// any options that could trigger validation panics. This is a safer and more efficient approach
-// than creating a temporary config and applying all options.
-func (b *ServerBuilder) extractSeedNodesFromOptionsOnly() []string {
-	var lastSeedNodes []string
-
-	// Create a single temporary config and reuse it to avoid repeated allocations
-	tempConfig, err := protocol.NewDHTConfig()
-	if err != nil {
-		// If we can't create a temp config, return empty slice
-		return lastSeedNodes
-	}
-
-	for _, option := range b.dhtOptions {
-		// Store original seed nodes to detect if this option changes them
-		originalSeedNodes := make([]string, len(tempConfig.SeedNodes))
-		copy(originalSeedNodes, tempConfig.SeedNodes)
-
-		// Apply the option using the helper function
-		applyDHTOptionsToConfig(tempConfig, []protocol.DHTOption{option})
-
-		// If seed nodes changed and this wasn't just a no-op, this is likely a WithDHTSeedNodes option
-		if !reflect.DeepEqual(originalSeedNodes, tempConfig.SeedNodes) && len(tempConfig.SeedNodes) > 0 {
-			lastSeedNodes = make([]string, len(tempConfig.SeedNodes))
-			copy(lastSeedNodes, tempConfig.SeedNodes)
-		}
-
-		// Reset the seed nodes for the next iteration
-		tempConfig.SeedNodes = originalSeedNodes
-	}
-
-	return lastSeedNodes
+	return b.dhtBuilder, nil
 }
 
 // withProtocolConfig adds a protocol configuration with the specified port and default.
@@ -201,40 +121,56 @@ func (b *ServerBuilder) WithReflector(port ...int) *ServerBuilder {
 
 // WithDHT adds a DHT protocol handler on the specified port
 func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
+	// Check if existing DHT node was configured
+	if _, exists := b.config[ProtocolDHT]; exists {
+		if _, isNode := b.config[ProtocolDHT].(protocol.DHTNode); isNode {
+			// WithExistingDHT was used, ignore conflicting configuration
+			return b
+		}
+	}
+
 	// Get the port to use
 	p := DefaultDHTPort
 	if len(port) > 0 {
 		p = port[0]
 	}
 
-	// Get or create DHT config to ensure DHT protocol is enabled
-	dhtConfig := b.getOrCreateDHTConfig()
-
-	// Check if we're trying to configure DHT when an existing node was set
-	if dhtConfig == nil {
-		// This means WithExistingDHT was used, so we ignore conflicting DHT configuration
-		// and prioritize the existing DHT node
+	// Get or create DHTBuilder and configure port
+	dhtBuilder, err := b.getOrCreateDHTBuilder()
+	if err != nil {
+		b.logger.Error("Failed to create DHTBuilder", zap.Error(err))
 		return b
 	}
+	dhtBuilder.WithPort(p)
 
-	// Update the port for backward compatibility
-	dhtConfig.Port = p
+	// Store DHT config in server config map for backward compatibility
+	dhtConfig := &DHTConfig{
+		Port:      p,
+		Address:   "",
+		SeedNodes: dhtBuilder.config.seedNodes,
+	}
+	b.config[ProtocolDHT] = dhtConfig
 
-	// Extract seed nodes from stored DHT options and apply to server config
-	// This allows immediate verification in tests
-	b.extractSeedNodesFromOptions(dhtConfig)
-
-	// Also add the DHT address option using the port for consistency with new approach
-	// Use IPv6-aware host extraction with proper diagnostics
-	host := extractDHTHost(protocol.DefaultDHTAddress, b.logger)
-	address := net.JoinHostPort(host, fmt.Sprintf("%d", p))
-	return b.WithDHTOptions(protocol.WithDHTAddress(address))
+	return b
 }
 
 // WithDHTAddress sets the DHT address
 func (b *ServerBuilder) WithDHTAddress(address string) *ServerBuilder {
-	// Use the protocol package DHT option internally
-	return b.WithDHTOptions(protocol.WithDHTAddress(address))
+	dhtBuilder, err := b.getOrCreateDHTBuilder()
+	if err != nil {
+		b.logger.Error("Failed to create DHTBuilder", zap.Error(err))
+		return b
+	}
+	dhtBuilder.WithAddress(address)
+
+	// Update server config if it exists
+	if dhtConfig, exists := b.config[ProtocolDHT]; exists {
+		if config, ok := dhtConfig.(*DHTConfig); ok {
+			config.Address = address
+		}
+	}
+
+	return b
 }
 
 // WithFixedPeerPort adds a fixed peer port in addition to the regular peer port
@@ -308,6 +244,25 @@ func (b *ServerBuilder) WithTransferOptions(options ...transfer.TransferOption) 
 	return b
 }
 
+// DHTBuilder returns the internal DHTBuilder for advanced configuration
+// This allows access to all DHTBuilder methods for fine-grained control
+//
+// Example usage:
+//
+//	builder := NewServerBuilder().
+//	  DHTBuilder().
+//	  WithPort(4444).
+//	  WithSeedNodes([]string{"node1.example.com:4444"}).
+//	  WithReannounceTime(30 * time.Minute)
+func (b *ServerBuilder) DHTBuilder() *DHTBuilder {
+	dhtBuilder, err := b.getOrCreateDHTBuilder()
+	if err != nil {
+		b.logger.Error("Failed to create DHTBuilder", zap.Error(err))
+		return nil
+	}
+	return dhtBuilder
+}
+
 // WithDHTOptions adds DHT options that will be applied to the DHT node configuration
 // These options are applied during DHT node creation and allow fine-tuning of DHT behavior
 //
@@ -324,7 +279,12 @@ func (b *ServerBuilder) WithTransferOptions(options ...transfer.TransferOption) 
 // This replaces the need for individual wrapper methods and allows direct use of
 // protocol package DHT options for more flexibility.
 func (b *ServerBuilder) WithDHTOptions(options ...protocol.DHTOption) *ServerBuilder {
-	b.dhtOptions = addOptionsWithNilCheck(b.logger, b.dhtOptions, options)
+	dhtBuilder, err := b.getOrCreateDHTBuilder()
+	if err != nil {
+		b.logger.Error("Failed to create DHTBuilder", zap.Error(err))
+		return b
+	}
+	dhtBuilder.WithOptions(options...)
 	return b
 }
 
@@ -435,9 +395,32 @@ func (b *ServerBuilder) Build() (Server, error) {
 		return nil, errors.New("cannot specify both acquirer factory and default acquirer")
 	}
 
-	// Copy DHT options to avoid reference issues
-	dhtOptions := make([]protocol.DHTOption, len(b.dhtOptions))
-	copy(dhtOptions, b.dhtOptions)
+	// Handle DHT configuration
+	var dhtOptions []protocol.DHTOption
+	if b.dhtBuilder != nil {
+		// Check if DHTBuilder has meaningful configuration
+		if b.dhtBuilder.IsConfigured() {
+			// Build DHT options from DHTBuilder
+			_, err := b.dhtBuilder.BuildConfig()
+			if err != nil {
+				return nil, fmt.Errorf("failed to build DHT configuration: %w", err)
+			}
+
+			// Update server config with DHTBuilder settings
+			serverDHTConfig := &DHTConfig{
+				Port:      b.dhtBuilder.config.port,
+				Address:   b.dhtBuilder.config.address,
+				SeedNodes: b.dhtBuilder.config.seedNodes,
+			}
+			b.config[ProtocolDHT] = serverDHTConfig
+
+			// Get protocol options for server creation
+			dhtOptions = b.dhtBuilder.buildProtocolOptions()
+		} else {
+			// DHTBuilder exists but not configured - use empty options
+			dhtOptions = []protocol.DHTOption{}
+		}
+	}
 
 	server := &DefaultServer{
 		storage:       b.storage,
