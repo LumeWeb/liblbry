@@ -8,7 +8,7 @@ import (
 
 // NetworkCrawler handles systematic network exploration to populate the routing table
 type NetworkCrawler interface {
-	Run()
+	Run() error
 }
 
 // DefaultNetworkCrawler is the default implementation of NetworkCrawler
@@ -34,11 +34,11 @@ func NewNetworkCrawler(dhtNode DHTNode, ctx context.Context, logger *zap.Logger)
 }
 
 // Run executes the network exploration
-func (c *DefaultNetworkCrawler) Run() {
+func (c *DefaultNetworkCrawler) Run() error {
 	// Check if context is cancelled before starting work
 	if err := c.ctx.Err(); err != nil {
 		c.logger.Info("Network crawler cancelled", zap.Error(err))
-		return
+		return err
 	}
 
 	// Perform systematic network exploration
@@ -52,7 +52,7 @@ func (c *DefaultNetworkCrawler) Run() {
 		// Log error but don't fail - the DHT will still function
 		// with basic routing table population
 		c.logger.Error("Failed to explore keyspace during network crawling", zap.Error(err))
-		return
+		return err
 	}
 
 	c.logger.Info("Network crawler discovered contacts", zap.Int("count", len(contacts)))
@@ -66,7 +66,7 @@ func (c *DefaultNetworkCrawler) Run() {
 				zap.Int("processed", addedCount),
 				zap.Int("remaining", len(contacts)-addedCount),
 				zap.Error(err))
-			return
+			return err
 		}
 
 		err := c.dhtNode.AddContact(contact)
@@ -83,4 +83,5 @@ func (c *DefaultNetworkCrawler) Run() {
 	c.logger.Info("Network crawler completed",
 		zap.Int("discovered", len(contacts)),
 		zap.Int("added", addedCount))
+	return nil
 }

@@ -28,15 +28,29 @@ type managedDHTNode struct {
 	wg           sync.WaitGroup
 	joinDone     chan struct{} // Channel to signal when join goroutine completes
 	joinOnce     sync.Once     // Ensure joinDone is closed only once
-
-	// Network crawler fields
-	crawler     NetworkCrawler
-	crawlerStop context.CancelFunc
 }
 
 // isActive returns true if the DHT peer is active (not stopped and has a DHT instance)
 func (w *managedDHTNode) isActive() bool {
 	return !w.stopped && w.dht != nil
+}
+
+// withLock executes a function while holding the write lock.
+// This helper prevents deadlocks by ensuring the lock is properly managed
+// and allows operations to be performed safely within the critical section.
+func (w *managedDHTNode) withLock(fn func() error) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return fn()
+}
+
+// withRLock executes a function while holding the read lock.
+// This helper prevents deadlocks by ensuring the read lock is properly managed
+// and allows read-only operations to be performed safely within the critical section.
+func (w *managedDHTNode) withRLock(fn func() error) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return fn()
 }
 
 // NewDHTNode creates a new DHT node instance. If dhtImpl is nil, it creates a new DHT instance.
@@ -120,19 +134,23 @@ func NewDHTNodeWithDefaults(options ...DHTOption) (DHTNode, error) {
 // Start starts the DHT peer and joins the network
 func (w *managedDHTNode) Start() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	if w.stopped {
+		w.mu.Unlock()
 		return fmt.Errorf("DHT node is stopped")
 	}
 
 	err := w.dht.Start()
 	if err != nil {
+		w.mu.Unlock()
 		return fmt.Errorf("failed to start DHT node: %w", err)
 	}
 
 	// Start the join monitoring goroutine
 	w.startJoinGoroutine()
+
+	// Release lock before running crawler to prevent deadlocks
+	// since crawler may call methods that need the lock
+	w.mu.Unlock()
 
 	// Start the network crawler to populate routing table
 	err = w.startCrawler()
@@ -162,18 +180,12 @@ func (w *managedDHTNode) Shutdown() {
 	// Capture needed state before releasing lock
 	dhtInstance := w.dht
 	cancelFunc := w.cancel
-	crawlerStopFunc := w.crawlerStop
 
 	// Release lock before calling operations that might block
 	w.mu.Unlock()
 
 	// Cancel context to signal goroutines to stop
 	cancelFunc()
-
-	// Stop the network crawler if it's running
-	if crawlerStopFunc != nil {
-		crawlerStopFunc()
-	}
 
 	// Shutdown the DHT
 	dhtInstance.Shutdown()
@@ -223,21 +235,26 @@ func (w *managedDHTNode) WaitUntilJoined() {
 
 // ID returns the node's ID
 func (w *managedDHTNode) ID() bits.Bitmap {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	if !w.isActive() {
-		return bits.Bitmap{}
-	}
-
-	return w.dht.ID()
+	var result bits.Bitmap
+	w.withRLock(func() error {
+		if !w.isActive() {
+			result = bits.Bitmap{}
+			return nil
+		}
+		result = w.dht.ID()
+		return nil
+	})
+	return result
 }
 
 // Address returns the node's listening address
 func (w *managedDHTNode) Address() string {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.config.Address
+	var result string
+	w.withRLock(func() error {
+		result = w.config.Address
+		return nil
+	})
+	return result
 }
 
 // Ping pings a given address to test connectivity
@@ -290,9 +307,12 @@ func (w *managedDHTNode) Remove(hash bits.Bitmap) {
 
 // IsJoined returns whether the node has successfully joined the network
 func (w *managedDHTNode) IsJoined() bool {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.joined
+	var result bool
+	w.withRLock(func() error {
+		result = w.joined
+		return nil
+	})
+	return result
 }
 
 // GetRoutingTableInfo returns information about the current routing table
@@ -301,15 +321,20 @@ func (w *managedDHTNode) GetRoutingTableInfo() string {
 	defer w.mu.RUnlock()
 
 	if !w.isActive() {
-		return fmt.Sprintf("DHT Node stopped at %s", w.Address())
+		return fmt.Sprintf("DHT Node stopped at %s", w.config.Address)
 	}
+
+	// Get values directly to avoid nested lock calls
+	nodeID := w.dht.ID()
+	address := w.config.Address
+	joined := w.joined
 
 	// Since the original DHT doesn't expose this directly, we'll return a basic info string
 	// In a real implementation, you might want to extend the DHT to expose more detailed info
 	return fmt.Sprintf("DHT Node %s at %s - Joined: %v",
-		w.ID().HexShort(),
-		w.Address(),
-		w.IsJoined())
+		nodeID.HexShort(),
+		address,
+		joined)
 }
 
 // Wait blocks until all goroutines have finished
@@ -319,33 +344,32 @@ func (w *managedDHTNode) Wait() {
 
 // Restart restarts a stopped DHT node
 func (w *managedDHTNode) Restart() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	return w.withLock(func() error {
+		if !w.stopped {
+			return fmt.Errorf("DHT node must be stopped before restarting")
+		}
 
-	if !w.stopped {
-		return fmt.Errorf("DHT node must be stopped before restarting")
-	}
+		// Reset state
+		w.stopped = false
+		w.joined = false
+		w.ctx, w.cancel = context.WithCancel(context.Background())
+		w.joinDone = make(chan struct{}) // Create new joinDone channel
+		w.joinOnce = sync.Once{}         // Reset joinOnce for the new channel
 
-	// Reset state
-	w.stopped = false
-	w.joined = false
-	w.ctx, w.cancel = context.WithCancel(context.Background())
-	w.joinDone = make(chan struct{}) // Create new joinDone channel
-	w.joinOnce = sync.Once{}         // Reset joinOnce for the new channel
+		// Start fresh wait group
+		w.wg = sync.WaitGroup{}
 
-	// Start fresh wait group
-	w.wg = sync.WaitGroup{}
+		// Start the DHT
+		err := w.dht.Start()
+		if err != nil {
+			return fmt.Errorf("failed to restart DHT node: %w", err)
+		}
 
-	// Start the DHT
-	err := w.dht.Start()
-	if err != nil {
-		return fmt.Errorf("failed to restart DHT node: %w", err)
-	}
+		// Start the join monitoring goroutine
+		w.startJoinGoroutine()
 
-	// Start the join monitoring goroutine
-	w.startJoinGoroutine()
-
-	return nil
+		return nil
+	})
 }
 
 // Watchdog returns the DHT watchdog instance for contact validation.
@@ -417,9 +441,12 @@ func (w *managedDHTNode) PrintState() {
 // GetDHTInstance returns the underlying DHT instance for advanced operations
 // This should be used carefully as it exposes the internal implementation
 func (w *managedDHTNode) GetDHTInstance() DHT {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.dht
+	var result DHT
+	w.withRLock(func() error {
+		result = w.dht
+		return nil
+	})
+	return result
 }
 
 // ParseHashFromString parses a hex string into a bits.Bitmap
@@ -593,32 +620,21 @@ func (w *managedDHTNode) exploreNetwork() error {
 	return nil
 }
 
-// startCrawler begins background network exploration during boot
-// Note: This function should only be called while holding the mutex (from Start())
+// startCrawler runs network exploration during boot in the foreground
+// This method runs synchronously and returns when crawling completes or fails
 func (w *managedDHTNode) startCrawler() error {
-	if !w.isActive() {
-		return fmt.Errorf("DHT node is stopped")
-	}
-
 	// Only start crawler if network scan is enabled in config
 	if !w.config.NetworkScanEnabled {
 		return nil
 	}
 
+	// Create a context for the crawler operation
 	ctx, cancel := context.WithCancel(w.ctx)
-	w.crawlerStop = cancel
+	defer cancel()
 
 	// Use the zap logger from config for the crawler
 	crawler := NewNetworkCrawler(w, ctx, w.config.ZapLogger)
 
-	w.crawler = crawler
-
-	// Start crawler in background
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
-		crawler.Run()
-	}()
-
-	return nil
+	// Run crawler synchronously in foreground
+	return crawler.Run()
 }
