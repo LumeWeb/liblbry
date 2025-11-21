@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -107,10 +108,30 @@ type DHTOption func(*DHTConfig)
 // validateDHTConfigIfNeeded validates the config only if it appears to be fully initialized
 // This allows partial configs during building phase without triggering validation panics
 func validateDHTConfigIfNeeded(c *DHTConfig) {
-	// Always validate if we have what looks like a complete config, even if some
-	// values might be invalid. This ensures we catch invalid values like 0 ports
-	// that would otherwise short-circuit validation.
-	//
+	// Lightweight per-field validation for obviously invalid values
+	// This catches invalid field combinations early, even for partial configs
+	if c.Address != "" {
+		// If address is set, peer protocol port must be valid
+		if c.PeerProtocolPort < 1 || c.PeerProtocolPort > 65535 {
+			panic(fmt.Sprintf("peer protocol port must be between 1 and 65535, got %d", c.PeerProtocolPort))
+		}
+	}
+
+	// Validate RPC port range if set (0 is allowed to disable)
+	if c.RPCPort < 0 || c.RPCPort > 65535 {
+		panic(fmt.Sprintf("RPC port must be between 0 and 65535 (0 to disable), got %d", c.RPCPort))
+	}
+
+	// Validate time-based fields if set
+	if c.ReannounceTime < 0 {
+		panic(fmt.Sprintf("reannounce time must be non-negative, got %v", c.ReannounceTime))
+	}
+
+	if c.AnnounceRate < 0 {
+		panic(fmt.Sprintf("announce rate must be non-negative, got %d", c.AnnounceRate))
+	}
+
+	// Full validation for complete configs
 	// We consider a config "potentially complete" if it has an address and
 	// at least some configuration beyond zero values.
 	hasBasicConfig := c.Address != "" &&
