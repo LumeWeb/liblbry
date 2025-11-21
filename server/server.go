@@ -391,6 +391,14 @@ func (s *DefaultServer) getDhtNode() protocol.DHTNode {
 	return nil
 }
 
+// wireDHTToWatchdog wires the DHT node back to its watchdog for contact updates
+func (s *DefaultServer) wireDHTToWatchdog(dhtNode protocol.DHTNode) {
+	if _watchdog := dhtNode.Watchdog(); _watchdog != nil {
+		_watchdog.SetDHT(dhtNode)
+		s.logger.Debug("Wired DHT to watchdog for contact updates")
+	}
+}
+
 // setupDHTNode sets up the DHT node and related components
 func (s *DefaultServer) setupDHTNode(config *DHTConfig, announcePeerPort int, fixedPeerPort int) error {
 	// Create DHT node using the helper method
@@ -401,6 +409,9 @@ func (s *DefaultServer) setupDHTNode(config *DHTConfig, announcePeerPort int, fi
 
 	// Store the DHT node in servers map for later access
 	s.storeServer(ProtocolDHT, dhtNode)
+
+	// Wire the DHT back to the watchdog for contact updates
+	s.wireDHTToWatchdog(dhtNode)
 
 	// Create DHT announcer using the helper method
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(s.getDhtNode())
@@ -428,6 +439,9 @@ func (s *DefaultServer) setupExistingDHTNode(dhtNode protocol.DHTNode) error {
 	if err := dhtNode.Start(); err != nil {
 		return fmt.Errorf("failed to start existing DHT node: %w", err)
 	}
+
+	// Wire the DHT back to the watchdog for contact updates
+	s.wireDHTToWatchdog(dhtNode)
 
 	// Set up DHT announcer and notifier
 	s.dhtAnnouncer = protocol.NewDefaultDHTAnnouncer(dhtNode)

@@ -96,6 +96,11 @@ type DHT interface {
 	GetRoutingTable() dht.RoutingTable
 }
 
+// DHTRoutable provides access to routing table functionality for contact management
+type DHTRoutable interface {
+	GetRoutingTable() dht.RoutingTable
+}
+
 // DHTNode defines the interface for DHT (Distributed Hash Table) node operations
 // This interface provides a clean abstraction over the underlying DHT implementation
 // for blob discovery, node management, and network participation in the LBRY network.
@@ -143,6 +148,9 @@ type DHTNode interface {
 
 	// ExploreKeyspace systematically explores the keyspace around a target
 	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
+
+	// GetRoutingTable returns the routing table for contact updates
+	GetRoutingTable() dht.RoutingTable
 }
 
 // DHTConfig holds configuration for DHT peer operations
