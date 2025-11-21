@@ -13,7 +13,6 @@ import (
 
 // globalLoggerOnce ensures global logger is set only once per process to prevent data races
 var globalLoggerOnce sync.Once
-var globalLoggerSet bool
 
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
 type managedDHTNode struct {
@@ -55,9 +54,7 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	}
 
 	// Apply options
-	for _, option := range options {
-		option(config)
-	}
+	config.ApplyOptions(options...)
 
 	// Set default watchdog if none provided
 	var ownsWatchdog bool
@@ -91,7 +88,6 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			globalLoggerOnce.Do(func() {
 				dht.UseLogger(config.Logger)
 				dht.NodeFinderUseLogger(config.Logger)
-				globalLoggerSet = true
 			})
 		}
 	}

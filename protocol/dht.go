@@ -234,3 +234,13 @@ func WithDHTWatchdog(watchdog watchdog.DHTWatchdog) DHTOption {
 		c.Watchdog = watchdog
 	}
 }
+
+// ApplyOptions applies a slice of DHTOption functions to this DHTConfig
+// This helper allows applying options to a config without creating a DHT node
+func (c *DHTConfig) ApplyOptions(options ...DHTOption) {
+	for _, option := range options {
+		if option != nil {
+			option(c)
+		}
+	}
+}

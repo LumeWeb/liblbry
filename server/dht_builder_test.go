@@ -11,6 +11,9 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+// testNodeID is a valid 96-character hex string for testing (48 bytes)
+const testNodeID = "a37d027a39f879920954132a4f899f72e67845a1ec5fd7737ffb6e114cd95040bb01311b0ba21b8eb2f8b21e4e875700"
+
 func TestNewDHTBuilder(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	builder, err := NewDHTBuilder(logger)
@@ -122,7 +125,7 @@ func TestDHTBuilder_WithNodeID(t *testing.T) {
 	builder, err := NewDHTBuilder(logger)
 	require.NoError(t, err)
 
-	nodeID := "1234567890abcdef"
+	nodeID := testNodeID
 	result := builder.WithNodeID(nodeID)
 	assert.Same(t, builder, result)
 	assert.Equal(t, nodeID, builder.config.nodeID)
@@ -206,7 +209,7 @@ func TestDHTBuilder_WithOptions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test with valid options
-	option1 := protocol.WithDHTNodeID("test123")
+	option1 := protocol.WithDHTNodeID(testNodeID)
 	option2 := protocol.WithDHTAnnounceRate(15)
 
 	result := builder.WithOptions(option1, option2)
@@ -227,7 +230,7 @@ func TestDHTBuilder_WithOptions_AppliedToConfig(t *testing.T) {
 	// Configure builder with some settings
 	builder.WithPort(5555).
 		WithSeedNodes([]string{"node1.example.com:4444"}).
-		WithNodeID("builder-node-id").
+		WithNodeID(testNodeID).
 		WithAnnounceRate(10) // This will be overridden by WithOptions
 
 	// Add options via WithOptions that should override builder settings
@@ -247,7 +250,8 @@ func TestDHTBuilder_WithOptions_AppliedToConfig(t *testing.T) {
 	assert.Equal(t, 45*time.Minute, config.ReannounceTime, "ReannounceTime from WithOptions should be applied")
 
 	// Verify that builder settings not overridden by options are still applied
-	assert.Equal(t, 5555, config.Port, "Port from builder should be preserved")
+	// Port is embedded in Address field, so we check that it contains the expected port
+	assert.Contains(t, config.Address, ":5555", "Port from builder should be preserved in Address")
 	assert.Equal(t, []string{"node1.example.com:4444"}, config.SeedNodes, "SeedNodes from builder should be preserved")
 }
 
@@ -259,10 +263,10 @@ func TestDHTBuilder_WithOptions_AppliedToNode(t *testing.T) {
 	// Configure builder with minimal settings for node creation
 	builder.WithPort(5555).
 		WithSeedNodes([]string{"127.0.0.1:4444"}).
-		WithNodeID("builder-node-id")
+		WithNodeID(testNodeID) // Valid hex node ID
 
 	// Add options via WithOptions
-	customNodeID := "options-node-id"
+	customNodeID := testNodeID // Valid hex node ID
 	customAnnounceRate := 30
 	builder.WithOptions(
 		protocol.WithDHTNodeID(customNodeID),
@@ -273,6 +277,13 @@ func TestDHTBuilder_WithOptions_AppliedToNode(t *testing.T) {
 	node, err := builder.BuildNode()
 	require.NoError(t, err)
 	require.NotNil(t, node)
+
+	// Start the node to ensure proper initialization
+	err = node.Start()
+	if err != nil {
+		t.Logf("Failed to start DHT node (may be expected in test environment): %v", err)
+		// Don't fail the test if node can't start, but still try to shutdown
+	}
 
 	// Clean up the node
 	defer func() {
@@ -314,18 +325,20 @@ func TestDHTBuilder_IsConfigured(t *testing.T) {
 	builder, err := NewDHTBuilder(logger)
 	require.NoError(t, err)
 
-	// Default builder should be configured (has default port and seed nodes)
+	// Default builder should NOT be configured (user hasn't explicitly configured anything)
+	assert.False(t, builder.IsConfigured())
+
+	// Add configuration to default builder
+	builder.WithPort(4444)
 	assert.True(t, builder.IsConfigured())
 
-	// Create empty builder
+	// Create fresh builder for explicit testing
 	emptyBuilder, err := NewDHTBuilder(logger)
 	require.NoError(t, err)
-	emptyBuilder.config.port = 0
-	emptyBuilder.config.seedNodes = []string{}
 	assert.False(t, emptyBuilder.IsConfigured())
 
 	// Add configuration
-	emptyBuilder.WithPort(4444)
+	emptyBuilder.WithPort(5555)
 	assert.True(t, emptyBuilder.IsConfigured())
 }
 
@@ -338,7 +351,7 @@ func TestDHTBuilder_Copy(t *testing.T) {
 	builder.WithPort(5555).
 		WithAddress("192.168.1.100:6666").
 		WithSeedNodes([]string{"node1.example.com:4444"}).
-		WithNodeID("test123").
+		WithNodeID(testNodeID).
 		WithOptions(protocol.WithDHTAnnounceRate(20))
 
 	// Create copy
@@ -367,7 +380,7 @@ func TestDHTBuilder_BuildConfig(t *testing.T) {
 	builder.WithPort(5555).
 		WithAddress("192.168.1.100:6666").
 		WithSeedNodes([]string{"node1.example.com:4444"}).
-		WithNodeID("test123").
+		WithNodeID(testNodeID).
 		WithPeerProtocolPort(7777).
 		WithRPCPort(8888).
 		WithReannounceTime(30 * time.Minute).
@@ -381,7 +394,7 @@ func TestDHTBuilder_BuildConfig(t *testing.T) {
 	// Verify config
 	assert.Equal(t, "192.168.1.100:6666", config.Address)
 	assert.Equal(t, []string{"node1.example.com:4444"}, config.SeedNodes)
-	assert.Equal(t, "test123", config.NodeID)
+	assert.Equal(t, testNodeID, config.NodeID)
 	assert.Equal(t, 7777, config.PeerProtocolPort)
 	assert.Equal(t, 8888, config.RPCPort)
 	assert.Equal(t, 30*time.Minute, config.ReannounceTime)
@@ -520,7 +533,7 @@ func TestDHTBuilder_FluentInterface(t *testing.T) {
 		WithPort(5555).
 		WithAddress("192.168.1.100:6666").
 		WithSeedNodes([]string{"node1.example.com:4444"}).
-		WithNodeID("test123").
+		WithNodeID(testNodeID).
 		WithPeerProtocolPort(7777).
 		WithRPCPort(8888).
 		WithReannounceTime(30 * time.Minute).
@@ -534,7 +547,7 @@ func TestDHTBuilder_FluentInterface(t *testing.T) {
 	assert.Equal(t, 5555, builder.config.port)
 	assert.Equal(t, "192.168.1.100:6666", builder.config.address)
 	assert.Equal(t, []string{"node1.example.com:4444"}, builder.config.seedNodes)
-	assert.Equal(t, "test123", builder.config.nodeID)
+	assert.Equal(t, testNodeID, builder.config.nodeID)
 	assert.Equal(t, 7777, builder.config.peerProtocolPort)
 	assert.Equal(t, 8888, builder.config.rpcPort)
 	assert.Equal(t, 30*time.Minute, builder.config.reannounceTime)

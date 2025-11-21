@@ -41,6 +41,9 @@ type dhtBuilderConfig struct {
 
 	// Validation state
 	validationEnabled bool
+
+	// Configuration tracking
+	userConfigured bool // Tracks if user has explicitly configured any settings
 }
 
 // NewDHTBuilder creates a new DHTBuilder with sensible defaults
@@ -69,6 +72,7 @@ func NewDHTBuilder(logger *zap.Logger) (*DHTBuilder, error) {
 			logger:            logger.Named("dht"),
 			watchdog:          nil,
 			validationEnabled: true,
+			userConfigured:    false,
 		},
 		options: make([]protocol.DHTOption, 0),
 		logger:  logger,
@@ -84,6 +88,7 @@ func (b *DHTBuilder) WithPort(port int) *DHTBuilder {
 		return b
 	}
 	b.config.port = port
+	b.config.userConfigured = true
 	return b
 }
 
@@ -101,6 +106,7 @@ func (b *DHTBuilder) WithAddress(address string) *DHTBuilder {
 	}
 
 	b.config.address = address
+	b.config.userConfigured = true
 	return b
 }
 
@@ -127,12 +133,14 @@ func (b *DHTBuilder) WithSeedNodes(nodes []string) *DHTBuilder {
 	}
 
 	b.config.seedNodes = validNodes
+	b.config.userConfigured = true
 	return b
 }
 
 // WithNodeID sets the DHT node ID (empty for random)
 func (b *DHTBuilder) WithNodeID(id string) *DHTBuilder {
 	b.config.nodeID = id
+	b.config.userConfigured = true
 	return b
 }
 
@@ -145,6 +153,7 @@ func (b *DHTBuilder) WithPeerProtocolPort(port int) *DHTBuilder {
 		return b
 	}
 	b.config.peerProtocolPort = port
+	b.config.userConfigured = true
 	return b
 }
 
@@ -157,6 +166,7 @@ func (b *DHTBuilder) WithRPCPort(port int) *DHTBuilder {
 		return b
 	}
 	b.config.rpcPort = port
+	b.config.userConfigured = true
 	return b
 }
 
@@ -169,6 +179,7 @@ func (b *DHTBuilder) WithReannounceTime(interval time.Duration) *DHTBuilder {
 		return b
 	}
 	b.config.reannounceTime = interval
+	b.config.userConfigured = true
 	return b
 }
 
@@ -181,12 +192,14 @@ func (b *DHTBuilder) WithAnnounceRate(rate int) *DHTBuilder {
 		return b
 	}
 	b.config.announceRate = rate
+	b.config.userConfigured = true
 	return b
 }
 
 // WithLogger sets the logger for DHT operations
 func (b *DHTBuilder) WithLogger(logger *zap.Logger) *DHTBuilder {
 	if logger != nil {
+		b.logger = logger
 		b.config.logger = logger.Named("dht")
 	}
 	return b
@@ -195,6 +208,7 @@ func (b *DHTBuilder) WithLogger(logger *zap.Logger) *DHTBuilder {
 // WithWatchdog sets the DHT watchdog for contact validation
 func (b *DHTBuilder) WithWatchdog(watchdog watchdog.DHTWatchdog) *DHTBuilder {
 	b.config.watchdog = watchdog
+	b.config.userConfigured = true
 	return b
 }
 
@@ -207,6 +221,7 @@ func (b *DHTBuilder) WithOptions(options ...protocol.DHTOption) *DHTBuilder {
 			b.options = append(b.options, option)
 		}
 	}
+	b.config.userConfigured = true
 	return b
 }
 
@@ -238,7 +253,7 @@ func (b *DHTBuilder) BuildConfig() (*protocol.DHTConfig, error) {
 		return nil, fmt.Errorf("DHT configuration validation failed: %w", err)
 	}
 
-	// Create protocol config
+	// Start with builder config as defaults
 	config := &protocol.DHTConfig{
 		Address:          b.getEffectiveAddress(),
 		SeedNodes:        b.config.seedNodes,
@@ -251,17 +266,20 @@ func (b *DHTBuilder) BuildConfig() (*protocol.DHTConfig, error) {
 		Watchdog:         b.config.watchdog,
 	}
 
+	// Apply options to override builder settings
+	// We need to apply options in the same way BuildNode does
+	options := b.buildProtocolOptions()
+	options = append(options, b.options...)
+
+	// Apply options directly to config using the new helper method
+	config.ApplyOptions(options...)
+
 	return config, nil
 }
 
 // IsConfigured returns true if the builder has meaningful configuration
 func (b *DHTBuilder) IsConfigured() bool {
-	return b.config.port > 0 ||
-		b.config.address != "" ||
-		len(b.config.seedNodes) > 0 ||
-		b.config.nodeID != "" ||
-		b.config.peerProtocolPort != DefaultPeerPort ||
-		b.config.rpcPort != 0
+	return b.config.userConfigured
 }
 
 // Copy creates a deep copy of the DHTBuilder
@@ -393,6 +411,15 @@ func (b *DHTBuilder) getEffectiveAddress() string {
 }
 
 // validateAddress validates an address string with enhanced hostname checking
+//
+// This validation is intentionally strict and only accepts:
+// - IP addresses (e.g., "192.168.1.100:4444")
+// - localhost (e.g., "localhost:4444")
+// - Fully qualified domain names with dots (e.g., "example.com:4444")
+//
+// Single-label hostnames (e.g., "dht-node:4444") are rejected even though they may be
+// valid in some internal networks. This restriction helps prevent configuration errors
+// from typos and ensures clearer network topology.
 func validateAddress(address string) error {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {

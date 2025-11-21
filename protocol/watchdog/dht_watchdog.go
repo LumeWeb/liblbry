@@ -93,6 +93,16 @@ type WatchdogConfig struct {
 	Logger *zap.Logger
 }
 
+// ApplyOptions applies a slice of WatchdogOption functions to this WatchdogConfig
+// This helper allows applying options to a config without manual iteration
+func (c *WatchdogConfig) ApplyOptions(options ...WatchdogOption) {
+	for _, option := range options {
+		if option != nil {
+			option(c)
+		}
+	}
+}
+
 // WatchdogOption configures watchdog instances
 type WatchdogOption func(*WatchdogConfig)
 
@@ -164,9 +174,7 @@ type DefaultDHTWatchdog struct {
 // New creates a new DHT watchdog with the given options
 func New(options ...WatchdogOption) *DefaultDHTWatchdog {
 	config := DefaultConfig()
-	for _, option := range options {
-		option(config)
-	}
+	config.ApplyOptions(options...)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
