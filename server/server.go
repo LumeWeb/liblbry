@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,32 +21,17 @@ import (
 	"golang.org/x/text/language"
 )
 
-// extractDHTHost safely extracts the host portion from a DHT address with IPv6 support
-// and proper logging/diagnostics when fallback parsing is needed
+// extractDHTHost extracts the host portion from a DHT address
+// Uses net.SplitHostPort which properly handles IPv6 addresses
 func extractDHTHost(address string, logger *zap.Logger) string {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		// Log warning when falling back to manual parsing
-		logger.Warn(
-			"Failed to parse DHT address, using fallback host extraction",
+		logger.Error(
+			"Invalid DHT address format - must be host:port with IPv6 addresses in brackets",
 			zap.String("address", address),
 			zap.Error(err),
 		)
-		// IPv6-aware fallback: strip brackets and split on the last colon
-		trimmed := strings.Trim(address, "[]")
-		if idx := strings.LastIndex(trimmed, ":"); idx > 0 {
-			host = trimmed[:idx]
-		} else {
-			host = trimmed
-		}
-		// Validate the extracted host
-		if net.ParseIP(host) == nil && host != localhost && !strings.Contains(host, ".") {
-			logger.Error(
-				"Extracted DHT host appears invalid",
-				zap.String("host", host),
-				zap.String("address", address),
-			)
-		}
+		return "" // Return empty string for invalid addresses
 	}
 	return host
 }
