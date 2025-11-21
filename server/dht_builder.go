@@ -114,6 +114,7 @@ func (b *DHTBuilder) WithAddress(address string) *DHTBuilder {
 func (b *DHTBuilder) WithSeedNodes(nodes []string) *DHTBuilder {
 	if nodes == nil {
 		b.config.seedNodes = []string{}
+		b.config.userConfigured = true
 		return b
 	}
 
@@ -262,7 +263,6 @@ func (b *DHTBuilder) BuildConfig() (*protocol.DHTConfig, error) {
 		RPCPort:          b.config.rpcPort,
 		ReannounceTime:   b.config.reannounceTime,
 		AnnounceRate:     b.config.announceRate,
-		Logger:           convertToLogrus(b.config.logger),
 		Watchdog:         b.config.watchdog,
 	}
 
@@ -311,17 +311,17 @@ func (b *DHTBuilder) validateConfig() error {
 	}
 
 	// Validate port
-	if b.config.port < 0 || b.config.port > 65535 {
+	if !protocol.IsValidPortRange(b.config.port) {
 		return fmt.Errorf("DHT port must be between 0 and 65535, got %d", b.config.port)
 	}
 
 	// Validate peer protocol port
-	if b.config.peerProtocolPort < 1 || b.config.peerProtocolPort > 65535 {
+	if !protocol.IsValidNonZeroPortRange(b.config.peerProtocolPort) {
 		return fmt.Errorf("peer protocol port must be between 1 and 65535, got %d", b.config.peerProtocolPort)
 	}
 
 	// Validate RPC port
-	if b.config.rpcPort < 0 || b.config.rpcPort > 65535 {
+	if !protocol.IsValidPortRange(b.config.rpcPort) {
 		return fmt.Errorf("RPC port must be between 0 and 65535, got %d", b.config.rpcPort)
 	}
 

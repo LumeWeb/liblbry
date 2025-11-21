@@ -128,11 +128,6 @@ func validateDHTConfigIfNeeded(c *DHTConfig) {
 		panic(fmt.Sprintf("peer protocol port must be between 0 and 65535 (0 to disable), got %d", c.PeerProtocolPort))
 	}
 
-	// Additional validation: if address is set, peer protocol port must be non-zero
-	if c.Address != "" && c.PeerProtocolPort == 0 {
-		panic("peer protocol port must be non-zero when address is set")
-	}
-
 	// Validate RPC port range if set (0 is allowed to disable)
 	if !IsValidPortRange(c.RPCPort) {
 		panic(fmt.Sprintf("RPC port must be between 0 and 65535 (0 to disable), got %d", c.RPCPort))
@@ -170,7 +165,7 @@ func validateDHTConfig(c *DHTConfig) error {
 		return errors.New("peer protocol port must be between 1 and 65535")
 	}
 
-	if c.RPCPort < 0 || c.RPCPort > 65535 {
+	if !IsValidPortRange(c.RPCPort) {
 		return errors.New("RPC port must be between 0 and 65535 (0 to disable)")
 	}
 
