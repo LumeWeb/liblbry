@@ -846,6 +846,7 @@ func TestServerBuilder_WithExistingDHT(t *testing.T) {
 
 	// Setup mock expectations
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 	mockDHTNode.EXPECT().Shutdown().Return()
 	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
@@ -1005,6 +1006,7 @@ func TestServerBuilder_Build_AcquirerFactoryIntegration(t *testing.T) {
 	// Create a mock DHT node
 	mockDHTNode := protocolMocks.NewMockDHTNode(t)
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 	mockDHTNode.EXPECT().Shutdown().Return()
 
 	// Create a mock acquirer factory function that tracks calls
@@ -1064,6 +1066,7 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	// Create a mock DHT node
 	mockDHTNode := protocolMocks.NewMockDHTNode(t)
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 	mockDHTNode.EXPECT().Shutdown().Return()
 
 	// Add mock expectation for storage.List() called during DHT blob announcement
@@ -1119,6 +1122,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		// Create a mock DHT node
 		mockDHTNode := protocolMocks.NewMockDHTNode(t)
 		mockDHTNode.EXPECT().Start().Return(nil)
+		mockDHTNode.EXPECT().Watchdog().Return(nil)
 		mockDHTNode.EXPECT().Shutdown().Return()
 
 		// Add mock expectation for storage.List() called during DHT blob announcement

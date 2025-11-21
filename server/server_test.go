@@ -183,6 +183,7 @@ func TestDefaultServer_Start_WithDHT(t *testing.T) {
 
 	// Setup mock expectations for DHT node methods
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 
 	server := setupServer(t, testMocks, map[string]any{
 		ProtocolDHT: mockDHTNode, // Pass the mock DHT node directly
@@ -215,6 +216,7 @@ func TestDefaultServer_Start_AllProtocols(t *testing.T) {
 
 	// Setup mock expectations for DHT node methods
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 
 	server := setupServer(t, testMocks, map[string]any{
 		ProtocolPeer:      &PeerConfig{Port: 0},
@@ -422,6 +424,7 @@ func TestDefaultServer_startDHT(t *testing.T) {
 
 	// Setup mock expectations for DHT node start
 	mockDHTNode.EXPECT().Start().Return(nil)
+	mockDHTNode.EXPECT().Watchdog().Return(nil)
 
 	// Simulate that the DHT node is already in the servers map (as would happen with WithExistingDHT)
 	server.servers[ProtocolDHT] = mockDHTNode

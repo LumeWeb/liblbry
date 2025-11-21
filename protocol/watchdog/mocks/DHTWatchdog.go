@@ -435,6 +435,46 @@ func (_c *MockDHTWatchdog_RemoveFromCache_Call) RunAndReturn(run func(contactID 
 	return _c
 }
 
+// SetDHT provides a mock function for the type MockDHTWatchdog
+func (_mock *MockDHTWatchdog) SetDHT(dht1 watchdog.DHT) {
+	_mock.Called(dht1)
+	return
+}
+
+// MockDHTWatchdog_SetDHT_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetDHT'
+type MockDHTWatchdog_SetDHT_Call struct {
+	*mock.Call
+}
+
+// SetDHT is a helper method to define mock.On call
+//   - dht1 watchdog.DHT
+func (_e *MockDHTWatchdog_Expecter) SetDHT(dht1 interface{}) *MockDHTWatchdog_SetDHT_Call {
+	return &MockDHTWatchdog_SetDHT_Call{Call: _e.mock.On("SetDHT", dht1)}
+}
+
+func (_c *MockDHTWatchdog_SetDHT_Call) Run(run func(dht1 watchdog.DHT)) *MockDHTWatchdog_SetDHT_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 watchdog.DHT
+		if args[0] != nil {
+			arg0 = args[0].(watchdog.DHT)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTWatchdog_SetDHT_Call) Return() *MockDHTWatchdog_SetDHT_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockDHTWatchdog_SetDHT_Call) RunAndReturn(run func(dht1 watchdog.DHT)) *MockDHTWatchdog_SetDHT_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Stop provides a mock function for the type MockDHTWatchdog
 func (_mock *MockDHTWatchdog) Stop() {
 	_mock.Called()

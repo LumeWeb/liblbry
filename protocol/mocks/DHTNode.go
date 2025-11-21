@@ -371,6 +371,52 @@ func (_c *MockDHTNode_Get_Call) RunAndReturn(run func(hash bits.Bitmap) ([]dht.C
 	return _c
 }
 
+// GetRoutingTable provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) GetRoutingTable() dht.RoutingTable {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRoutingTable")
+	}
+
+	var r0 dht.RoutingTable
+	if returnFunc, ok := ret.Get(0).(func() dht.RoutingTable); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(dht.RoutingTable)
+		}
+	}
+	return r0
+}
+
+// MockDHTNode_GetRoutingTable_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRoutingTable'
+type MockDHTNode_GetRoutingTable_Call struct {
+	*mock.Call
+}
+
+// GetRoutingTable is a helper method to define mock.On call
+func (_e *MockDHTNode_Expecter) GetRoutingTable() *MockDHTNode_GetRoutingTable_Call {
+	return &MockDHTNode_GetRoutingTable_Call{Call: _e.mock.On("GetRoutingTable")}
+}
+
+func (_c *MockDHTNode_GetRoutingTable_Call) Run(run func()) *MockDHTNode_GetRoutingTable_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_GetRoutingTable_Call) Return(routingTable dht.RoutingTable) *MockDHTNode_GetRoutingTable_Call {
+	_c.Call.Return(routingTable)
+	return _c
+}
+
+func (_c *MockDHTNode_GetRoutingTable_Call) RunAndReturn(run func() dht.RoutingTable) *MockDHTNode_GetRoutingTable_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetRoutingTableContacts provides a mock function for the type MockDHTNode
 func (_mock *MockDHTNode) GetRoutingTableContacts() ([]dht.Contact, error) {
 	ret := _mock.Called()

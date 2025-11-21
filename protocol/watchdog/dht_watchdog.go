@@ -12,14 +12,20 @@ import (
 	"sync"
 	"time"
 
-	"go.lumeweb.com/lbry-dht"
+	_dht "go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
 	"go.uber.org/zap"
 )
 
-// DHTWatchdog extends the existing dht.ContactValidator interface with caching and blacklisting functionality
+// dht defines a minimal interface for DHT operations needed by the watchdog
+type DHT interface {
+	// GetRoutingTable returns the routing table for contact updates
+	GetRoutingTable() _dht.RoutingTable
+}
+
+// DHTWatchdog extends the existing _dht.ContactValidator interface with caching and blacklisting functionality
 type DHTWatchdog interface {
-	dht.ContactValidator
+	_dht.ContactValidator
 
 	// IsCached checks if a contact is in the successful validation cache
 	IsCached(contactID bits.Bitmap) bool
@@ -35,7 +41,7 @@ type DHTWatchdog interface {
 
 	// AddToCache manually adds a contact to the cache with the specified timestamp
 	// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
-	AddToCache(contact *dht.Contact, timestamp time.Time)
+	AddToCache(contact *_dht.Contact, timestamp time.Time)
 
 	// AddToBlacklist manually adds a contact to the blacklist with the specified timestamp
 	// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
@@ -50,6 +56,10 @@ type DHTWatchdog interface {
 	// Name returns the watchdog name
 	Name() string
 
+	// SetDHT sets the DHT interface for updating contacts in the routing table
+	// This method is used when the DHT needs to be created after the watchdog
+	SetDHT(dht DHT)
+
 	// Stop stops the watchdog and cleans up resources
 	Stop()
 }
@@ -63,7 +73,7 @@ type WatchdogStats struct {
 
 // cachedContact represents a successfully validated contact with timestamp
 type cachedContact struct {
-	contact   *dht.Contact
+	contact   *_dht.Contact
 	timestamp time.Time
 }
 
@@ -159,6 +169,14 @@ func WithLogger(logger *zap.Logger) WatchdogOption {
 	}
 }
 
+// SetDHT sets the DHT interface for updating contacts in the routing table
+// This method is used when the DHT needs to be created after the watchdog
+func (w *DefaultDHTWatchdog) SetDHT(dht DHT) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.dht = dht
+}
+
 // DefaultDHTWatchdog implements DHTWatchdog interface
 type DefaultDHTWatchdog struct {
 	config      *WatchdogConfig
@@ -169,6 +187,7 @@ type DefaultDHTWatchdog struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
+	dht         DHT
 }
 
 // New creates a new DHT watchdog with the given options
@@ -194,9 +213,9 @@ func New(options ...WatchdogOption) *DefaultDHTWatchdog {
 	return w
 }
 
-// ValidateContactForHash implements dht.ContactValidator interface
+// ValidateContactForHash implements _dht.ContactValidator interface
 // Validates if a contact is suitable for storing/returning for a specific blob hash
-func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact dht.Contact) bool {
+func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact _dht.Contact) bool {
 	// Use our port testing validation logic
 	return w.ValidateAndUpdateContact(w.ctx, &contact)
 }
@@ -204,7 +223,7 @@ func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact dht.C
 // ValidateAndUpdateContact tests connectivity to a contact and updates its port information.
 // This method mutates the contact's PeerPort field if it is 0 and a working port is discovered.
 // The mutation is intentional for DHT integration to update contact information with discovered working ports.
-func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, contact *dht.Contact) bool {
+func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, contact *_dht.Contact) bool {
 	if contact == nil {
 		return false
 	}
@@ -250,6 +269,20 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 				w.config.Logger.Debug("Updated contact PeerPort",
 					zap.String("contact_id", contactID.HexShort()),
 					zap.Int("port", successfulPort))
+			}
+
+			// Update the contact in the DHT routing table if DHT interface is available
+			// Note: w.dht access is protected by w.mutex which is already held
+			if w.dht != nil {
+				_routingTable := w.dht.GetRoutingTable()
+				if _routingTable != nil {
+					_routingTable.Update(*contact)
+					if w.config.Logger != nil {
+						w.config.Logger.Debug("Updated contact in DHT routing table",
+							zap.String("contact_id", contactID.HexShort()),
+							zap.Int("port", successfulPort))
+					}
+				}
 			}
 		}
 
@@ -335,7 +368,7 @@ func (w *DefaultDHTWatchdog) RemoveFromBlacklist(contactID bits.Bitmap) {
 
 // AddToCache manually adds a contact to the cache with the specified timestamp
 // This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
-func (w *DefaultDHTWatchdog) AddToCache(contact *dht.Contact, timestamp time.Time) {
+func (w *DefaultDHTWatchdog) AddToCache(contact *_dht.Contact, timestamp time.Time) {
 	if contact == nil {
 		return
 	}
@@ -418,7 +451,7 @@ func (w *DefaultDHTWatchdog) Name() string {
 }
 
 // testContactPorts tests connectivity to a contact on configured ports
-func (w *DefaultDHTWatchdog) testContactPorts(ctx context.Context, contact *dht.Contact) (int, bool) {
+func (w *DefaultDHTWatchdog) testContactPorts(ctx context.Context, contact *_dht.Contact) (int, bool) {
 	// First try the contact's advertised PeerPort if available
 	if contact.PeerPort > 0 {
 		if w.testPort(ctx, contact.IP.String(), contact.PeerPort) {
