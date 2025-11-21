@@ -7,10 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/protocol/watchdog"
 	"go.uber.org/zap"
+)
+
+const (
+	localhost = "localhost"
 )
 
 // DHTBuilder handles all DHT configuration complexity with a clean, fluent interface
@@ -131,6 +134,16 @@ func (b *DHTBuilder) WithSeedNodes(nodes []string) *DHTBuilder {
 			continue
 		}
 		validNodes = append(validNodes, node)
+	}
+
+	if len(validNodes) < len(nodes) {
+		b.logger.Warn("Some seed nodes were filtered out",
+			zap.Int("provided", len(nodes)),
+			zap.Int("valid", len(validNodes)))
+	}
+
+	if len(validNodes) == 0 && len(nodes) > 0 {
+		b.logger.Warn("All provided seed nodes were invalid, DHT may fail to join network")
 	}
 
 	b.config.seedNodes = validNodes
@@ -410,16 +423,50 @@ func (b *DHTBuilder) getEffectiveAddress() string {
 	return net.JoinHostPort(host, strconv.Itoa(b.config.port))
 }
 
-// validateAddress validates an address string with enhanced hostname checking
+// isValidHostname checks if a string is a valid hostname according to RFC 1123
+func isValidHostname(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+
+	// Check each label
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+
+		// Check if label starts and ends with alphanumeric
+		if !isAlphaNumeric(rune(label[0])) || !isAlphaNumeric(rune(label[len(label)-1])) {
+			return false
+		}
+
+		// Check each character in the label
+		for _, char := range label {
+			if !isAlphaNumeric(char) && char != '-' {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// isAlphaNumeric checks if a rune is alphanumeric
+func isAlphaNumeric(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+// validateAddress validates an address string with hostname checking
 //
-// This validation is intentionally strict and only accepts:
+// This validation accepts:
 // - IP addresses (e.g., "192.168.1.100:4444")
 // - localhost (e.g., "localhost:4444")
-// - Fully qualified domain names with dots (e.g., "example.com:4444")
+// - Fully qualified domain names (e.g., "example.com:4444")
+// - Single-label hostnames (e.g., "dht-service:4444") for internal networks
 //
-// Single-label hostnames (e.g., "dht-node:4444") are rejected even though they may be
-// valid in some internal networks. This restriction helps prevent configuration errors
-// from typos and ensures clearer network topology.
+// Single-label hostnames are valid in many environments including Kubernetes services,
+// internal DNS, and mDNS. While they can be prone to typos, they are commonly used
+// in containerized and internal network setups.
 func validateAddress(address string) error {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
@@ -437,20 +484,11 @@ func validateAddress(address string) error {
 
 	// Enhanced host validation
 	if net.ParseIP(host) == nil {
-		// Allow localhost and hostnames with dots (FQDNs)
-		if host != "localhost" && !strings.Contains(host, ".") {
-			return fmt.Errorf("host '%s' appears invalid (not IP, localhost, or FQDN)", host)
+		// Allow localhost and any valid hostname (including single-label)
+		if host != localhost && !isValidHostname(host) {
+			return fmt.Errorf("host '%s' appears invalid (not IP, localhost, or valid hostname)", host)
 		}
 	}
 
 	return nil
-}
-
-// convertToLogrus converts zap.Logger to logrus.Logger for DHT compatibility
-// Uses the existing ZapToLogrusAdapter from the protocol package
-func convertToLogrus(zapLogger *zap.Logger) *logrus.Logger {
-	if zapLogger == nil {
-		return nil
-	}
-	return protocol.NewZapToLogrusAdapter(zapLogger)
 }

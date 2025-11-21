@@ -80,10 +80,10 @@ func TestDHTBuilder_WithAddress(t *testing.T) {
 	assert.Same(t, builder, result)
 	assert.Equal(t, "localhost:7777", builder.config.address)
 
-	// Test single-label hostname (should be rejected)
+	// Test single-label hostname (should now be accepted)
 	result = builder.WithAddress("singlehost:8888")
 	assert.Same(t, builder, result)
-	assert.Equal(t, "localhost:7777", builder.config.address) // Should remain unchanged
+	assert.Equal(t, "singlehost:8888", builder.config.address) // Should be updated
 }
 
 func TestDHTBuilder_WithSeedNodes(t *testing.T) {
@@ -577,9 +577,14 @@ func TestValidateAddress(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "invalid single-label hostname",
-			address: "singlehost:4444",
-			wantErr: true,
+			name:    "valid single-label hostname",
+			address: "dht-service:4444",
+			wantErr: false,
+		},
+		{
+			name:    "valid single-label hostname with hyphen",
+			address: "my-service:4444",
+			wantErr: false,
 		},
 		{
 			name:    "invalid format",
@@ -599,6 +604,21 @@ func TestValidateAddress(t *testing.T) {
 		{
 			name:    "empty address",
 			address: "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid hostname starts with dash",
+			address: "-invalid:4444",
+			wantErr: true,
+		},
+		{
+			name:    "invalid hostname ends with dash",
+			address: "invalid-:4444",
+			wantErr: true,
+		},
+		{
+			name:    "invalid hostname with underscore",
+			address: "invalid_host:4444",
 			wantErr: true,
 		},
 	}

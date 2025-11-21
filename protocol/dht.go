@@ -123,9 +123,9 @@ func validateDHTConfigIfNeeded(c *DHTConfig) {
 	// Lightweight per-field validation for obviously invalid values
 	// This catches invalid field combinations early, even for partial configs
 
-	// Validate peer protocol port range if set (0 is allowed to disable)
-	if !IsValidPortRange(c.PeerProtocolPort) {
-		panic(fmt.Sprintf("peer protocol port must be between 0 and 65535 (0 to disable), got %d", c.PeerProtocolPort))
+	// Validate peer protocol port range (must be non-zero for DHT operations)
+	if !IsValidNonZeroPortRange(c.PeerProtocolPort) {
+		panic(fmt.Sprintf("peer protocol port must be between 1 and 65535, got %d", c.PeerProtocolPort))
 	}
 
 	// Validate RPC port range if set (0 is allowed to disable)

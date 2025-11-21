@@ -41,7 +41,7 @@ func extractDHTHost(address string, logger *zap.Logger) string {
 			host = trimmed
 		}
 		// Validate the extracted host
-		if net.ParseIP(host) == nil && host != "localhost" && !strings.Contains(host, ".") {
+		if net.ParseIP(host) == nil && host != localhost && !strings.Contains(host, ".") {
 			logger.Error(
 				"Extracted DHT host appears invalid",
 				zap.String("host", host),
