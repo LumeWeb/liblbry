@@ -8,20 +8,26 @@ import (
 
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
 )
+
+// globalLoggerOnce ensures global logger is set only once per process to prevent data races
+var globalLoggerOnce sync.Once
 
 // managedDHTNode implements the DHTNode interface by wrapping the existing DHT implementation
 type managedDHTNode struct {
-	dht      DHT
-	config   *DHTConfig
-	mu       sync.RWMutex
-	joined   bool
-	stopped  bool
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	joinDone chan struct{} // Channel to signal when join goroutine completes
-	joinOnce sync.Once     // Ensure joinDone is closed only once
+	dht          DHT
+	config       *DHTConfig
+	watchdog     watchdog.DHTWatchdog
+	ownsWatchdog bool // Indicates if this node should stop the watchdog on shutdown
+	mu           sync.RWMutex
+	joined       bool
+	stopped      bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	joinDone     chan struct{} // Channel to signal when join goroutine completes
+	joinOnce     sync.Once     // Ensure joinDone is closed only once
 }
 
 // isActive returns true if the DHT peer is active (not stopped and has a DHT instance)
@@ -30,6 +36,17 @@ func (w *managedDHTNode) isActive() bool {
 }
 
 // NewDHTNode creates a new DHT node instance. If dhtImpl is nil, it creates a new DHT instance.
+//
+// Watchdog Lifecycle Management:
+// - If no watchdog is provided in options, the node creates and owns a default watchdog instance
+// - If a watchdog is provided in options, the node does NOT own it and will not stop it on shutdown
+// - The node only stops watchdogs it creates internally
+//
+// Note: When an external DHT implementation is supplied (dhtImpl != nil), the watchdog created
+// by this wrapper is a wrapper-level helper and is NOT wired into the external DHT implementation.
+// The watchdog returned by Watchdog() may not be the same validator used by the underlying DHT
+// in this case. For internally managed DHTs (dhtImpl == nil), the watchdog is properly wired
+// as the validator for the DHT.
 func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	config, err := NewDHTConfig()
 	if err != nil {
@@ -37,8 +54,13 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	}
 
 	// Apply options
-	for _, option := range options {
-		option(config)
+	config.ApplyOptions(options...)
+
+	// Set default watchdog if none provided
+	var ownsWatchdog bool
+	if config.Watchdog == nil {
+		config.Watchdog = watchdog.New()
+		ownsWatchdog = true // Node owns the watchdog it created
 	}
 
 	// If no DHT implementation provided, create default one
@@ -52,6 +74,7 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			RPCPort:          config.RPCPort,
 			ReannounceTime:   config.ReannounceTime,
 			AnnounceRate:     config.AnnounceRate,
+			Validator:        config.Watchdog,
 		}
 
 		dhtImpl = dht.New(dhtConfig)
@@ -60,19 +83,25 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 			// All nodes created after this call will use the same logger. If you need different logging
 			// behavior for different nodes, set the logger once during application startup before any
 			// dht.New() calls, or manage logging at a higher level.
-			dht.UseLogger(config.Logger)
-			dht.NodeFinderUseLogger(config.Logger)
+			//
+			// Use sync.Once to ensure global logger is set only once per process to prevent data races
+			globalLoggerOnce.Do(func() {
+				dht.UseLogger(config.Logger)
+				dht.NodeFinderUseLogger(config.Logger)
+			})
 		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	wrapper := &managedDHTNode{
-		dht:      dhtImpl,
-		config:   config,
-		joined:   false,
-		ctx:      ctx,
-		cancel:   cancel,
-		joinDone: make(chan struct{}),
+		dht:          dhtImpl,
+		config:       config,
+		watchdog:     config.Watchdog,
+		ownsWatchdog: ownsWatchdog,
+		joined:       false,
+		ctx:          ctx,
+		cancel:       cancel,
+		joinDone:     make(chan struct{}),
 	}
 
 	return wrapper, nil
@@ -128,6 +157,12 @@ func (w *managedDHTNode) Shutdown() {
 
 	// Shutdown the DHT
 	dhtInstance.Shutdown()
+
+	// Stop the watchdog to clean up its goroutines and resources
+	// Only stop the watchdog if this node owns it (created it internally)
+	if w.watchdog != nil && w.ownsWatchdog {
+		w.watchdog.Stop()
+	}
 
 	// Wait for all goroutines to finish
 	w.wg.Wait()
@@ -291,6 +326,18 @@ func (w *managedDHTNode) Restart() error {
 	w.startJoinGoroutine()
 
 	return nil
+}
+
+// Watchdog returns the DHT watchdog instance for contact validation.
+//
+// Lifecycle Note: The caller should not stop this watchdog unless they created it themselves.
+// The node automatically stops watchdogs it creates internally during Shutdown().
+//
+// For externally managed DHTs (when a DHT implementation was supplied to NewDHTNode),
+// this watchdog is a wrapper-level helper and may not be the same validator used by the
+// underlying DHT implementation. For internally managed DHTs, this is the active validator.
+func (w *managedDHTNode) Watchdog() watchdog.DHTWatchdog {
+	return w.watchdog
 }
 
 // startJoinGoroutine starts a goroutine to monitor DHT join status

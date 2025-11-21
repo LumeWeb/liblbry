@@ -8,6 +8,7 @@ import (
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
 )
 
 // NewMockDHTNode creates a new instance of MockDHTNode. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -592,5 +593,51 @@ func (_c *MockDHTNode_WaitUntilJoined_Call) Return() *MockDHTNode_WaitUntilJoine
 
 func (_c *MockDHTNode_WaitUntilJoined_Call) RunAndReturn(run func()) *MockDHTNode_WaitUntilJoined_Call {
 	_c.Run(run)
+	return _c
+}
+
+// Watchdog provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) Watchdog() watchdog.DHTWatchdog {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Watchdog")
+	}
+
+	var r0 watchdog.DHTWatchdog
+	if returnFunc, ok := ret.Get(0).(func() watchdog.DHTWatchdog); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(watchdog.DHTWatchdog)
+		}
+	}
+	return r0
+}
+
+// MockDHTNode_Watchdog_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Watchdog'
+type MockDHTNode_Watchdog_Call struct {
+	*mock.Call
+}
+
+// Watchdog is a helper method to define mock.On call
+func (_e *MockDHTNode_Expecter) Watchdog() *MockDHTNode_Watchdog_Call {
+	return &MockDHTNode_Watchdog_Call{Call: _e.mock.On("Watchdog")}
+}
+
+func (_c *MockDHTNode_Watchdog_Call) Run(run func()) *MockDHTNode_Watchdog_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_Watchdog_Call) Return(dHTWatchdog watchdog.DHTWatchdog) *MockDHTNode_Watchdog_Call {
+	_c.Call.Return(dHTWatchdog)
+	return _c
+}
+
+func (_c *MockDHTNode_Watchdog_Call) RunAndReturn(run func() watchdog.DHTWatchdog) *MockDHTNode_Watchdog_Call {
+	_c.Call.Return(run)
 	return _c
 }

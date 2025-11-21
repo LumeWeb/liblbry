@@ -30,50 +30,6 @@ type MockPeerClient struct {
 	mock.Mock
 }
 
-// Reset provides a mock function for the type MockPeerClient
-func (_mock *MockPeerClient) Reset() error {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for Reset")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func() error); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockPeerClient_Reset_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Reset'
-type MockPeerClient_Reset_Call struct {
-	*mock.Call
-}
-
-// Reset is a helper method to define mock.On call
-func (_e *MockPeerClient_Expecter) Reset() *MockPeerClient_Reset_Call {
-	return &MockPeerClient_Reset_Call{Call: _e.mock.On("Reset")}
-}
-
-func (_c *MockPeerClient_Reset_Call) Run(run func()) *MockPeerClient_Reset_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockPeerClient_Reset_Call) Return(err error) *MockPeerClient_Reset_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockPeerClient_Reset_Call) RunAndReturn(run func() error) *MockPeerClient_Reset_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 type MockPeerClient_Expecter struct {
 	mock *mock.Mock
 }
@@ -381,6 +337,50 @@ func (_c *MockPeerClient_HasBlob_Call) Return(b bool, err error) *MockPeerClient
 }
 
 func (_c *MockPeerClient_HasBlob_Call) RunAndReturn(run func(ctx context.Context, hash string) (bool, error)) *MockPeerClient_HasBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Reset provides a mock function for the type MockPeerClient
+func (_mock *MockPeerClient) Reset() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Reset")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockPeerClient_Reset_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Reset'
+type MockPeerClient_Reset_Call struct {
+	*mock.Call
+}
+
+// Reset is a helper method to define mock.On call
+func (_e *MockPeerClient_Expecter) Reset() *MockPeerClient_Reset_Call {
+	return &MockPeerClient_Reset_Call{Call: _e.mock.On("Reset")}
+}
+
+func (_c *MockPeerClient_Reset_Call) Run(run func()) *MockPeerClient_Reset_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockPeerClient_Reset_Call) Return(err error) *MockPeerClient_Reset_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockPeerClient_Reset_Call) RunAndReturn(run func() error) *MockPeerClient_Reset_Call {
 	_c.Call.Return(run)
 	return _c
 }

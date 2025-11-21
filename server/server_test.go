@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
@@ -509,8 +510,8 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("DHT port alignment when no fixed port", func(t *testing.T) {
 		// When no fixed port is specified, DHT should announce peer port = DHT port
-		peerPort := getFreePort(t)
-		dhtPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		dhtPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithDHT(dhtPort).
@@ -534,9 +535,9 @@ func TestPeerPortDHTAlignment(t *testing.T) {
 
 	t.Run("Fixed port takes precedence", func(t *testing.T) {
 		// When fixed port is specified, it should be used for DHT announcements
-		peerPort := getFreePort(t)
-		fixedPort := getFreePort(t)
-		dhtPort := getFreePort(t)
+		peerPort := lbryTesting.GetFreePort(t)
+		fixedPort := lbryTesting.GetFreePort(t)
+		dhtPort := lbryTesting.GetFreePort(t)
 		builder := NewServerBuilder().
 			WithPeer(peerPort).
 			WithFixedPeerPort(fixedPort).
@@ -1369,4 +1370,95 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 	assert.Contains(t, err.Error(), contentBlobHash)
 	assert.Contains(t, err.Error(), "index 0")
 	assert.Nil(t, result)
+}
+
+// TestExtractDHTHost tests the host extraction functionality
+func TestExtractDHTHost(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name     string
+		address  string
+		expected string
+	}{
+		// Valid addresses that should work with SplitHostPort
+		{
+			name:     "valid IPv4 with port",
+			address:  "192.168.1.1:4444",
+			expected: "192.168.1.1",
+		},
+		{
+			name:     "valid IPv6 with brackets and port",
+			address:  "[::1]:4444",
+			expected: "::1",
+		},
+		{
+			name:     "valid IPv6 with zone and port",
+			address:  "[fe80::1%eth0]:4444",
+			expected: "fe80::1%eth0",
+		},
+		{
+			name:     "valid hostname with port",
+			address:  "example.com:4444",
+			expected: "example.com",
+		},
+		{
+			name:     "valid localhost with port",
+			address:  "localhost:4444",
+			expected: "localhost",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractDHTHost(tt.address, logger)
+			assert.Equal(t, tt.expected, result, "Host extraction failed for address: %s", tt.address)
+		})
+	}
+}
+
+// TestExtractDHTHostInvalidAddresses tests that invalid addresses return empty string
+func TestExtractDHTHostInvalidAddresses(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name    string
+		address string
+	}{
+		{
+			name:    "malformed IPv6 without brackets",
+			address: "::1:4444",
+		},
+		{
+			name:    "malformed IPv6 with incomplete brackets",
+			address: "[::1:4444",
+		},
+		{
+			name:    "IPv6 address without port",
+			address: "::1",
+		},
+		{
+			name:    "IPv4 address without port",
+			address: "192.168.1.1",
+		},
+		{
+			name:    "hostname without port",
+			address: "example.com",
+		},
+		{
+			name:    "localhost without port",
+			address: "localhost",
+		},
+		{
+			name:    "complex IPv6 without brackets",
+			address: "2001:db8::1:4444",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractDHTHost(tt.address, logger)
+			assert.Equal(t, "", result, "Expected empty string for invalid address: %s", tt.address)
+		})
+	}
 }

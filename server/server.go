@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +20,21 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+// extractDHTHost extracts the host portion from a DHT address
+// Uses net.SplitHostPort which properly handles IPv6 addresses
+func extractDHTHost(address string, logger *zap.Logger) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		logger.Error(
+			"Invalid DHT address format - must be host:port with IPv6 addresses in brackets",
+			zap.String("address", address),
+			zap.Error(err),
+		)
+		return "" // Return empty string for invalid addresses
+	}
+	return host
+}
 
 // AcquirerFactory defines a function type for creating blob acquirers
 // This allows lazy initialization of acquirers after DHT and other dependencies are available
@@ -126,6 +140,7 @@ type DefaultServer struct {
 	dhtAnnouncer protocol.DHTAnnouncer
 	notifier     protocol.Notifier
 	dhtBatchSize int
+	dhtOptions   []protocol.DHTOption
 
 	// Runtime state
 	listeners map[string]net.Listener
@@ -332,10 +347,12 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 	// Determine the address to use
 	address := config.Address
 	if address == "" {
-		// Use default host with specified port
-		address = fmt.Sprintf("%s:%d", strings.Split(protocol.DefaultDHTAddress, ":")[0], config.Port)
+		// Use default host with specified port with IPv6-aware parsing
+		host := extractDHTHost(protocol.DefaultDHTAddress, s.logger)
+		address = fmt.Sprintf("%s:%d", host, config.Port)
 	}
 
+	// Add base configuration options
 	opts = append(opts,
 		protocol.WithDHTAddress(address),
 		protocol.WithDHTPeerProtocolPort(announcePeerPort),
@@ -346,6 +363,9 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 	if len(config.SeedNodes) > 0 {
 		opts = append(opts, protocol.WithDHTSeedNodes(config.SeedNodes))
 	}
+
+	// Add any additional DHT options configured via WithDHTOptions()
+	opts = append(opts, s.dhtOptions...)
 
 	// Create DHT node with all options at once
 	dhtNode, err := protocol.NewDHTNodeWithDefaults(opts...)

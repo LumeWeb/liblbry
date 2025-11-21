@@ -1,0 +1,494 @@
+package server
+
+import (
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
+	"go.lumeweb.com/liblbry/protocol"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
+	"go.uber.org/zap"
+)
+
+const (
+	localhost = "localhost"
+)
+
+// DHTBuilder handles all DHT configuration complexity with a clean, fluent interface
+// This isolates DHT configuration logic from the main ServerBuilder
+type DHTBuilder struct {
+	config  *dhtBuilderConfig
+	options []protocol.DHTOption
+	logger  *zap.Logger
+}
+
+// dhtBuilderConfig holds all DHT configuration state
+type dhtBuilderConfig struct {
+	// Core network settings
+	port      int
+	address   string
+	seedNodes []string
+
+	// DHT node settings
+	nodeID           string
+	peerProtocolPort int
+	rpcPort          int
+	reannounceTime   time.Duration
+	announceRate     int
+
+	// Runtime components
+	logger   *zap.Logger
+	watchdog watchdog.DHTWatchdog
+
+	// Validation state
+	validationEnabled bool
+
+	// Configuration tracking
+	userConfigured bool // Tracks if user has explicitly configured any settings
+}
+
+// NewDHTBuilder creates a new DHTBuilder with sensible defaults
+func NewDHTBuilder(logger *zap.Logger) (*DHTBuilder, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	// Get default DHT configuration to inherit seed nodes and other defaults
+	defaultDHTConfig, err := protocol.NewDHTConfig()
+	if err != nil {
+		// Return nil if protocol config creation fails - caller can handle this appropriately
+		return nil, err
+	}
+
+	return &DHTBuilder{
+		config: &dhtBuilderConfig{
+			port:              DefaultDHTPort,
+			address:           "",
+			seedNodes:         defaultDHTConfig.SeedNodes,
+			nodeID:            "",
+			peerProtocolPort:  DefaultPeerPort,
+			rpcPort:           0, // Disabled by default
+			reannounceTime:    defaultDHTConfig.ReannounceTime,
+			announceRate:      defaultDHTConfig.AnnounceRate,
+			logger:            logger.Named("dht"),
+			watchdog:          nil,
+			validationEnabled: true,
+			userConfigured:    false,
+		},
+		options: make([]protocol.DHTOption, 0),
+		logger:  logger,
+	}, nil
+}
+
+// WithPort sets the DHT listening port
+func (b *DHTBuilder) WithPort(port int) *DHTBuilder {
+	if !protocol.IsValidPortRange(port) {
+		b.logger.Warn("Invalid DHT port provided, using default",
+			zap.Int("provided", port),
+			zap.Int("default", DefaultDHTPort))
+		return b
+	}
+	b.config.port = port
+	b.config.userConfigured = true
+	return b
+}
+
+// WithAddress sets the DHT listening address
+func (b *DHTBuilder) WithAddress(address string) *DHTBuilder {
+	if address == "" {
+		return b
+	}
+
+	if err := validateAddress(address); err != nil {
+		b.logger.Warn("Invalid DHT address provided",
+			zap.String("address", address),
+			zap.Error(err))
+		return b
+	}
+
+	b.config.address = address
+	b.config.userConfigured = true
+	return b
+}
+
+// WithSeedNodes sets the seed nodes for DHT network joining
+func (b *DHTBuilder) WithSeedNodes(nodes []string) *DHTBuilder {
+	if nodes == nil {
+		b.config.seedNodes = []string{}
+		b.config.userConfigured = true
+		return b
+	}
+
+	// Validate seed nodes
+	validNodes := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node == "" {
+			continue
+		}
+		if err := validateAddress(node); err != nil {
+			b.logger.Warn("Invalid seed node address, skipping",
+				zap.String("node", node),
+				zap.Error(err))
+			continue
+		}
+		validNodes = append(validNodes, node)
+	}
+
+	if len(validNodes) < len(nodes) {
+		b.logger.Warn("Some seed nodes were filtered out",
+			zap.Int("provided", len(nodes)),
+			zap.Int("valid", len(validNodes)))
+	}
+
+	if len(validNodes) == 0 && len(nodes) > 0 {
+		b.logger.Warn("All provided seed nodes were invalid, DHT may fail to join network")
+	}
+
+	b.config.seedNodes = validNodes
+	b.config.userConfigured = true
+	return b
+}
+
+// WithNodeID sets the DHT node ID (empty for random)
+func (b *DHTBuilder) WithNodeID(id string) *DHTBuilder {
+	b.config.nodeID = id
+	b.config.userConfigured = true
+	return b
+}
+
+// WithPeerProtocolPort sets the port for DHT blob protocol clients
+func (b *DHTBuilder) WithPeerProtocolPort(port int) *DHTBuilder {
+	if !protocol.IsValidNonZeroPortRange(port) {
+		b.logger.Warn("Invalid peer protocol port provided, using default",
+			zap.Int("provided", port),
+			zap.Int("default", DefaultPeerPort))
+		return b
+	}
+	b.config.peerProtocolPort = port
+	b.config.userConfigured = true
+	return b
+}
+
+// WithRPCPort sets the DHT RPC server port (0 to disable)
+func (b *DHTBuilder) WithRPCPort(port int) *DHTBuilder {
+	if !protocol.IsValidPortRange(port) {
+		b.logger.Warn("Invalid RPC port provided, using default",
+			zap.Int("provided", port),
+			zap.Int("default", 0))
+		return b
+	}
+	b.config.rpcPort = port
+	b.config.userConfigured = true
+	return b
+}
+
+// WithReannounceTime sets the DHT blob reannouncement interval
+func (b *DHTBuilder) WithReannounceTime(interval time.Duration) *DHTBuilder {
+	if interval <= 0 {
+		b.logger.Warn("Invalid reannounce time provided, using default",
+			zap.Duration("provided", interval),
+			zap.Duration("default", 50*time.Minute))
+		return b
+	}
+	b.config.reannounceTime = interval
+	b.config.userConfigured = true
+	return b
+}
+
+// WithAnnounceRate sets the maximum DHT announces per second
+func (b *DHTBuilder) WithAnnounceRate(rate int) *DHTBuilder {
+	if rate <= 0 {
+		b.logger.Warn("Invalid announce rate provided, using default",
+			zap.Int("provided", rate),
+			zap.Int("default", 10))
+		return b
+	}
+	b.config.announceRate = rate
+	b.config.userConfigured = true
+	return b
+}
+
+// WithLogger sets the logger for DHT operations
+func (b *DHTBuilder) WithLogger(logger *zap.Logger) *DHTBuilder {
+	if logger != nil {
+		b.logger = logger
+		b.config.logger = logger.Named("dht")
+	}
+	return b
+}
+
+// WithWatchdog sets the DHT watchdog for contact validation
+func (b *DHTBuilder) WithWatchdog(watchdog watchdog.DHTWatchdog) *DHTBuilder {
+	b.config.watchdog = watchdog
+	b.config.userConfigured = true
+	return b
+}
+
+// WithOptions adds advanced protocol options for power users
+// These options are applied after all builder configuration
+func (b *DHTBuilder) WithOptions(options ...protocol.DHTOption) *DHTBuilder {
+	// Simple nil check without reflection
+	for _, option := range options {
+		if option != nil {
+			b.options = append(b.options, option)
+		}
+	}
+	b.config.userConfigured = true
+	return b
+}
+
+// WithValidation enables or disables configuration validation
+func (b *DHTBuilder) WithValidation(enabled bool) *DHTBuilder {
+	b.config.validationEnabled = enabled
+	return b
+}
+
+// BuildNode creates a configured DHT node from the builder settings
+func (b *DHTBuilder) BuildNode() (protocol.DHTNode, error) {
+	if err := b.validateConfig(); err != nil {
+		return nil, fmt.Errorf("DHT configuration validation failed: %w", err)
+	}
+
+	// Build protocol options from builder config
+	options := b.buildProtocolOptions()
+
+	// Add any additional options provided via WithOptions
+	options = append(options, b.options...)
+
+	// Create DHT node with all options
+	return protocol.NewDHTNodeWithDefaults(options...)
+}
+
+// BuildConfig creates a protocol DHTConfig from the builder settings
+func (b *DHTBuilder) BuildConfig() (*protocol.DHTConfig, error) {
+	if err := b.validateConfig(); err != nil {
+		return nil, fmt.Errorf("DHT configuration validation failed: %w", err)
+	}
+
+	// Start with builder config as defaults
+	config := &protocol.DHTConfig{
+		Address:          b.getEffectiveAddress(),
+		SeedNodes:        b.config.seedNodes,
+		NodeID:           b.config.nodeID,
+		PeerProtocolPort: b.config.peerProtocolPort,
+		RPCPort:          b.config.rpcPort,
+		ReannounceTime:   b.config.reannounceTime,
+		AnnounceRate:     b.config.announceRate,
+		Watchdog:         b.config.watchdog,
+	}
+
+	// Apply options to override builder settings
+	// We need to apply options in the same way BuildNode does
+	options := b.buildProtocolOptions()
+	options = append(options, b.options...)
+
+	// Apply options directly to config using the new helper method
+	config.ApplyOptions(options...)
+
+	return config, nil
+}
+
+// IsConfigured returns true if the builder has meaningful configuration
+func (b *DHTBuilder) IsConfigured() bool {
+	return b.config.userConfigured
+}
+
+// Copy creates a deep copy of the DHTBuilder
+func (b *DHTBuilder) Copy() *DHTBuilder {
+	// Copy config
+	configCopy := *b.config
+
+	// Copy slices
+	if b.config.seedNodes != nil {
+		configCopy.seedNodes = make([]string, len(b.config.seedNodes))
+		copy(configCopy.seedNodes, b.config.seedNodes)
+	}
+
+	// Copy options
+	optionsCopy := make([]protocol.DHTOption, len(b.options))
+	copy(optionsCopy, b.options)
+
+	return &DHTBuilder{
+		config:  &configCopy,
+		options: optionsCopy,
+		logger:  b.logger,
+	}
+}
+
+// validateConfig performs comprehensive validation of the builder configuration
+func (b *DHTBuilder) validateConfig() error {
+	if !b.config.validationEnabled {
+		return nil
+	}
+
+	// Validate port
+	if !protocol.IsValidPortRange(b.config.port) {
+		return fmt.Errorf("DHT port must be between 0 and 65535, got %d", b.config.port)
+	}
+
+	// Validate peer protocol port
+	if !protocol.IsValidNonZeroPortRange(b.config.peerProtocolPort) {
+		return fmt.Errorf("peer protocol port must be between 1 and 65535, got %d", b.config.peerProtocolPort)
+	}
+
+	// Validate RPC port
+	if !protocol.IsValidPortRange(b.config.rpcPort) {
+		return fmt.Errorf("RPC port must be between 0 and 65535, got %d", b.config.rpcPort)
+	}
+
+	// Validate reannounce time
+	if b.config.reannounceTime <= 0 {
+		return fmt.Errorf("reannounce time must be positive, got %v", b.config.reannounceTime)
+	}
+
+	// Validate announce rate
+	if b.config.announceRate <= 0 {
+		return fmt.Errorf("announce rate must be positive, got %d", b.config.announceRate)
+	}
+
+	// Validate address if provided
+	if b.config.address != "" {
+		if err := validateAddress(b.config.address); err != nil {
+			return fmt.Errorf("invalid DHT address: %w", err)
+		}
+	}
+
+	// Validate seed nodes
+	for i, node := range b.config.seedNodes {
+		if node == "" {
+			return fmt.Errorf("seed node at index %d is empty", i)
+		}
+		if err := validateAddress(node); err != nil {
+			return fmt.Errorf("invalid seed node at index %d '%s': %w", i, node, err)
+		}
+	}
+
+	return nil
+}
+
+// buildProtocolOptions converts builder config to protocol DHT options
+func (b *DHTBuilder) buildProtocolOptions() []protocol.DHTOption {
+	var options []protocol.DHTOption
+
+	// Add address option
+	if address := b.getEffectiveAddress(); address != "" {
+		options = append(options, protocol.WithDHTAddress(address))
+	}
+
+	// Add seed nodes option
+	if len(b.config.seedNodes) > 0 {
+		options = append(options, protocol.WithDHTSeedNodes(b.config.seedNodes))
+	}
+
+	// Add node ID option
+	if b.config.nodeID != "" {
+		options = append(options, protocol.WithDHTNodeID(b.config.nodeID))
+	}
+
+	// Add peer protocol port option
+	options = append(options, protocol.WithDHTPeerProtocolPort(b.config.peerProtocolPort))
+
+	// Add RPC port option
+	options = append(options, protocol.WithDHTRPCPort(b.config.rpcPort))
+
+	// Add reannounce time option
+	options = append(options, protocol.WithDHTReannounceTime(b.config.reannounceTime))
+
+	// Add announce rate option
+	options = append(options, protocol.WithDHTAnnounceRate(b.config.announceRate))
+
+	// Add logger option
+	if b.config.logger != nil {
+		options = append(options, protocol.WithDHTLogger(b.config.logger))
+	}
+
+	// Add watchdog option
+	if b.config.watchdog != nil {
+		options = append(options, protocol.WithDHTWatchdog(b.config.watchdog))
+	}
+
+	return options
+}
+
+// getEffectiveAddress returns the effective DHT address
+func (b *DHTBuilder) getEffectiveAddress() string {
+	if b.config.address != "" {
+		return b.config.address
+	}
+
+	// Use default address with configured port
+	host := extractDHTHost(protocol.DefaultDHTAddress, b.logger)
+	return net.JoinHostPort(host, strconv.Itoa(b.config.port))
+}
+
+// isValidHostname checks if a string is a valid hostname according to RFC 1123
+func isValidHostname(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+
+	// Check each label
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+
+		// Check if label starts and ends with alphanumeric
+		if !isAlphaNumeric(rune(label[0])) || !isAlphaNumeric(rune(label[len(label)-1])) {
+			return false
+		}
+
+		// Check each character in the label
+		for _, char := range label {
+			if !isAlphaNumeric(char) && char != '-' {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// isAlphaNumeric checks if a rune is alphanumeric
+func isAlphaNumeric(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+}
+
+// validateAddress validates an address string with hostname checking
+//
+// This validation accepts:
+// - IP addresses (e.g., "192.168.1.100:4444")
+// - localhost (e.g., "localhost:4444")
+// - Fully qualified domain names (e.g., "example.com:4444")
+// - Single-label hostnames (e.g., "dht-service:4444") for internal networks
+//
+// Single-label hostnames are valid in many environments including Kubernetes services,
+// internal DNS, and mDNS. While they can be prone to typos, they are commonly used
+// in containerized and internal network setups.
+func validateAddress(address string) error {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("must be in host:port format: %w", err)
+	}
+
+	// Validate port
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("port must be numeric: %w", err)
+	}
+	if !protocol.IsValidNonZeroPortRange(portNum) {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
+	}
+
+	// Enhanced host validation
+	if net.ParseIP(host) == nil {
+		// Allow localhost and any valid hostname (including single-label)
+		if host != localhost && !isValidHostname(host) {
+			return fmt.Errorf("host '%s' appears invalid (not IP, localhost, or valid hostname)", host)
+		}
+	}
+
+	return nil
+}

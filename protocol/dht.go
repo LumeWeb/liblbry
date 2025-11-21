@@ -2,13 +2,27 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/protocol/watchdog"
 	"go.uber.org/zap"
 )
+
+// IsValidPortRange checks if a port is within the valid range (0-65535)
+// Returns true if valid, false otherwise
+func IsValidPortRange(port int) bool {
+	return port >= 0 && port <= 65535
+}
+
+// IsValidNonZeroPortRange checks if a port is within the valid range (1-65535)
+// Returns true if valid, false otherwise
+func IsValidNonZeroPortRange(port int) bool {
+	return port >= 1 && port <= 65535
+}
 
 // DefaultDHTAddress is the default address for DHT nodes
 // Uses 127.0.0.1 (localhost) by default because 0.0.0.0 cannot be used for DHT broadcasting.
@@ -73,6 +87,9 @@ type DHTNode interface {
 
 	// Restart restarts a stopped DHT node
 	Restart() error
+
+	// Watchdog returns the DHT watchdog instance for contact validation
+	Watchdog() watchdog.DHTWatchdog
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -93,10 +110,50 @@ type DHTConfig struct {
 	ReannounceTime time.Duration
 	// Maximum announces per second
 	AnnounceRate int
+	// Watchdog for contact validation with caching and blacklisting
+	Watchdog watchdog.DHTWatchdog
 }
 
 // DHTOption configures DHT peer instances
 type DHTOption func(*DHTConfig)
+
+// validateDHTConfigIfNeeded validates the config only if it appears to be fully initialized
+// This allows partial configs during building phase without triggering validation panics
+func validateDHTConfigIfNeeded(c *DHTConfig) {
+	// Lightweight per-field validation for obviously invalid values
+	// This catches invalid field combinations early, even for partial configs
+
+	// Validate peer protocol port range (must be non-zero for DHT operations)
+	if !IsValidNonZeroPortRange(c.PeerProtocolPort) {
+		panic(fmt.Sprintf("peer protocol port must be between 1 and 65535, got %d", c.PeerProtocolPort))
+	}
+
+	// Validate RPC port range if set (0 is allowed to disable)
+	if !IsValidPortRange(c.RPCPort) {
+		panic(fmt.Sprintf("RPC port must be between 0 and 65535 (0 to disable), got %d", c.RPCPort))
+	}
+
+	// Validate time-based fields if set
+	if c.ReannounceTime < 0 {
+		panic(fmt.Sprintf("reannounce time must be non-negative, got %v", c.ReannounceTime))
+	}
+
+	if c.AnnounceRate < 0 {
+		panic(fmt.Sprintf("announce rate must be non-negative, got %d", c.AnnounceRate))
+	}
+
+	// Full validation for complete configs
+	// We consider a config "potentially complete" if it has an address and
+	// at least some configuration beyond zero values.
+	hasBasicConfig := c.Address != "" &&
+		(c.PeerProtocolPort != 0 || c.ReannounceTime != 0 || c.AnnounceRate != 0)
+
+	if hasBasicConfig {
+		if err := validateDHTConfig(c); err != nil {
+			panic(err) // Fail fast during configuration
+		}
+	}
+}
 
 // validateDHTConfig checks configuration values are valid
 func validateDHTConfig(c *DHTConfig) error {
@@ -104,11 +161,11 @@ func validateDHTConfig(c *DHTConfig) error {
 		return errors.New("DHT address cannot be empty")
 	}
 
-	if c.PeerProtocolPort < 1 || c.PeerProtocolPort > 65535 {
+	if !IsValidNonZeroPortRange(c.PeerProtocolPort) {
 		return errors.New("peer protocol port must be between 1 and 65535")
 	}
 
-	if c.RPCPort < 0 || c.RPCPort > 65535 {
+	if !IsValidPortRange(c.RPCPort) {
 		return errors.New("RPC port must be between 0 and 65535 (0 to disable)")
 	}
 
@@ -142,9 +199,7 @@ func NewDHTConfig() (*DHTConfig, error) {
 func WithDHTAddress(addr string) DHTOption {
 	return func(c *DHTConfig) {
 		c.Address = addr
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -166,9 +221,7 @@ func WithDHTNodeID(id string) DHTOption {
 func WithDHTPeerProtocolPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.PeerProtocolPort = port
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -176,9 +229,7 @@ func WithDHTPeerProtocolPort(port int) DHTOption {
 func WithDHTRPCPort(port int) DHTOption {
 	return func(c *DHTConfig) {
 		c.RPCPort = port
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -186,9 +237,7 @@ func WithDHTRPCPort(port int) DHTOption {
 func WithDHTReannounceTime(interval time.Duration) DHTOption {
 	return func(c *DHTConfig) {
 		c.ReannounceTime = interval
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -196,9 +245,7 @@ func WithDHTReannounceTime(interval time.Duration) DHTOption {
 func WithDHTAnnounceRate(rate int) DHTOption {
 	return func(c *DHTConfig) {
 		c.AnnounceRate = rate
-		if err := validateDHTConfig(c); err != nil {
-			panic(err) // Fail fast during configuration
-		}
+		validateDHTConfigIfNeeded(c)
 	}
 }
 
@@ -209,6 +256,23 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 			c.Logger = nil
 		} else {
 			c.Logger = NewZapToLogrusAdapter(logger)
+		}
+	}
+}
+
+// WithDHTWatchdog sets the DHT watchdog for contact validation
+func WithDHTWatchdog(wd watchdog.DHTWatchdog) DHTOption {
+	return func(c *DHTConfig) {
+		c.Watchdog = wd
+	}
+}
+
+// ApplyOptions applies a slice of DHTOption functions to this DHTConfig
+// This helper allows applying options to a config without creating a DHT node
+func (c *DHTConfig) ApplyOptions(options ...DHTOption) {
+	for _, option := range options {
+		if option != nil {
+			option(c)
 		}
 	}
 }
