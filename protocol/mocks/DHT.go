@@ -77,6 +77,210 @@ func (_c *MockDHT_Add_Call) RunAndReturn(run func(hash bits.Bitmap)) *MockDHT_Ad
 	return _c
 }
 
+// ExploreKeyspace provides a mock function for the type MockDHT
+func (_mock *MockDHT) ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error) {
+	ret := _mock.Called(target)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExploreKeyspace")
+	}
+
+	var r0 []dht.Contact
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap) ([]dht.Contact, error)); ok {
+		return returnFunc(target)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap) []dht.Contact); ok {
+		r0 = returnFunc(target)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap) error); ok {
+		r1 = returnFunc(target)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDHT_ExploreKeyspace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExploreKeyspace'
+type MockDHT_ExploreKeyspace_Call struct {
+	*mock.Call
+}
+
+// ExploreKeyspace is a helper method to define mock.On call
+//   - target bits.Bitmap
+func (_e *MockDHT_Expecter) ExploreKeyspace(target interface{}) *MockDHT_ExploreKeyspace_Call {
+	return &MockDHT_ExploreKeyspace_Call{Call: _e.mock.On("ExploreKeyspace", target)}
+}
+
+func (_c *MockDHT_ExploreKeyspace_Call) Run(run func(target bits.Bitmap)) *MockDHT_ExploreKeyspace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHT_ExploreKeyspace_Call) Return(contacts []dht.Contact, err error) *MockDHT_ExploreKeyspace_Call {
+	_c.Call.Return(contacts, err)
+	return _c
+}
+
+func (_c *MockDHT_ExploreKeyspace_Call) RunAndReturn(run func(target bits.Bitmap) ([]dht.Contact, error)) *MockDHT_ExploreKeyspace_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ExploreKeyspaceWithLimit provides a mock function for the type MockDHT
+func (_mock *MockDHT) ExploreKeyspaceWithLimit(target bits.Bitmap, maxIterations int) ([]dht.Contact, error) {
+	ret := _mock.Called(target, maxIterations)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExploreKeyspaceWithLimit")
+	}
+
+	var r0 []dht.Contact
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, int) ([]dht.Contact, error)); ok {
+		return returnFunc(target, maxIterations)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, int) []dht.Contact); ok {
+		r0 = returnFunc(target, maxIterations)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap, int) error); ok {
+		r1 = returnFunc(target, maxIterations)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDHT_ExploreKeyspaceWithLimit_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExploreKeyspaceWithLimit'
+type MockDHT_ExploreKeyspaceWithLimit_Call struct {
+	*mock.Call
+}
+
+// ExploreKeyspaceWithLimit is a helper method to define mock.On call
+//   - target bits.Bitmap
+//   - maxIterations int
+func (_e *MockDHT_Expecter) ExploreKeyspaceWithLimit(target interface{}, maxIterations interface{}) *MockDHT_ExploreKeyspaceWithLimit_Call {
+	return &MockDHT_ExploreKeyspaceWithLimit_Call{Call: _e.mock.On("ExploreKeyspaceWithLimit", target, maxIterations)}
+}
+
+func (_c *MockDHT_ExploreKeyspaceWithLimit_Call) Run(run func(target bits.Bitmap, maxIterations int)) *MockDHT_ExploreKeyspaceWithLimit_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHT_ExploreKeyspaceWithLimit_Call) Return(contacts []dht.Contact, err error) *MockDHT_ExploreKeyspaceWithLimit_Call {
+	_c.Call.Return(contacts, err)
+	return _c
+}
+
+func (_c *MockDHT_ExploreKeyspaceWithLimit_Call) RunAndReturn(run func(target bits.Bitmap, maxIterations int) ([]dht.Contact, error)) *MockDHT_ExploreKeyspaceWithLimit_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FindContacts provides a mock function for the type MockDHT
+func (_mock *MockDHT) FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error) {
+	ret := _mock.Called(target, findValue)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindContacts")
+	}
+
+	var r0 []dht.Contact
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, bool) ([]dht.Contact, bool, error)); ok {
+		return returnFunc(target, findValue)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, bool) []dht.Contact); ok {
+		r0 = returnFunc(target, findValue)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap, bool) bool); ok {
+		r1 = returnFunc(target, findValue)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(bits.Bitmap, bool) error); ok {
+		r2 = returnFunc(target, findValue)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MockDHT_FindContacts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindContacts'
+type MockDHT_FindContacts_Call struct {
+	*mock.Call
+}
+
+// FindContacts is a helper method to define mock.On call
+//   - target bits.Bitmap
+//   - findValue bool
+func (_e *MockDHT_Expecter) FindContacts(target interface{}, findValue interface{}) *MockDHT_FindContacts_Call {
+	return &MockDHT_FindContacts_Call{Call: _e.mock.On("FindContacts", target, findValue)}
+}
+
+func (_c *MockDHT_FindContacts_Call) Run(run func(target bits.Bitmap, findValue bool)) *MockDHT_FindContacts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHT_FindContacts_Call) Return(contacts []dht.Contact, b bool, err error) *MockDHT_FindContacts_Call {
+	_c.Call.Return(contacts, b, err)
+	return _c
+}
+
+func (_c *MockDHT_FindContacts_Call) RunAndReturn(run func(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)) *MockDHT_FindContacts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Get provides a mock function for the type MockDHT
 func (_mock *MockDHT) Get(hash bits.Bitmap) ([]dht.Contact, error) {
 	ret := _mock.Called(hash)
@@ -135,6 +339,98 @@ func (_c *MockDHT_Get_Call) Return(contacts []dht.Contact, err error) *MockDHT_G
 }
 
 func (_c *MockDHT_Get_Call) RunAndReturn(run func(hash bits.Bitmap) ([]dht.Contact, error)) *MockDHT_Get_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetContacts provides a mock function for the type MockDHT
+func (_mock *MockDHT) GetContacts() []dht.Contact {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetContacts")
+	}
+
+	var r0 []dht.Contact
+	if returnFunc, ok := ret.Get(0).(func() []dht.Contact); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	return r0
+}
+
+// MockDHT_GetContacts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetContacts'
+type MockDHT_GetContacts_Call struct {
+	*mock.Call
+}
+
+// GetContacts is a helper method to define mock.On call
+func (_e *MockDHT_Expecter) GetContacts() *MockDHT_GetContacts_Call {
+	return &MockDHT_GetContacts_Call{Call: _e.mock.On("GetContacts")}
+}
+
+func (_c *MockDHT_GetContacts_Call) Run(run func()) *MockDHT_GetContacts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHT_GetContacts_Call) Return(contacts []dht.Contact) *MockDHT_GetContacts_Call {
+	_c.Call.Return(contacts)
+	return _c
+}
+
+func (_c *MockDHT_GetContacts_Call) RunAndReturn(run func() []dht.Contact) *MockDHT_GetContacts_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetRoutingTable provides a mock function for the type MockDHT
+func (_mock *MockDHT) GetRoutingTable() dht.RoutingTable {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRoutingTable")
+	}
+
+	var r0 dht.RoutingTable
+	if returnFunc, ok := ret.Get(0).(func() dht.RoutingTable); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(dht.RoutingTable)
+		}
+	}
+	return r0
+}
+
+// MockDHT_GetRoutingTable_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRoutingTable'
+type MockDHT_GetRoutingTable_Call struct {
+	*mock.Call
+}
+
+// GetRoutingTable is a helper method to define mock.On call
+func (_e *MockDHT_Expecter) GetRoutingTable() *MockDHT_GetRoutingTable_Call {
+	return &MockDHT_GetRoutingTable_Call{Call: _e.mock.On("GetRoutingTable")}
+}
+
+func (_c *MockDHT_GetRoutingTable_Call) Run(run func()) *MockDHT_GetRoutingTable_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHT_GetRoutingTable_Call) Return(routingTable dht.RoutingTable) *MockDHT_GetRoutingTable_Call {
+	_c.Call.Return(routingTable)
+	return _c
+}
+
+func (_c *MockDHT_GetRoutingTable_Call) RunAndReturn(run func() dht.RoutingTable) *MockDHT_GetRoutingTable_Call {
 	_c.Call.Return(run)
 	return _c
 }

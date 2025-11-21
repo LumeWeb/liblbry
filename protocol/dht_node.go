@@ -28,6 +28,10 @@ type managedDHTNode struct {
 	wg           sync.WaitGroup
 	joinDone     chan struct{} // Channel to signal when join goroutine completes
 	joinOnce     sync.Once     // Ensure joinDone is closed only once
+
+	// Network crawler fields
+	crawler     NetworkCrawler
+	crawlerStop context.CancelFunc
 }
 
 // isActive returns true if the DHT peer is active (not stopped and has a DHT instance)
@@ -130,6 +134,16 @@ func (w *managedDHTNode) Start() error {
 	// Start the join monitoring goroutine
 	w.startJoinGoroutine()
 
+	// Start the network crawler to populate routing table
+	err = w.startCrawler()
+	if err != nil {
+		// Log warning but don't fail startup - the DHT will still function
+		// with basic routing table population
+		if w.config.Logger != nil {
+			w.config.Logger.WithError(err).Warn("Failed to start network crawler, DHT will function with basic routing table population")
+		}
+	}
+
 	return nil
 }
 
@@ -148,12 +162,18 @@ func (w *managedDHTNode) Shutdown() {
 	// Capture needed state before releasing lock
 	dhtInstance := w.dht
 	cancelFunc := w.cancel
+	crawlerStopFunc := w.crawlerStop
 
 	// Release lock before calling operations that might block
 	w.mu.Unlock()
 
 	// Cancel context to signal goroutines to stop
 	cancelFunc()
+
+	// Stop the network crawler if it's running
+	if crawlerStopFunc != nil {
+		crawlerStopFunc()
+	}
 
 	// Shutdown the DHT
 	dhtInstance.Shutdown()
@@ -426,4 +446,179 @@ func ParseHashFromString(hashStr string) (bits.Bitmap, error) {
 // HashToString converts a bits.Bitmap to a hex string
 func HashToString(hash bits.Bitmap) string {
 	return hash.Hex()
+}
+
+// GetRoutingTableContacts returns all contacts in the routing table
+func (w *managedDHTNode) GetRoutingTableContacts() ([]dht.Contact, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil, fmt.Errorf("DHT node is stopped")
+	}
+
+	return w.dht.GetContacts(), nil
+}
+
+// FindContacts performs iterative findNode/findValue operations
+func (w *managedDHTNode) FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil, false, fmt.Errorf("DHT node is stopped")
+	}
+
+	return w.dht.FindContacts(target, findValue)
+}
+
+// ProbeHashes probes for specific hashes to find content and populate routing table
+func (w *managedDHTNode) ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil, fmt.Errorf("DHT node is stopped")
+	}
+
+	results := make(map[bits.Bitmap][]dht.Contact)
+	var errors []probeError
+	successCount := 0
+
+	for _, hash := range hashes {
+		contacts, found, err := w.dht.FindContacts(hash, true)
+		if err != nil {
+			errors = append(errors, probeError{hash: hash, err: err})
+			continue
+		}
+		if found {
+			results[hash] = contacts
+			successCount++
+		}
+	}
+
+	// If all probes failed, return aggregated error
+	if len(hashes) > 0 && successCount == 0 && len(errors) > 0 {
+		return nil, &probeErrors{errors: errors}
+	}
+
+	// Return partial results (may be empty if no content found but some probes succeeded)
+	return results, nil
+}
+
+// probeError represents an error for a specific hash probe
+type probeError struct {
+	hash bits.Bitmap
+	err  error
+}
+
+func (e probeError) Error() string {
+	return fmt.Sprintf("hash %v: %v", e.hash, e.err)
+}
+
+// probeErrors represents multiple probe errors
+type probeErrors struct {
+	errors []probeError
+}
+
+func (e *probeErrors) Error() string {
+	if len(e.errors) == 0 {
+		return "no probe errors"
+	}
+	if len(e.errors) == 1 {
+		return fmt.Sprintf("probe failed: %v", e.errors[0])
+	}
+	return fmt.Sprintf("all %d probes failed, first error: %v", len(e.errors), e.errors[0])
+}
+
+// AddContact manually adds a contact to the routing table
+func (w *managedDHTNode) AddContact(contact dht.Contact) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return fmt.Errorf("DHT node is stopped")
+	}
+
+	// Get underlying DHT instance and access its routing table
+	routingTable := w.dht.GetRoutingTable()
+
+	// Call Update method to add contact to routing table
+	routingTable.Update(contact)
+
+	return nil
+}
+
+// ExploreKeyspace systematically explores the keyspace around a target
+func (w *managedDHTNode) ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil, fmt.Errorf("DHT node is stopped")
+	}
+
+	return w.dht.ExploreKeyspace(target)
+}
+
+// exploreNetwork performs systematic network exploration to populate routing table
+func (w *managedDHTNode) exploreNetwork() error {
+	// Acquire read lock to safely access stopped and dht fields
+	w.mu.RLock()
+
+	// Check if node is stopped while holding the lock
+	if w.stopped {
+		w.mu.RUnlock()
+		return fmt.Errorf("DHT node is stopped")
+	}
+
+	// Copy dht instance to local variable to use outside the lock
+	local := w.dht
+	w.mu.RUnlock()
+
+	// Return error if dht instance is nil
+	if local == nil {
+		return fmt.Errorf("DHT node is stopped")
+	}
+
+	// Use the node's ID as the starting target for exploration
+	nodeID := local.ID()
+
+	// Explore keyspace around the node ID to discover more peers
+	_, err := local.ExploreKeyspace(nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to explore keyspace: %w", err)
+	}
+
+	return nil
+}
+
+// startCrawler begins background network exploration during boot
+// Note: This function should only be called while holding the mutex (from Start())
+func (w *managedDHTNode) startCrawler() error {
+	if !w.isActive() {
+		return fmt.Errorf("DHT node is stopped")
+	}
+
+	// Only start crawler if network scan is enabled in config
+	if !w.config.NetworkScanEnabled {
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(w.ctx)
+	w.crawlerStop = cancel
+
+	// Use the zap logger from config for the crawler
+	crawler := NewNetworkCrawler(w, ctx, w.config.ZapLogger)
+
+	w.crawler = crawler
+
+	// Start crawler in background
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		crawler.Run()
+	}()
+
+	return nil
 }

@@ -78,6 +78,57 @@ func (_c *MockDHTNode_Add_Call) RunAndReturn(run func(hash bits.Bitmap)) *MockDH
 	return _c
 }
 
+// AddContact provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) AddContact(contact dht.Contact) error {
+	ret := _mock.Called(contact)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddContact")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(dht.Contact) error); ok {
+		r0 = returnFunc(contact)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockDHTNode_AddContact_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddContact'
+type MockDHTNode_AddContact_Call struct {
+	*mock.Call
+}
+
+// AddContact is a helper method to define mock.On call
+//   - contact dht.Contact
+func (_e *MockDHTNode_Expecter) AddContact(contact interface{}) *MockDHTNode_AddContact_Call {
+	return &MockDHTNode_AddContact_Call{Call: _e.mock.On("AddContact", contact)}
+}
+
+func (_c *MockDHTNode_AddContact_Call) Run(run func(contact dht.Contact)) *MockDHTNode_AddContact_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 dht.Contact
+		if args[0] != nil {
+			arg0 = args[0].(dht.Contact)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_AddContact_Call) Return(err error) *MockDHTNode_AddContact_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockDHTNode_AddContact_Call) RunAndReturn(run func(contact dht.Contact) error) *MockDHTNode_AddContact_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Address provides a mock function for the type MockDHTNode
 func (_mock *MockDHTNode) Address() string {
 	ret := _mock.Called()
@@ -118,6 +169,142 @@ func (_c *MockDHTNode_Address_Call) Return(s string) *MockDHTNode_Address_Call {
 }
 
 func (_c *MockDHTNode_Address_Call) RunAndReturn(run func() string) *MockDHTNode_Address_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ExploreKeyspace provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error) {
+	ret := _mock.Called(target)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExploreKeyspace")
+	}
+
+	var r0 []dht.Contact
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap) ([]dht.Contact, error)); ok {
+		return returnFunc(target)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap) []dht.Contact); ok {
+		r0 = returnFunc(target)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap) error); ok {
+		r1 = returnFunc(target)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDHTNode_ExploreKeyspace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExploreKeyspace'
+type MockDHTNode_ExploreKeyspace_Call struct {
+	*mock.Call
+}
+
+// ExploreKeyspace is a helper method to define mock.On call
+//   - target bits.Bitmap
+func (_e *MockDHTNode_Expecter) ExploreKeyspace(target interface{}) *MockDHTNode_ExploreKeyspace_Call {
+	return &MockDHTNode_ExploreKeyspace_Call{Call: _e.mock.On("ExploreKeyspace", target)}
+}
+
+func (_c *MockDHTNode_ExploreKeyspace_Call) Run(run func(target bits.Bitmap)) *MockDHTNode_ExploreKeyspace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_ExploreKeyspace_Call) Return(contacts []dht.Contact, err error) *MockDHTNode_ExploreKeyspace_Call {
+	_c.Call.Return(contacts, err)
+	return _c
+}
+
+func (_c *MockDHTNode_ExploreKeyspace_Call) RunAndReturn(run func(target bits.Bitmap) ([]dht.Contact, error)) *MockDHTNode_ExploreKeyspace_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FindContacts provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error) {
+	ret := _mock.Called(target, findValue)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindContacts")
+	}
+
+	var r0 []dht.Contact
+	var r1 bool
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, bool) ([]dht.Contact, bool, error)); ok {
+		return returnFunc(target, findValue)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, bool) []dht.Contact); ok {
+		r0 = returnFunc(target, findValue)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap, bool) bool); ok {
+		r1 = returnFunc(target, findValue)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	if returnFunc, ok := ret.Get(2).(func(bits.Bitmap, bool) error); ok {
+		r2 = returnFunc(target, findValue)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MockDHTNode_FindContacts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindContacts'
+type MockDHTNode_FindContacts_Call struct {
+	*mock.Call
+}
+
+// FindContacts is a helper method to define mock.On call
+//   - target bits.Bitmap
+//   - findValue bool
+func (_e *MockDHTNode_Expecter) FindContacts(target interface{}, findValue interface{}) *MockDHTNode_FindContacts_Call {
+	return &MockDHTNode_FindContacts_Call{Call: _e.mock.On("FindContacts", target, findValue)}
+}
+
+func (_c *MockDHTNode_FindContacts_Call) Run(run func(target bits.Bitmap, findValue bool)) *MockDHTNode_FindContacts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_FindContacts_Call) Return(contacts []dht.Contact, b bool, err error) *MockDHTNode_FindContacts_Call {
+	_c.Call.Return(contacts, b, err)
+	return _c
+}
+
+func (_c *MockDHTNode_FindContacts_Call) RunAndReturn(run func(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)) *MockDHTNode_FindContacts_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -180,6 +367,61 @@ func (_c *MockDHTNode_Get_Call) Return(contacts []dht.Contact, err error) *MockD
 }
 
 func (_c *MockDHTNode_Get_Call) RunAndReturn(run func(hash bits.Bitmap) ([]dht.Contact, error)) *MockDHTNode_Get_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetRoutingTableContacts provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) GetRoutingTableContacts() ([]dht.Contact, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRoutingTableContacts")
+	}
+
+	var r0 []dht.Contact
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func() ([]dht.Contact, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() []dht.Contact); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDHTNode_GetRoutingTableContacts_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRoutingTableContacts'
+type MockDHTNode_GetRoutingTableContacts_Call struct {
+	*mock.Call
+}
+
+// GetRoutingTableContacts is a helper method to define mock.On call
+func (_e *MockDHTNode_Expecter) GetRoutingTableContacts() *MockDHTNode_GetRoutingTableContacts_Call {
+	return &MockDHTNode_GetRoutingTableContacts_Call{Call: _e.mock.On("GetRoutingTableContacts")}
+}
+
+func (_c *MockDHTNode_GetRoutingTableContacts_Call) Run(run func()) *MockDHTNode_GetRoutingTableContacts_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_GetRoutingTableContacts_Call) Return(contacts []dht.Contact, err error) *MockDHTNode_GetRoutingTableContacts_Call {
+	_c.Call.Return(contacts, err)
+	return _c
+}
+
+func (_c *MockDHTNode_GetRoutingTableContacts_Call) RunAndReturn(run func() ([]dht.Contact, error)) *MockDHTNode_GetRoutingTableContacts_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -365,6 +607,68 @@ func (_c *MockDHTNode_Ping_Call) Return(err error) *MockDHTNode_Ping_Call {
 }
 
 func (_c *MockDHTNode_Ping_Call) RunAndReturn(run func(addr string) error) *MockDHTNode_Ping_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ProbeHashes provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error) {
+	ret := _mock.Called(hashes)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ProbeHashes")
+	}
+
+	var r0 map[bits.Bitmap][]dht.Contact
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func([]bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error)); ok {
+		return returnFunc(hashes)
+	}
+	if returnFunc, ok := ret.Get(0).(func([]bits.Bitmap) map[bits.Bitmap][]dht.Contact); ok {
+		r0 = returnFunc(hashes)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[bits.Bitmap][]dht.Contact)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func([]bits.Bitmap) error); ok {
+		r1 = returnFunc(hashes)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDHTNode_ProbeHashes_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ProbeHashes'
+type MockDHTNode_ProbeHashes_Call struct {
+	*mock.Call
+}
+
+// ProbeHashes is a helper method to define mock.On call
+//   - hashes []bits.Bitmap
+func (_e *MockDHTNode_Expecter) ProbeHashes(hashes interface{}) *MockDHTNode_ProbeHashes_Call {
+	return &MockDHTNode_ProbeHashes_Call{Call: _e.mock.On("ProbeHashes", hashes)}
+}
+
+func (_c *MockDHTNode_ProbeHashes_Call) Run(run func(hashes []bits.Bitmap)) *MockDHTNode_ProbeHashes_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].([]bits.Bitmap)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_ProbeHashes_Call) Return(bitmapToContacts map[bits.Bitmap][]dht.Contact, err error) *MockDHTNode_ProbeHashes_Call {
+	_c.Call.Return(bitmapToContacts, err)
+	return _c
+}
+
+func (_c *MockDHTNode_ProbeHashes_Call) RunAndReturn(run func(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error)) *MockDHTNode_ProbeHashes_Call {
 	_c.Call.Return(run)
 	return _c
 }

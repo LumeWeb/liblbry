@@ -1,10 +1,11 @@
 package protocol
 
 import (
+	"io"
+
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"io"
 )
 
 // ZapToLogrusAdapter adapts a zap logger to implement the logrus logger interface

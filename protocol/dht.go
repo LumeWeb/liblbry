@@ -57,6 +57,43 @@ type DHT interface {
 
 	// PrintState outputs debug information about the DHT state
 	PrintState()
+
+	// GetContacts returns all contacts in the routing table
+	GetContacts() []dht.Contact
+
+	// FindContacts performs iterative findNode/findValue operations
+	FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)
+
+	// ExploreKeyspace systematically explores the keyspace around a target
+	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
+
+	// ExploreKeyspaceWithLimit systematically explores the keyspace with iteration limit
+	ExploreKeyspaceWithLimit(target bits.Bitmap, maxIterations int) ([]dht.Contact, error)
+
+	// GetRoutingTable returns the internal routing table for advanced operations.
+	//
+	// The returned routing table is a live, mutable structure that directly reflects
+	// the current state of the DHT's routing table. Callers can use this for advanced
+	// operations such as:
+	//   - Direct contact management via Update(), Fresh(), Fail() methods
+	//   - Custom routing table analysis and monitoring
+	//   - Integration with external routing algorithms
+	//
+	// IMPORTANT: Thread Safety Requirements
+	// The routing table is NOT thread-safe for concurrent mutations. Callers MUST
+	// provide external synchronization when:
+	//   - Calling mutating methods (Update, Fresh, Fail) concurrently
+	//   - Accessing the routing table while the DHT is actively running
+	//   - Sharing the routing table reference across multiple goroutines
+	//
+	// For most use cases, prefer using the higher-level DHTNode methods which
+	// handle synchronization internally. Only use GetRoutingTable() when you
+	// need direct access to routing table internals and can ensure proper
+	// synchronization.
+	//
+	// Returns:
+	//   - dht.RoutingTable: Live routing table interface for advanced operations
+	GetRoutingTable() dht.RoutingTable
 }
 
 // DHTNode defines the interface for DHT (Distributed Hash Table) node operations
@@ -90,6 +127,22 @@ type DHTNode interface {
 
 	// Watchdog returns the DHT watchdog instance for contact validation
 	Watchdog() watchdog.DHTWatchdog
+
+	// Network Exploration Methods
+	// GetRoutingTableContacts returns all contacts in the routing table
+	GetRoutingTableContacts() ([]dht.Contact, error)
+
+	// FindContacts performs iterative findNode/findValue operations
+	FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)
+
+	// ProbeHashes probes for specific hashes to find content and populate routing table
+	ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error)
+
+	// AddContact manually adds a contact to the routing table
+	AddContact(contact dht.Contact) error
+
+	// ExploreKeyspace systematically explores the keyspace around a target
+	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -98,6 +151,8 @@ type DHTConfig struct {
 	Address string
 	// Logger for DHT operations (internally converted from zap.Logger)
 	Logger *logrus.Logger
+	// Original zap logger for components that need zap logger
+	ZapLogger *zap.Logger
 	// Seed nodes for joining the DHT network
 	SeedNodes []string
 	// Hex-encoded node ID (empty for random)
@@ -112,6 +167,16 @@ type DHTConfig struct {
 	AnnounceRate int
 	// Watchdog for contact validation with caching and blacklisting
 	Watchdog watchdog.DHTWatchdog
+	// Enable network scanning during startup to populate routing table.
+	//
+	// Network scanning systematically explores the network to discover contacts
+	// and populate the routing table beyond just seed nodes. This can improve
+	// DHT performance and network connectivity but adds startup overhead.
+	//
+	// IMPORTANT: Defaults to false (disabled). Network scanning is opt-in
+	// and must be explicitly enabled via WithDHTNetworkScan(true) to avoid
+	// unexpected startup delays or network traffic.
+	NetworkScanEnabled bool
 }
 
 // DHTOption configures DHT peer instances
@@ -254,8 +319,10 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 	return func(c *DHTConfig) {
 		if logger == nil {
 			c.Logger = nil
+			c.ZapLogger = nil
 		} else {
 			c.Logger = NewZapToLogrusAdapter(logger)
+			c.ZapLogger = logger
 		}
 	}
 }
@@ -264,6 +331,24 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 func WithDHTWatchdog(wd watchdog.DHTWatchdog) DHTOption {
 	return func(c *DHTConfig) {
 		c.Watchdog = wd
+	}
+}
+
+// WithDHTNetworkScan enables or disables network scanning during startup.
+//
+// Network scanning systematically explores the network to populate the routing table
+// with discovered contacts, which can improve DHT performance and connectivity.
+//
+// IMPORTANT: Network scanning is opt-in and defaults to DISABLED (false).
+// Callers must explicitly enable it using WithDHTNetworkScan(true) if they want
+// this functionality. When disabled, the DHT will rely solely on seed nodes
+// and peer discoveries during normal operations.
+//
+// Parameters:
+//   - enabled: true to enable network scanning, false to disable (default)
+func WithDHTNetworkScan(enabled bool) DHTOption {
+	return func(c *DHTConfig) {
+		c.NetworkScanEnabled = enabled
 	}
 }
 
