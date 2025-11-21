@@ -42,15 +42,15 @@ func (c *DefaultNetworkCrawler) Run() error {
 	}
 
 	// Perform systematic network exploration
-	// This runs in the background and populates the routing table
+	// This runs synchronously in the foreground and populates the routing table
 	// with discovered contacts from across the network
 
 	// Explore keyspace around the node ID
 	nodeID := c.dhtNode.ID()
 	contacts, err := c.dhtNode.ExploreKeyspace(nodeID)
 	if err != nil {
-		// Log error but don't fail - the DHT will still function
-		// with basic routing table population
+		// Return error to caller - the caller is responsible for deciding
+		// whether to log or suppress startup failures
 		c.logger.Error("Failed to explore keyspace during network crawling", zap.Error(err))
 		return err
 	}
