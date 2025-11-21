@@ -12,6 +12,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// IsValidPortRange checks if a port is within the valid range (0-65535)
+// Returns true if valid, false otherwise
+func IsValidPortRange(port int) bool {
+	return port >= 0 && port <= 65535
+}
+
+// IsValidNonZeroPortRange checks if a port is within the valid range (1-65535)
+// Returns true if valid, false otherwise
+func IsValidNonZeroPortRange(port int) bool {
+	return port >= 1 && port <= 65535
+}
+
 // DefaultDHTAddress is the default address for DHT nodes
 // Uses 127.0.0.1 (localhost) by default because 0.0.0.0 cannot be used for DHT broadcasting.
 // Production deployments must explicitly set their external IP using WithDHTAddress().
@@ -110,15 +122,19 @@ type DHTOption func(*DHTConfig)
 func validateDHTConfigIfNeeded(c *DHTConfig) {
 	// Lightweight per-field validation for obviously invalid values
 	// This catches invalid field combinations early, even for partial configs
-	if c.Address != "" {
-		// If address is set, peer protocol port must be valid
-		if c.PeerProtocolPort < 1 || c.PeerProtocolPort > 65535 {
-			panic(fmt.Sprintf("peer protocol port must be between 1 and 65535, got %d", c.PeerProtocolPort))
-		}
+
+	// Validate peer protocol port range if set (0 is allowed to disable)
+	if !IsValidPortRange(c.PeerProtocolPort) {
+		panic(fmt.Sprintf("peer protocol port must be between 0 and 65535 (0 to disable), got %d", c.PeerProtocolPort))
+	}
+
+	// Additional validation: if address is set, peer protocol port must be non-zero
+	if c.Address != "" && c.PeerProtocolPort == 0 {
+		panic("peer protocol port must be non-zero when address is set")
 	}
 
 	// Validate RPC port range if set (0 is allowed to disable)
-	if c.RPCPort < 0 || c.RPCPort > 65535 {
+	if !IsValidPortRange(c.RPCPort) {
 		panic(fmt.Sprintf("RPC port must be between 0 and 65535 (0 to disable), got %d", c.RPCPort))
 	}
 
@@ -150,7 +166,7 @@ func validateDHTConfig(c *DHTConfig) error {
 		return errors.New("DHT address cannot be empty")
 	}
 
-	if c.PeerProtocolPort < 1 || c.PeerProtocolPort > 65535 {
+	if !IsValidNonZeroPortRange(c.PeerProtocolPort) {
 		return errors.New("peer protocol port must be between 1 and 65535")
 	}
 
@@ -250,9 +266,9 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 }
 
 // WithDHTWatchdog sets the DHT watchdog for contact validation
-func WithDHTWatchdog(watchdog watchdog.DHTWatchdog) DHTOption {
+func WithDHTWatchdog(wd watchdog.DHTWatchdog) DHTOption {
 	return func(c *DHTConfig) {
-		c.Watchdog = watchdog
+		c.Watchdog = wd
 	}
 }
 

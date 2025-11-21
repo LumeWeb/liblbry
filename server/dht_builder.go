@@ -81,7 +81,7 @@ func NewDHTBuilder(logger *zap.Logger) (*DHTBuilder, error) {
 
 // WithPort sets the DHT listening port
 func (b *DHTBuilder) WithPort(port int) *DHTBuilder {
-	if port < 0 || port > 65535 {
+	if !protocol.IsValidPortRange(port) {
 		b.logger.Warn("Invalid DHT port provided, using default",
 			zap.Int("provided", port),
 			zap.Int("default", DefaultDHTPort))
@@ -146,7 +146,7 @@ func (b *DHTBuilder) WithNodeID(id string) *DHTBuilder {
 
 // WithPeerProtocolPort sets the port for DHT blob protocol clients
 func (b *DHTBuilder) WithPeerProtocolPort(port int) *DHTBuilder {
-	if port < 1 || port > 65535 {
+	if !protocol.IsValidNonZeroPortRange(port) {
 		b.logger.Warn("Invalid peer protocol port provided, using default",
 			zap.Int("provided", port),
 			zap.Int("default", DefaultPeerPort))
@@ -159,7 +159,7 @@ func (b *DHTBuilder) WithPeerProtocolPort(port int) *DHTBuilder {
 
 // WithRPCPort sets the DHT RPC server port (0 to disable)
 func (b *DHTBuilder) WithRPCPort(port int) *DHTBuilder {
-	if port < 0 || port > 65535 {
+	if !protocol.IsValidPortRange(port) {
 		b.logger.Warn("Invalid RPC port provided, using default",
 			zap.Int("provided", port),
 			zap.Int("default", 0))
@@ -431,7 +431,7 @@ func validateAddress(address string) error {
 	if err != nil {
 		return fmt.Errorf("port must be numeric: %w", err)
 	}
-	if portNum < 1 || portNum > 65535 {
+	if !protocol.IsValidNonZeroPortRange(portNum) {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", portNum)
 	}
 
