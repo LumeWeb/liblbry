@@ -161,6 +161,46 @@ func TestServerBuilder_WithLogger(t *testing.T) {
 	assert.Same(t, testMocks.logger, builder.logger)
 }
 
+// TestServerBuilder_WithLogger_PropagatesToDHTBuilder verifies that logger changes are propagated to existing DHTBuilder
+// This ensures that DHT logging stays in sync with the server logger when WithLogger is called after DHT configuration
+func TestServerBuilder_WithLogger_PropagatesToDHTBuilder(t *testing.T) {
+	builder := NewServerBuilder()
+
+	// First configure DHT to create DHTBuilder instance
+	builder.WithDHT(lbryTesting.GetFreePort(t))
+
+	// Verify DHTBuilder was created with default logger
+	require.NotNil(t, builder.dhtBuilder)
+	assert.Equal(t, zap.NewNop(), builder.dhtBuilder.logger)
+
+	// Now set a custom logger on the server builder
+	customLogger := zaptest.NewLogger(t)
+	builder.WithLogger(customLogger)
+
+	// Verify the server logger was updated
+	assert.Same(t, customLogger, builder.logger)
+
+	// Verify the DHTBuilder logger was also updated (propagation)
+	assert.Same(t, customLogger, builder.dhtBuilder.logger)
+}
+
+// TestServerBuilder_WithLogger_BeforeDHTConfiguration verifies that logger is used when DHT is configured after WithLogger
+// This ensures that DHTBuilder gets the correct logger when created after WithLogger is called
+func TestServerBuilder_WithLogger_BeforeDHTConfiguration(t *testing.T) {
+	builder := NewServerBuilder()
+
+	// Set custom logger first
+	customLogger := zaptest.NewLogger(t)
+	builder.WithLogger(customLogger)
+
+	// Now configure DHT - should use the custom logger
+	builder.WithDHT(lbryTesting.GetFreePort(t))
+
+	// Verify both server and DHTBuilder have the custom logger
+	assert.Same(t, customLogger, builder.logger)
+	assert.Same(t, customLogger, builder.dhtBuilder.logger)
+}
+
 // TestServerBuilder_WithPeer verifies peer protocol configuration with default and custom ports
 // This test ensures that peer config can be correctly configured with either default or custom ports
 func TestServerBuilder_WithPeer(t *testing.T) {
@@ -622,9 +662,6 @@ func TestTransferOptionsIntegration(t *testing.T) {
 		// Stop the server - this will also shutdown the DHT node
 		err = server.Stop(ctx)
 		require.NoError(t, err)
-
-		// Manually shutdown the DHT node to avoid resource leaks
-		dhtNode.Shutdown()
 	})
 
 	t.Run("CustomTransferOption", func(t *testing.T) {

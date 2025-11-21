@@ -219,6 +219,80 @@ func TestDHTBuilder_WithOptions(t *testing.T) {
 	assert.Len(t, builder.options, 4) // Should only add non-nil options
 }
 
+func TestDHTBuilder_WithOptions_AppliedToConfig(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	builder, err := NewDHTBuilder(logger)
+	require.NoError(t, err)
+
+	// Configure builder with some settings
+	builder.WithPort(5555).
+		WithSeedNodes([]string{"node1.example.com:4444"}).
+		WithNodeID("builder-node-id").
+		WithAnnounceRate(10) // This will be overridden by WithOptions
+
+	// Add options via WithOptions that should override builder settings
+	builder.WithOptions(
+		protocol.WithDHTNodeID("options-node-id"),      // Should override builder node ID
+		protocol.WithDHTAnnounceRate(25),               // Should override builder announce rate
+		protocol.WithDHTReannounceTime(45*time.Minute), // Should use default (not set in builder)
+	)
+
+	// Build config and verify options are applied
+	config, err := builder.BuildConfig()
+	require.NoError(t, err)
+
+	// Verify that options from WithOptions take precedence over builder settings
+	assert.Equal(t, "options-node-id", config.NodeID, "NodeID from WithOptions should override builder setting")
+	assert.Equal(t, 25, config.AnnounceRate, "AnnounceRate from WithOptions should override builder setting")
+	assert.Equal(t, 45*time.Minute, config.ReannounceTime, "ReannounceTime from WithOptions should be applied")
+
+	// Verify that builder settings not overridden by options are still applied
+	assert.Equal(t, 5555, config.Port, "Port from builder should be preserved")
+	assert.Equal(t, []string{"node1.example.com:4444"}, config.SeedNodes, "SeedNodes from builder should be preserved")
+}
+
+func TestDHTBuilder_WithOptions_AppliedToNode(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	builder, err := NewDHTBuilder(logger)
+	require.NoError(t, err)
+
+	// Configure builder with minimal settings for node creation
+	builder.WithPort(5555).
+		WithSeedNodes([]string{"127.0.0.1:4444"}).
+		WithNodeID("builder-node-id")
+
+	// Add options via WithOptions
+	customNodeID := "options-node-id"
+	customAnnounceRate := 30
+	builder.WithOptions(
+		protocol.WithDHTNodeID(customNodeID),
+		protocol.WithDHTAnnounceRate(customAnnounceRate),
+	)
+
+	// Build node - this will apply both builder config and options
+	node, err := builder.BuildNode()
+	require.NoError(t, err)
+	require.NotNil(t, node)
+
+	// Clean up the node
+	defer func() {
+		if node != nil {
+			node.Shutdown()
+		}
+	}()
+
+	// Note: We can't directly inspect the node's internal configuration
+	// since the protocol.DHTNode interface doesn't expose getters.
+	// However, the fact that the node builds successfully without errors
+	// and the BuildConfig test above verifies the options are applied
+	// gives us confidence that the options are correctly passed through.
+	// The real verification would be through integration tests that
+	// observe the node's behavior, but that's beyond the scope of unit tests.
+
+	// At minimum, verify the node was created (no panics or errors)
+	assert.NotNil(t, node, "Node should be created successfully with options applied")
+}
+
 func TestDHTBuilder_WithValidation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	builder, err := NewDHTBuilder(logger)

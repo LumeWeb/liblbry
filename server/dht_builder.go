@@ -420,9 +420,10 @@ func validateAddress(address string) error {
 }
 
 // convertToLogrus converts zap.Logger to logrus.Logger for DHT compatibility
-// This is a placeholder - in a real implementation, you'd use the existing adapter
+// Uses the existing ZapToLogrusAdapter from the protocol package
 func convertToLogrus(zapLogger *zap.Logger) *logrus.Logger {
-	// For now, return nil - the protocol package handles nil logger gracefully
-	// In a full implementation, you'd use the existing logger adapter
-	return nil
+	if zapLogger == nil {
+		return nil
+	}
+	return protocol.NewZapToLogrusAdapter(zapLogger)
 }

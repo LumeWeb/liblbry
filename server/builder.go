@@ -210,6 +210,12 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 		return b
 	}
 	b.logger = logger
+
+	// Propagate logger to existing DHTBuilder to keep logging in sync
+	if b.dhtBuilder != nil {
+		b.dhtBuilder.WithLogger(logger)
+	}
+
 	return b
 }
 
@@ -416,6 +422,8 @@ func (b *ServerBuilder) Build() (Server, error) {
 
 			// Get protocol options for server creation
 			dhtOptions = b.dhtBuilder.buildProtocolOptions()
+			// Merge any additional options provided via WithDHTOptions
+			dhtOptions = append(dhtOptions, b.dhtBuilder.options...)
 		} else {
 			// DHTBuilder exists but not configured - use empty options
 			dhtOptions = []protocol.DHTOption{}
