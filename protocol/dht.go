@@ -107,8 +107,13 @@ type DHTOption func(*DHTConfig)
 // validateDHTConfigIfNeeded validates the config only if it appears to be fully initialized
 // This allows partial configs during building phase without triggering validation panics
 func validateDHTConfigIfNeeded(c *DHTConfig) {
-	// Only validate if the config appears to be fully initialized
-	if c.ReannounceTime > 0 && c.AnnounceRate > 0 {
+	// Only validate if all required fields appear to be initialized
+	// This heuristic prevents validation panics when configs are built incrementally
+	if c.Address != "" &&
+		c.PeerProtocolPort > 0 &&
+		c.RPCPort >= 0 &&
+		c.ReannounceTime > 0 &&
+		c.AnnounceRate > 0 {
 		if err := validateDHTConfig(c); err != nil {
 			panic(err) // Fail fast during configuration
 		}

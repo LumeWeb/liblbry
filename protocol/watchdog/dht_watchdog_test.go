@@ -57,6 +57,7 @@ func TestNew(t *testing.T) {
 		WithCacheTimeout(time.Minute),
 		WithLogger(logger),
 	)
+	defer watchdog.Stop()
 
 	assert.Equal(t, "dht_watchdog", watchdog.Name())
 
@@ -72,6 +73,7 @@ func TestValidateContactForHash(t *testing.T) {
 		WithTestPorts(testPort),
 		WithTestTimeout(time.Second),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 	blobHash := bits.Bitmap{9, 8, 7}
@@ -92,12 +94,13 @@ func TestValidateContact_Cached(t *testing.T) {
 		WithCacheTimeout(time.Minute),
 		WithTestTimeout(time.Second),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 	ctx := context.Background()
 
-	// First validation should succeed (we'll mock the port test)
-	// Since we can't actually connect, this will fail and blacklist
+	// First validation runs against a non-listening port, so it should fail
+	// and cause the contact to be blacklisted.
 	result := watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result) // Should fail due to no actual server
 
@@ -109,10 +112,7 @@ func TestValidateContact_Cached(t *testing.T) {
 	watchdog.RemoveFromBlacklist(contact.ID)
 
 	// Manually add to cache to test cached path
-	watchdog.cache[contact.ID] = &cachedContact{
-		contact:   contact,
-		timestamp: time.Now(),
-	}
+	watchdog.AddToCache(contact, time.Now())
 
 	// Now validation should return true due to cache
 	result = watchdog.ValidateAndUpdateContact(ctx, contact)
@@ -126,6 +126,7 @@ func TestValidateContact_Blacklisted(t *testing.T) {
 		WithTestPorts(testPort),
 		WithTestTimeout(time.Second),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 	ctx := context.Background()
@@ -146,6 +147,7 @@ func TestIsCached(t *testing.T) {
 	watchdog := New(
 		WithCacheTimeout(time.Minute),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 
@@ -153,16 +155,13 @@ func TestIsCached(t *testing.T) {
 	assert.False(t, watchdog.IsCached(contact.ID))
 
 	// Add to cache
-	watchdog.cache[contact.ID] = &cachedContact{
-		contact:   contact,
-		timestamp: time.Now(),
-	}
+	watchdog.AddToCache(contact, time.Now())
 
 	// Should be cached
 	assert.True(t, watchdog.IsCached(contact.ID))
 
-	// Test expiration
-	watchdog.cache[contact.ID].timestamp = time.Now().Add(-2 * time.Minute)
+	// Test expiration by adding an expired entry
+	watchdog.AddToCache(contact, time.Now().Add(-2*time.Minute))
 	assert.False(t, watchdog.IsCached(contact.ID))
 }
 
@@ -170,6 +169,7 @@ func TestIsBlacklisted(t *testing.T) {
 	watchdog := New(
 		WithBlacklistTimeout(time.Minute),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 
@@ -177,29 +177,24 @@ func TestIsBlacklisted(t *testing.T) {
 	assert.False(t, watchdog.IsBlacklisted(contact.ID))
 
 	// Add to blacklist
-	watchdog.blacklist[contact.ID] = &blacklistedContact{
-		timestamp: time.Now(),
-	}
+	watchdog.AddToBlacklist(contact.ID, time.Now())
 
 	// Should be blacklisted
 	assert.True(t, watchdog.IsBlacklisted(contact.ID))
 
-	// Test expiration
-	watchdog.blacklist[contact.ID].timestamp = time.Now().Add(-2 * time.Minute)
+	// Test expiration by adding an expired entry
+	watchdog.AddToBlacklist(contact.ID, time.Now().Add(-2*time.Minute))
 	assert.False(t, watchdog.IsBlacklisted(contact.ID))
 }
 
 func TestRemoveFromCache(t *testing.T) {
 	watchdog := New()
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 
 	// Add to cache
-	watchdog.cache[contact.ID] = &cachedContact{
-		contact:   contact,
-		timestamp: time.Now(),
-	}
-
+	watchdog.AddToCache(contact, time.Now())
 	assert.True(t, watchdog.IsCached(contact.ID))
 
 	// Remove from cache
@@ -209,14 +204,12 @@ func TestRemoveFromCache(t *testing.T) {
 
 func TestRemoveFromBlacklist(t *testing.T) {
 	watchdog := New()
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 
 	// Add to blacklist
-	watchdog.blacklist[contact.ID] = &blacklistedContact{
-		timestamp: time.Now(),
-	}
-
+	watchdog.AddToBlacklist(contact.ID, time.Now())
 	assert.True(t, watchdog.IsBlacklisted(contact.ID))
 
 	// Remove from blacklist
@@ -229,43 +222,36 @@ func TestCleanupExpired(t *testing.T) {
 		WithCacheTimeout(time.Minute),
 		WithBlacklistTimeout(time.Minute),
 	)
+	defer watchdog.Stop()
 
 	contact1 := createTestContact(t)
 	contact2 := createTestContact(t)
 	contact2.ID = bits.Bitmap{9, 8, 7} // Different ID
 
 	// Add expired cache entry
-	watchdog.cache[contact1.ID] = &cachedContact{
-		contact:   contact1,
-		timestamp: time.Now().Add(-2 * time.Minute),
-	}
+	watchdog.AddToCache(contact1, time.Now().Add(-2*time.Minute))
 
 	// Add valid cache entry
-	watchdog.cache[contact2.ID] = &cachedContact{
-		contact:   contact2,
-		timestamp: time.Now(),
-	}
+	watchdog.AddToCache(contact2, time.Now())
 
 	// Add expired blacklist entry
-	watchdog.blacklist[contact1.ID] = &blacklistedContact{
-		timestamp: time.Now().Add(-2 * time.Minute),
-	}
+	watchdog.AddToBlacklist(contact1.ID, time.Now().Add(-2*time.Minute))
 
 	// Add valid blacklist entry
-	watchdog.blacklist[contact2.ID] = &blacklistedContact{
-		timestamp: time.Now(),
-	}
+	watchdog.AddToBlacklist(contact2.ID, time.Now())
 
 	// Before cleanup
-	assert.Equal(t, 2, len(watchdog.cache))
-	assert.Equal(t, 2, len(watchdog.blacklist))
+	stats := watchdog.GetStats()
+	assert.Equal(t, 2, stats.CachedContacts)
+	assert.Equal(t, 2, stats.BlacklistedContacts)
 
 	// Run cleanup
 	watchdog.CleanupExpired()
 
 	// After cleanup - only valid entries should remain
-	assert.Equal(t, 1, len(watchdog.cache))
-	assert.Equal(t, 1, len(watchdog.blacklist))
+	stats = watchdog.GetStats()
+	assert.Equal(t, 1, stats.CachedContacts)
+	assert.Equal(t, 1, stats.BlacklistedContacts)
 	assert.True(t, watchdog.IsCached(contact2.ID))
 	assert.True(t, watchdog.IsBlacklisted(contact2.ID))
 	assert.False(t, watchdog.IsCached(contact1.ID))
@@ -274,18 +260,13 @@ func TestCleanupExpired(t *testing.T) {
 
 func TestGetStats(t *testing.T) {
 	watchdog := New()
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 
 	// Add some entries
-	watchdog.cache[contact.ID] = &cachedContact{
-		contact:   contact,
-		timestamp: time.Now(),
-	}
-
-	watchdog.blacklist[contact.ID] = &blacklistedContact{
-		timestamp: time.Now(),
-	}
+	watchdog.AddToCache(contact, time.Now())
+	watchdog.AddToBlacklist(contact.ID, time.Now())
 
 	stats := watchdog.GetStats()
 	assert.Equal(t, 1, stats.CachedContacts)
@@ -297,6 +278,7 @@ func TestConcurrentAccess(t *testing.T) {
 	watchdog := New(
 		WithTestTimeout(time.Millisecond * 100),
 	)
+	defer watchdog.Stop()
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
@@ -333,6 +315,7 @@ func TestTestPort(t *testing.T) {
 	watchdog := New(
 		WithTestTimeout(time.Second),
 	)
+	defer watchdog.Stop()
 
 	ctx := context.Background()
 
@@ -351,6 +334,7 @@ func TestTestContactPorts(t *testing.T) {
 		WithTestPorts(testPort1, testPort2),
 		WithTestTimeout(time.Millisecond*100),
 	)
+	defer watchdog.Stop()
 
 	contact := createTestContact(t)
 	ctx := context.Background()
@@ -403,6 +387,7 @@ func TestValidateContact_WithRealServer(t *testing.T) {
 		WithTestPorts(port),
 		WithTestTimeout(time.Second),
 	)
+	defer watchdog.Stop()
 
 	contact := &dht.Contact{
 		ID:   bits.Bitmap{1, 2, 3},
@@ -433,6 +418,7 @@ func TestValidateAndUpdateContact_MutationBehavior(t *testing.T) {
 		WithTestPorts(port),
 		WithTestTimeout(time.Millisecond*100), // Fast timeout for test
 	)
+	defer watchdog.Stop()
 
 	// Create contact with PeerPort = 0 to test mutation behavior
 	contact := &dht.Contact{
@@ -464,6 +450,7 @@ func TestValidateContactForHash_UsesValidateAndUpdateContact(t *testing.T) {
 		WithTestPorts(port),
 		WithTestTimeout(time.Millisecond*100), // Fast timeout for test
 	)
+	defer watchdog.Stop()
 
 	contact := &dht.Contact{
 		ID:       bits.Bitmap{1, 2, 3},

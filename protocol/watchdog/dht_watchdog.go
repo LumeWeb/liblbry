@@ -33,6 +33,14 @@ type DHTWatchdog interface {
 	// RemoveFromBlacklist removes a contact from the blacklist
 	RemoveFromBlacklist(contactID bits.Bitmap)
 
+	// AddToCache manually adds a contact to the cache with the specified timestamp
+	// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
+	AddToCache(contact *dht.Contact, timestamp time.Time)
+
+	// AddToBlacklist manually adds a contact to the blacklist with the specified timestamp
+	// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
+	AddToBlacklist(contactID bits.Bitmap, timestamp time.Time)
+
 	// CleanupExpired removes expired entries from cache and blacklist
 	CleanupExpired()
 
@@ -313,6 +321,43 @@ func (w *DefaultDHTWatchdog) RemoveFromBlacklist(contactID bits.Bitmap) {
 	delete(w.blacklist, contactID)
 	if w.config.Logger != nil {
 		w.config.Logger.Debug("Removed contact from blacklist",
+			zap.String("contact_id", contactID.HexShort()))
+	}
+}
+
+// AddToCache manually adds a contact to the cache with the specified timestamp
+// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
+func (w *DefaultDHTWatchdog) AddToCache(contact *dht.Contact, timestamp time.Time) {
+	if contact == nil {
+		return
+	}
+
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	w.cache[contact.ID] = &cachedContact{
+		contact:   contact,
+		timestamp: timestamp,
+	}
+
+	if w.config.Logger != nil {
+		w.config.Logger.Debug("Manually added contact to cache",
+			zap.String("contact_id", contact.ID.HexShort()))
+	}
+}
+
+// AddToBlacklist manually adds a contact to the blacklist with the specified timestamp
+// This bypasses normal validation and should be used carefully (e.g., in tests or migrations)
+func (w *DefaultDHTWatchdog) AddToBlacklist(contactID bits.Bitmap, timestamp time.Time) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	w.blacklist[contactID] = &blacklistedContact{
+		timestamp: timestamp,
+	}
+
+	if w.config.Logger != nil {
+		w.config.Logger.Debug("Manually added contact to blacklist",
 			zap.String("contact_id", contactID.HexShort()))
 	}
 }

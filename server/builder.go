@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"strings"
 
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
@@ -147,26 +146,29 @@ func (b *ServerBuilder) extractSeedNodesFromOptions(dhtConfig *DHTConfig) {
 func (b *ServerBuilder) extractSeedNodesFromOptionsOnly() []string {
 	var lastSeedNodes []string
 
-	for _, option := range b.dhtOptions {
-		// Create a temporary config to test what this option does
-		tempConfig, err := protocol.NewDHTConfig()
-		if err != nil {
-			// If we can't create a temp config, skip this option
-			// This is a safe fallback since we're just trying to extract seed nodes
-			continue
-		}
+	// Create a single temporary config and reuse it to avoid repeated allocations
+	tempConfig, err := protocol.NewDHTConfig()
+	if err != nil {
+		// If we can't create a temp config, return empty slice
+		return lastSeedNodes
+	}
 
+	for _, option := range b.dhtOptions {
 		// Store original seed nodes to detect if this option changes them
 		originalSeedNodes := make([]string, len(tempConfig.SeedNodes))
 		copy(originalSeedNodes, tempConfig.SeedNodes)
 
-		// Apply the option
-		option(tempConfig)
+		// Apply the option using the helper function
+		applyDHTOptionsToConfig(tempConfig, []protocol.DHTOption{option})
 
 		// If seed nodes changed and this wasn't just a no-op, this is likely a WithDHTSeedNodes option
 		if !reflect.DeepEqual(originalSeedNodes, tempConfig.SeedNodes) && len(tempConfig.SeedNodes) > 0 {
-			lastSeedNodes = tempConfig.SeedNodes
+			lastSeedNodes = make([]string, len(tempConfig.SeedNodes))
+			copy(lastSeedNodes, tempConfig.SeedNodes)
 		}
+
+		// Reset the seed nodes for the next iteration
+		tempConfig.SeedNodes = originalSeedNodes
 	}
 
 	return lastSeedNodes
@@ -223,12 +225,8 @@ func (b *ServerBuilder) WithDHT(port ...int) *ServerBuilder {
 	b.extractSeedNodesFromOptions(dhtConfig)
 
 	// Also add the DHT address option using the port for consistency with new approach
-	// Use net.SplitHostPort for robustness against IPv6 literals and future format changes
-	host, _, err := net.SplitHostPort(protocol.DefaultDHTAddress)
-	if err != nil {
-		// Fallback to the original approach if SplitHostPort fails
-		host = strings.Split(protocol.DefaultDHTAddress, ":")[0]
-	}
+	// Use IPv6-aware host extraction with proper diagnostics
+	host := extractDHTHost(protocol.DefaultDHTAddress, b.logger)
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", p))
 	return b.WithDHTOptions(protocol.WithDHTAddress(address))
 }
@@ -283,10 +281,20 @@ func (b *ServerBuilder) WithLogger(logger *zap.Logger) *ServerBuilder {
 // This DRYs up the pattern used across multiple option methods
 func addOptionsWithNilCheck[T any](logger *zap.Logger, options []T, newOptions []T) []T {
 	for _, option := range newOptions {
-		// Use reflection to check for nil since direct comparison with generic type doesn't work
-		if any(option) == nil {
-			logger.Warn("Ignoring nil option")
+		// Use reflection to check for nil including typed-nil interface values
+		v := reflect.ValueOf(option)
+		if !v.IsValid() {
+			logger.Warn("Ignoring nil option", zap.String("option_type", fmt.Sprintf("%T", option)))
 			continue
+		}
+
+		// Check if the value type can be nil and if it is nil
+		switch v.Kind() {
+		case reflect.Ptr, reflect.Interface, reflect.Func, reflect.Slice, reflect.Map, reflect.Chan:
+			if v.IsNil() {
+				logger.Warn("Ignoring nil option", zap.String("option_type", fmt.Sprintf("%T", option)))
+				continue
+			}
 		}
 		options = append(options, option)
 	}

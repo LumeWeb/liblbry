@@ -22,6 +22,36 @@ import (
 	"golang.org/x/text/language"
 )
 
+// extractDHTHost safely extracts the host portion from a DHT address with IPv6 support
+// and proper logging/diagnostics when fallback parsing is needed
+func extractDHTHost(address string, logger *zap.Logger) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		// Log warning when falling back to manual parsing
+		logger.Warn(
+			"Failed to parse DHT address, using fallback host extraction",
+			zap.String("address", address),
+			zap.Error(err),
+		)
+		// IPv6-aware fallback: strip brackets and split on the last colon
+		trimmed := strings.Trim(address, "[]")
+		if idx := strings.LastIndex(trimmed, ":"); idx > 0 {
+			host = trimmed[:idx]
+		} else {
+			host = trimmed
+		}
+		// Validate the extracted host
+		if net.ParseIP(host) == nil && !strings.Contains(host, ".") {
+			logger.Error(
+				"Extracted DHT host appears invalid",
+				zap.String("host", host),
+				zap.String("address", address),
+			)
+		}
+	}
+	return host
+}
+
 // AcquirerFactory defines a function type for creating blob acquirers
 // This allows lazy initialization of acquirers after DHT and other dependencies are available
 type AcquirerFactory func(protocol.DHTNode, storage.BlobStore) (liblbry.BlobAcquirer, error)
@@ -333,8 +363,9 @@ func (s *DefaultServer) createDHTNode(config *DHTConfig, announcePeerPort int) (
 	// Determine the address to use
 	address := config.Address
 	if address == "" {
-		// Use default host with specified port
-		address = fmt.Sprintf("%s:%d", strings.Split(protocol.DefaultDHTAddress, ":")[0], config.Port)
+		// Use default host with specified port with IPv6-aware parsing
+		host := extractDHTHost(protocol.DefaultDHTAddress, s.logger)
+		address = fmt.Sprintf("%s:%d", host, config.Port)
 	}
 
 	// Add base configuration options
