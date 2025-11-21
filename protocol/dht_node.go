@@ -9,7 +9,6 @@ import (
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
 	"go.lumeweb.com/liblbry/protocol/watchdog"
-	"go.uber.org/zap"
 )
 
 // globalLoggerOnce ensures global logger is set only once per process to prevent data races
@@ -140,8 +139,9 @@ func (w *managedDHTNode) Start() error {
 	if err != nil {
 		// Log warning but don't fail startup - the DHT will still function
 		// with basic routing table population
-		w.config.Logger.Warn("Failed to start network crawler, DHT will function with basic routing table population",
-			zap.Error(err))
+		if w.config.Logger != nil {
+			w.config.Logger.WithError(err).Warn("Failed to start network crawler, DHT will function with basic routing table population")
+		}
 	}
 
 	return nil
@@ -482,36 +482,113 @@ func (w *managedDHTNode) ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dh
 	}
 
 	results := make(map[bits.Bitmap][]dht.Contact)
+	var errors []probeError
+	successCount := 0
+
 	for _, hash := range hashes {
 		contacts, found, err := w.dht.FindContacts(hash, true)
 		if err != nil {
+			errors = append(errors, probeError{hash: hash, err: err})
 			continue
 		}
 		if found {
 			results[hash] = contacts
+			successCount++
 		}
 	}
 
+	// If all probes failed, return aggregated error
+	if len(hashes) > 0 && successCount == 0 && len(errors) > 0 {
+		return nil, &probeErrors{errors: errors}
+	}
+
+	// Return partial results (may be empty if no content found but some probes succeeded)
 	return results, nil
 }
 
-// exploreNetwork performs systematic network exploration to populate routing table
-func (w *managedDHTNode) exploreNetwork() error {
+// probeError represents an error for a specific hash probe
+type probeError struct {
+	hash bits.Bitmap
+	err  error
+}
+
+func (e probeError) Error() string {
+	return fmt.Sprintf("hash %v: %v", e.hash, e.err)
+}
+
+// probeErrors represents multiple probe errors
+type probeErrors struct {
+	errors []probeError
+}
+
+func (e *probeErrors) Error() string {
+	if len(e.errors) == 0 {
+		return "no probe errors"
+	}
+	if len(e.errors) == 1 {
+		return fmt.Sprintf("probe failed: %v", e.errors[0])
+	}
+	return fmt.Sprintf("all %d probes failed, first error: %v", len(e.errors), e.errors[0])
+}
+
+// AddContact manually adds a contact to the routing table
+func (w *managedDHTNode) AddContact(contact dht.Contact) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	if !w.isActive() {
 		return fmt.Errorf("DHT node is stopped")
 	}
 
+	// Get underlying DHT instance and access its routing table
+	routingTable := w.dht.GetRoutingTable()
+
+	// Call Update method to add contact to routing table
+	routingTable.Update(contact)
+
+	return nil
+}
+
+// ExploreKeyspace systematically explores the keyspace around a target
+func (w *managedDHTNode) ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil, fmt.Errorf("DHT node is stopped")
+	}
+
+	return w.dht.ExploreKeyspace(target)
+}
+
+// exploreNetwork performs systematic network exploration to populate routing table
+func (w *managedDHTNode) exploreNetwork() error {
+	// Acquire read lock to safely access stopped and dht fields
+	w.mu.RLock()
+
+	// Check if node is stopped while holding the lock
+	if w.stopped {
+		w.mu.RUnlock()
+		return fmt.Errorf("DHT node is stopped")
+	}
+
+	// Copy dht instance to local variable to use outside the lock
+	local := w.dht
+	w.mu.RUnlock()
+
+	// Return error if dht instance is nil
+	if local == nil {
+		return fmt.Errorf("DHT node is stopped")
+	}
+
 	// Use the node's ID as the starting target for exploration
-	nodeID := w.dht.ID()
+	nodeID := local.ID()
 
 	// Explore keyspace around the node ID to discover more peers
-	_, err := w.dht.ExploreKeyspace(nodeID)
+	_, err := local.ExploreKeyspace(nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to explore keyspace: %w", err)
 	}
-
-	// The discovered contacts are automatically added to the routing table
-	// by the upstream DHT implementation during the exploration process
 
 	return nil
 }
@@ -531,7 +608,8 @@ func (w *managedDHTNode) startCrawler() error {
 	ctx, cancel := context.WithCancel(w.ctx)
 	w.crawlerStop = cancel
 
-	crawler := NewNetworkCrawler(w.dht, ctx)
+	// Use the zap logger from config for the crawler
+	crawler := NewNetworkCrawler(w, ctx, w.config.ZapLogger)
 
 	w.crawler = crawler
 

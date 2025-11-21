@@ -69,6 +69,9 @@ type DHT interface {
 
 	// ExploreKeyspaceWithLimit systematically explores the keyspace with iteration limit
 	ExploreKeyspaceWithLimit(target bits.Bitmap, maxIterations int) ([]dht.Contact, error)
+
+	// GetRoutingTable returns the internal routing table for advanced operations
+	GetRoutingTable() dht.RoutingTable
 }
 
 // DHTNode defines the interface for DHT (Distributed Hash Table) node operations
@@ -112,6 +115,12 @@ type DHTNode interface {
 
 	// ProbeHashes probes for specific hashes to find content and populate routing table
 	ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error)
+
+	// AddContact manually adds a contact to the routing table
+	AddContact(contact dht.Contact) error
+
+	// ExploreKeyspace systematically explores the keyspace around a target
+	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -120,6 +129,8 @@ type DHTConfig struct {
 	Address string
 	// Logger for DHT operations (internally converted from zap.Logger)
 	Logger *logrus.Logger
+	// Original zap logger for components that need zap logger
+	ZapLogger *zap.Logger
 	// Seed nodes for joining the DHT network
 	SeedNodes []string
 	// Hex-encoded node ID (empty for random)
@@ -278,8 +289,10 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 	return func(c *DHTConfig) {
 		if logger == nil {
 			c.Logger = nil
+			c.ZapLogger = nil
 		} else {
 			c.Logger = NewZapToLogrusAdapter(logger)
+			c.ZapLogger = logger
 		}
 	}
 }
