@@ -23,6 +23,9 @@ func NewNetworkCrawler(dhtNode DHTNode, ctx context.Context, logger *zap.Logger)
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &DefaultNetworkCrawler{
 		dhtNode: dhtNode,
 		ctx:     ctx,
