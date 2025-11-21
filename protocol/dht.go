@@ -57,6 +57,18 @@ type DHT interface {
 
 	// PrintState outputs debug information about the DHT state
 	PrintState()
+
+	// GetContacts returns all contacts in the routing table
+	GetContacts() []dht.Contact
+
+	// FindContacts performs iterative findNode/findValue operations
+	FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)
+
+	// ExploreKeyspace systematically explores the keyspace around a target
+	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
+
+	// ExploreKeyspaceWithLimit systematically explores the keyspace with iteration limit
+	ExploreKeyspaceWithLimit(target bits.Bitmap, maxIterations int) ([]dht.Contact, error)
 }
 
 // DHTNode defines the interface for DHT (Distributed Hash Table) node operations
@@ -90,6 +102,16 @@ type DHTNode interface {
 
 	// Watchdog returns the DHT watchdog instance for contact validation
 	Watchdog() watchdog.DHTWatchdog
+
+	// Network Exploration Methods
+	// GetRoutingTableContacts returns all contacts in the routing table
+	GetRoutingTableContacts() ([]dht.Contact, error)
+
+	// FindContacts performs iterative findNode/findValue operations
+	FindContacts(target bits.Bitmap, findValue bool) ([]dht.Contact, bool, error)
+
+	// ProbeHashes probes for specific hashes to find content and populate routing table
+	ProbeHashes(hashes []bits.Bitmap) (map[bits.Bitmap][]dht.Contact, error)
 }
 
 // DHTConfig holds configuration for DHT peer operations
@@ -112,6 +134,8 @@ type DHTConfig struct {
 	AnnounceRate int
 	// Watchdog for contact validation with caching and blacklisting
 	Watchdog watchdog.DHTWatchdog
+	// Enable network scanning during startup to populate routing table
+	NetworkScanEnabled bool
 }
 
 // DHTOption configures DHT peer instances
@@ -264,6 +288,13 @@ func WithDHTLogger(logger *zap.Logger) DHTOption {
 func WithDHTWatchdog(wd watchdog.DHTWatchdog) DHTOption {
 	return func(c *DHTConfig) {
 		c.Watchdog = wd
+	}
+}
+
+// WithDHTNetworkScan enables or disables network scanning during startup
+func WithDHTNetworkScan(enabled bool) DHTOption {
+	return func(c *DHTConfig) {
+		c.NetworkScanEnabled = enabled
 	}
 }
 
