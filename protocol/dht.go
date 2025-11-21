@@ -143,6 +143,9 @@ type DHTNode interface {
 
 	// ExploreKeyspace systematically explores the keyspace around a target
 	ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, error)
+
+	// GetRoutingTable returns the routing table for contact updates
+	GetRoutingTable() watchdog.RoutingTable
 }
 
 // DHTConfig holds configuration for DHT peer operations

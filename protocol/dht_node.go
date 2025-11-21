@@ -588,6 +588,18 @@ func (w *managedDHTNode) ExploreKeyspace(target bits.Bitmap) ([]dht.Contact, err
 	return w.dht.ExploreKeyspace(target)
 }
 
+// GetRoutingTable returns the routing table for contact updates
+func (w *managedDHTNode) GetRoutingTable() watchdog.RoutingTable {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return nil
+	}
+
+	return w.dht.GetRoutingTable()
+}
+
 // exploreNetwork performs systematic network exploration to populate routing table
 func (w *managedDHTNode) exploreNetwork() error {
 	// Acquire read lock to safely access stopped and dht fields
