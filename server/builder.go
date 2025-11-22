@@ -8,6 +8,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob/transfer"
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer"
 	"go.lumeweb.com/liblbry/protocol"
 	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/storage/disk"
@@ -400,14 +401,14 @@ func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logg
 		peerClientFactory := protocol.DefaultPeerClientFactory(
 			protocol.WithClientLogger(logger.Named("peer_client")),
 		)
-		peerTransfer, err := transfer.NewPeerTransfer(dhtNode, peerClientFactory,
-			transfer.WithPeerTransferLogger(logger.Named("peer_transfer")),
+		peerTransfer, err := peer_transfer.NewPeerTransfer(dhtNode, peerClientFactory,
+			peer_transfer.WithPeerTransferLogger(logger.Named("peer_transfer")),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create peer transfer: %w", err)
 		}
 
-		// Apply transfer options to the peer transfer
+		// Apply transfer options to the peer transfer before starting
 		for _, option := range transferOptions {
 			if err := option.Apply(peerTransfer); err != nil {
 				logger.Warn(
@@ -418,6 +419,9 @@ func createDefaultTransfersWithLogger(dhtNode protocol.DHTNode, logger *zap.Logg
 				// Continue with other options even if one fails
 			}
 		}
+
+		// Start the peer transfer after all options are applied
+		peerTransfer.Start()
 
 		transfers = append(transfers, peerTransfer)
 	}

@@ -12,5 +12,17 @@ packages:
   go.lumeweb.com/liblbry/protocol/watchdog:
   go.lumeweb.com/liblbry/crypto:
   go.lumeweb.com/liblbry/blob/transfer:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/connection:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/coordinator:
+    config:
+      dir: "{{.InterfaceDir}}"
+      filename: "mock_{{.InterfaceName}}.go"
+      pkgname: "{{.SrcPackageName}}"
+      all: true
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/discovery:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/executor:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/phase:
+  go.lumeweb.com/liblbry/blob/transfer/peer_transfer/downloader:
   go.lumeweb.com/liblbry/storage:
   go.lumeweb.com/liblbry/server:

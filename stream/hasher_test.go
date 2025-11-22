@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.lumeweb.com/liblbry/blob"
 	lbrycrypto "go.lumeweb.com/liblbry/crypto"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
 func TestSHA384Hasher_Hash(t *testing.T) {
@@ -21,23 +22,23 @@ func TestSHA384Hasher_Hash(t *testing.T) {
 	}{
 		{
 			name:     "empty data",
-			input:    KnownHashVectors[TestKeyEmpty].input,
-			expected: KnownHashVectors[TestKeyEmpty].expected,
+			input:    lbryTesting.KnownHashVectors[lbryTesting.TestKeyEmpty].Input,
+			expected: lbryTesting.KnownHashVectors[lbryTesting.TestKeyEmpty].Expected,
 		},
 		{
 			name:     "hello world",
-			input:    KnownHashVectors[TestKeyHelloWorld].input,
-			expected: KnownHashVectors[TestKeyHelloWorld].expected,
+			input:    lbryTesting.KnownHashVectors[lbryTesting.TestKeyHelloWorld].Input,
+			expected: lbryTesting.KnownHashVectors[lbryTesting.TestKeyHelloWorld].Expected,
 		},
 		{
 			name:     "lbry",
-			input:    KnownHashVectors[TestKeyLbry].input,
-			expected: KnownHashVectors[TestKeyLbry].expected,
+			input:    lbryTesting.KnownHashVectors[lbryTesting.TestKeyLbry].Input,
+			expected: lbryTesting.KnownHashVectors[lbryTesting.TestKeyLbry].Expected,
 		},
 		{
 			name:     "test data for hashing",
-			input:    KnownHashVectors[TestKeyTestData].input,
-			expected: KnownHashVectors[TestKeyTestData].expected,
+			input:    lbryTesting.KnownHashVectors[lbryTesting.TestKeyTestData].Input,
+			expected: lbryTesting.KnownHashVectors[lbryTesting.TestKeyTestData].Expected,
 		},
 	}
 
@@ -65,37 +66,37 @@ func TestSHA384Hasher_IsValid(t *testing.T) {
 		// Valid hashes
 		{
 			name:     "valid empty string hash",
-			hash:     ValidLBRYHashes[ValidHashKeyEmptyString],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyEmptyString],
 			expected: true,
 		},
 		{
 			name:     "valid hello world hash",
-			hash:     ValidLBRYHashes[ValidHashKeyHelloWorld],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyHelloWorld],
 			expected: true,
 		},
 		{
 			name:     "valid lbry hash",
-			hash:     ValidLBRYHashes[ValidHashKeyLbry],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyLbry],
 			expected: true,
 		},
 		{
 			name:     "valid LBRY blob hash",
-			hash:     ValidLBRYHashes[ValidHashKeyBlob],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyBlob],
 			expected: true,
 		},
 		{
 			name:     "valid LBRY stream hash",
-			hash:     ValidLBRYHashes[ValidHashKeyStream],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyStream],
 			expected: true,
 		},
 		{
 			name:     "valid LBRY blob info hash",
-			hash:     ValidLBRYHashes[ValidHashKeyBlobInfo],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyBlobInfo],
 			expected: true,
 		},
 		{
 			name:     "valid LBRY null stream hash",
-			hash:     ValidLBRYHashes[ValidHashKeyNullStream],
+			hash:     lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyNullStream],
 			expected: true,
 		},
 		{
@@ -111,17 +112,17 @@ func TestSHA384Hasher_IsValid(t *testing.T) {
 		// Invalid lengths
 		{
 			name:     "invalid empty",
-			hash:     InvalidHashLengths[InvalidLengthKeyEmpty],
+			hash:     lbryTesting.InvalidHashLengths[lbryTesting.InvalidLengthKeyEmpty],
 			expected: false,
 		},
 		{
 			name:     "invalid too short",
-			hash:     InvalidHashLengths[InvalidLengthKeyTooShort],
+			hash:     lbryTesting.InvalidHashLengths[lbryTesting.InvalidLengthKeyTooShort],
 			expected: false,
 		},
 		{
 			name:     "invalid wrong length",
-			hash:     InvalidHashLengths[InvalidLengthKeyWrongLength],
+			hash:     lbryTesting.InvalidHashLengths[lbryTesting.InvalidLengthKeyWrongLength],
 			expected: false,
 		},
 		{
@@ -142,28 +143,28 @@ func TestSHA384Hasher_IsValid(t *testing.T) {
 		// Invalid hex characters
 		{
 			name:     "invalid non-hex g",
-			hash:     InvalidHashHex[InvalidHexKeyInvalidG],
+			hash:     lbryTesting.InvalidHashHex[lbryTesting.InvalidHexKeyInvalidG],
 			expected: false,
 		},
 		{
 			name:     "invalid non-hex z",
-			hash:     InvalidHashHex[InvalidHexKeyInvalidZ],
+			hash:     lbryTesting.InvalidHashHex[lbryTesting.InvalidHexKeyInvalidZ],
 			expected: false,
 		},
 		{
 			name:     "invalid mixed hex",
-			hash:     InvalidHashHex[InvalidHexKeyMixed],
+			hash:     lbryTesting.InvalidHashHex[lbryTesting.InvalidHexKeyMixed],
 			expected: false,
 		},
 		// Uppercase characters
 		{
 			name:     "invalid all uppercase",
-			hash:     InvalidHashUppercase[InvalidUppercaseKeyAllUppercase],
+			hash:     lbryTesting.InvalidHashUppercase[lbryTesting.InvalidUppercaseKeyAllUppercase],
 			expected: false,
 		},
 		{
 			name:     "invalid mixed case",
-			hash:     InvalidHashUppercase[InvalidUppercaseKeyMixedCase],
+			hash:     lbryTesting.InvalidHashUppercase[lbryTesting.InvalidUppercaseKeyMixedCase],
 			expected: false,
 		},
 	}
@@ -183,12 +184,12 @@ func TestSHA384Hasher_HashAndValidateConsistency(t *testing.T) {
 		name string
 		data string
 	}{
-		{"empty", TestDataForHashing[0]},
-		{"hello", TestDataForHashing[1]},
-		{"hello world", TestDataForHashing[2]},
-		{"lbry", TestDataForHashing[3]},
-		{"test data for hashing", TestDataForHashing[4]},
-		{"long string", TestDataForHashing[5]},
+		{"empty", lbryTesting.TestDataForHashing[0]},
+		{"hello", lbryTesting.TestDataForHashing[1]},
+		{"hello world", lbryTesting.TestDataForHashing[2]},
+		{"lbry", lbryTesting.TestDataForHashing[3]},
+		{"test data for hashing", lbryTesting.TestDataForHashing[4]},
+		{"long string", lbryTesting.TestDataForHashing[5]},
 	}
 
 	for _, tt := range tests {
@@ -255,7 +256,7 @@ func TestHasherInterfaceCompatibility(t *testing.T) {
 		{
 			name: "LBRY blob hash valid",
 			testFunc: func(t *testing.T) {
-				assert.True(t, hasher.IsValid(LBRYTestHashes[LBRYHashKey1]), "LBRY blob hash should be valid")
+				assert.True(t, hasher.IsValid(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]), "LBRY blob hash should be valid")
 			},
 		},
 		{
@@ -290,11 +291,11 @@ func TestReferenceImplementationCompatibility(t *testing.T) {
 		name string
 		data string
 	}{
-		{"empty", TestDataForHashing[0]},
-		{"hello world", TestDataForHashing[2]},
-		{"lbry", TestDataForHashing[3]},
-		{"test data", TestDataForHashing[4]},
-		{"lbry test data", TestDataForHashing[4]},
+		{"empty", lbryTesting.TestDataForHashing[0]},
+		{"hello world", lbryTesting.TestDataForHashing[2]},
+		{"lbry", lbryTesting.TestDataForHashing[3]},
+		{"test data", lbryTesting.TestDataForHashing[4]},
+		{"lbry test data", lbryTesting.TestDataForHashing[4]},
 	}
 
 	for _, tt := range tests {

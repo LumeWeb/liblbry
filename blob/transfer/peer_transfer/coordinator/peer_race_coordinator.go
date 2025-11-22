@@ -1,0 +1,184 @@
+package coordinator
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.lumeweb.com/lbry-dht"
+	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/connection"
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/discovery"
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/executor"
+	"go.uber.org/zap"
+
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
+)
+
+// PeerRaceCoordinator defines the interface for coordinating peer download races
+type PeerRaceCoordinator interface {
+	// ExecuteRace executes a race among multiple peers to download a blob
+	// Returns the first successful result or error if all peers fail
+	ExecuteRace(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, completeOnFailure bool) ([]byte, error)
+
+	// IsStopped checks if the coordinator is stopped
+	IsStopped() bool
+
+	// Stop stops the coordinator
+	Stop()
+
+	// Start starts the coordinator
+	Start()
+
+	// SetTimeout updates the race timeout
+	SetTimeout(timeout time.Duration)
+
+	// GetCoordinator returns the underlying request coordinator
+	GetCoordinator() RequestCoordinator
+
+	// GetTaskExecutor returns the underlying task executor
+	GetTaskExecutor() executor.PeerTaskExecutor
+}
+
+// DefaultPeerRaceCoordinator handles peer race coordination and task execution
+type DefaultPeerRaceCoordinator struct {
+	connMgr      connection.ConnectionManager
+	discovery    discovery.PeerDiscovery
+	coordinator  RequestCoordinator
+	taskExecutor executor.PeerTaskExecutor
+	timeout      time.Duration
+	logger       *zap.Logger
+	stopped      bool
+}
+
+// NewPeerRaceCoordinator creates a new DefaultPeerRaceCoordinator instance
+func NewPeerRaceCoordinator(
+	connMgr connection.ConnectionManager,
+	discovery discovery.PeerDiscovery,
+	coordinator RequestCoordinator,
+	taskExecutor executor.PeerTaskExecutor,
+	timeout time.Duration,
+	logger *zap.Logger,
+) PeerRaceCoordinator {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &DefaultPeerRaceCoordinator{
+		connMgr:      connMgr,
+		discovery:    discovery,
+		coordinator:  coordinator,
+		taskExecutor: taskExecutor,
+		timeout:      timeout,
+		logger:       logger,
+	}
+}
+
+// ExecuteRace executes a race among multiple peers to download a blob
+func (prc *DefaultPeerRaceCoordinator) ExecuteRace(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, completeOnFailure bool) ([]byte, error) {
+	if prc.IsStopped() {
+		return nil, fmt.Errorf("peer race coordinator is stopped")
+	}
+
+	// Check if we have any peers to try
+	if len(contacts) == 0 {
+		prc.logger.Debug("No contacts available for race", zap.String("hash", hash))
+		return nil, fmt.Errorf("no peers available")
+	}
+
+	// Create race context for cancellation
+	raceCtx, raceCancel := context.WithTimeout(context.Background(), prc.timeout)
+
+	// Initialize the request with race context and total peers
+	prc.coordinator.InitializeRequest(req, raceCancel, int32(len(contacts)))
+
+	// Execute peer tasks
+	err := prc.taskExecutor.ExecutePeerTasks(raceCtx, hash, contacts, hashBitmap, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute peer tasks: %w", err)
+	}
+
+	// Wait for race completion
+	return prc.waitForRaceCompletion(ctx, req, completeOnFailure, hash)
+}
+
+// waitForRaceCompletion waits for the race to complete and returns the result
+func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context, req *blob.BlobRequest, completeOnFailure bool, hash string) ([]byte, error) {
+	if completeOnFailure {
+		// This is the final phase, wait for completion
+		return prc.coordinator.WaitForResult(ctx, req)
+	}
+
+	// This is not the final phase - wait for either success or all peers to fail
+	for {
+		select {
+		case <-req.GetDone():
+			// Request was completed successfully
+			completed, total, _ := prc.coordinator.GetRequestState(req)
+			prc.logger.Debug("Request completed successfully in non-final phase",
+				zap.String("hash", hash),
+				zap.Int32("completed", completed),
+				zap.Int32("total", total))
+
+			// Get the result from the request
+			res := req.GetResult()
+			return res.GetData(), res.GetErr()
+		default:
+			// Check if all peers have completed
+			completed, total, lastError := prc.coordinator.GetRequestState(req)
+
+			if completed >= total {
+				// Give a brief moment for async completion to propagate
+				time.Sleep(10 * time.Millisecond)
+
+				// Check if request was actually completed successfully
+				select {
+				case <-req.GetDone():
+					// Request was completed successfully
+					res := req.GetResult()
+					return res.GetData(), res.GetErr()
+				default:
+					// All peers attempted but none succeeded
+					// If there was only one peer, return the actual error
+					if total == 1 && lastError != nil {
+						return nil, lastError
+					}
+					return nil, fmt.Errorf("all peers in this phase failed")
+				}
+			}
+		}
+
+		// Wait a bit and check again
+		time.Sleep(1 * time.Millisecond)
+	}
+}
+
+// IsStopped checks if the coordinator is stopped
+func (prc *DefaultPeerRaceCoordinator) IsStopped() bool {
+	return prc.stopped
+}
+
+// Stop stops the coordinator
+func (prc *DefaultPeerRaceCoordinator) Stop() {
+	prc.stopped = true
+}
+
+// Start starts the coordinator
+func (prc *DefaultPeerRaceCoordinator) Start() {
+	prc.stopped = false
+}
+
+// SetTimeout updates the race timeout
+func (prc *DefaultPeerRaceCoordinator) SetTimeout(timeout time.Duration) {
+	prc.timeout = timeout
+}
+
+// GetCoordinator returns the underlying request coordinator
+func (prc *DefaultPeerRaceCoordinator) GetCoordinator() RequestCoordinator {
+	return prc.coordinator
+}
+
+// GetTaskExecutor returns the underlying task executor
+func (prc *DefaultPeerRaceCoordinator) GetTaskExecutor() executor.PeerTaskExecutor {
+	return prc.taskExecutor
+}

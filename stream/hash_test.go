@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob"
 	lbrycrypto "go.lumeweb.com/liblbry/crypto"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
 func TestHashIdentificationCompatibility(t *testing.T) {
@@ -26,12 +27,12 @@ func TestHashIdentificationCompatibility(t *testing.T) {
 		expected HashType
 	}{
 		// LBRY hashes
-		{"LBRY hash 1", LBRYTestHashes[LBRYHashKey1], HashTypeLBRY},
-		{"LBRY hash 2", LBRYTestHashes[LBRYHashKey2], HashTypeLBRY},
-		{"LBRY hash 3", LBRYTestHashes[LBRYHashKey3], HashTypeLBRY},
-		{"LBRY hash 4", LBRYTestHashes[LBRYHashKey4], HashTypeLBRY},
-		{"LBRY hash 5", LBRYTestHashes[LBRYHashKey5], HashTypeLBRY},
-		{"LBRY hash 6", LBRYTestHashes[LBRYHashKey6], HashTypeLBRY},
+		{"LBRY hash 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1], HashTypeLBRY},
+		{"LBRY hash 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2], HashTypeLBRY},
+		{"LBRY hash 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3], HashTypeLBRY},
+		{"LBRY hash 4", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey4], HashTypeLBRY},
+		{"LBRY hash 5", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey5], HashTypeLBRY},
+		{"LBRY hash 6", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey6], HashTypeLBRY},
 		// Multihashes
 		{"multihash 1", multihashStrings[0], HashTypeMultihash},
 		{"multihash 2", multihashStrings[1], HashTypeMultihash},
@@ -44,8 +45,8 @@ func TestHashIdentificationCompatibility(t *testing.T) {
 		{"invalid random", "thisisnotahashatall", HashTypeUnknown},
 		{"invalid empty", "", HashTypeUnknown},
 		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), HashTypeUnknown},
-		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), HashTypeUnknown},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", HashTypeUnknown},
+		{"invalid uppercase", strings.ToUpper(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]), HashTypeUnknown},
+		{"invalid non-hex", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", HashTypeUnknown},
 	}
 
 	for _, tt := range tests {
@@ -67,12 +68,12 @@ func TestHashValidationCompatibility(t *testing.T) {
 		expected bool
 	}{
 		// Valid LBRY hashes
-		{"valid LBRY 1", LBRYTestHashes[LBRYHashKey1], true},
-		{"valid LBRY 2", LBRYTestHashes[LBRYHashKey2], true},
-		{"valid LBRY 3", LBRYTestHashes[LBRYHashKey3], true},
-		{"valid LBRY 4", LBRYTestHashes[LBRYHashKey4], true},
-		{"valid LBRY 5", LBRYTestHashes[LBRYHashKey5], true},
-		{"valid LBRY 6", LBRYTestHashes[LBRYHashKey6], true},
+		{"valid LBRY 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1], true},
+		{"valid LBRY 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2], true},
+		{"valid LBRY 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3], true},
+		{"valid LBRY 4", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey4], true},
+		{"valid LBRY 5", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey5], true},
+		{"valid LBRY 6", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey6], true},
 		// Valid multihashes
 		{"valid multihash 1", multihashStrings[0], true},
 		{"valid multihash 2", multihashStrings[1], true},
@@ -85,8 +86,8 @@ func TestHashValidationCompatibility(t *testing.T) {
 		{"invalid random", "thisisnotahashatall", false},
 		{"invalid empty", "", false},
 		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), false},
-		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), false},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
+		{"invalid uppercase", strings.ToUpper(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]), false},
+		{"invalid non-hex", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
 	}
 
 	for _, tt := range tests {
@@ -102,12 +103,12 @@ func TestMultihashConversionCompatibility(t *testing.T) {
 		name     string
 		lbryHash string
 	}{
-		{"conversion 1", LBRYTestHashes[LBRYHashKey1]},
-		{"conversion 2", LBRYTestHashes[LBRYHashKey2]},
-		{"conversion 3", LBRYTestHashes[LBRYHashKey3]},
-		{"conversion 4", LBRYTestHashes[LBRYHashKey4]},
-		{"conversion 5", LBRYTestHashes[LBRYHashKey5]},
-		{"conversion 6", LBRYTestHashes[LBRYHashKey6]},
+		{"conversion 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]},
+		{"conversion 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2]},
+		{"conversion 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3]},
+		{"conversion 4", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey4]},
+		{"conversion 5", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey5]},
+		{"conversion 6", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey6]},
 	}
 
 	for _, tt := range tests {
@@ -152,12 +153,12 @@ func TestMultihashDecodingCompatibility(t *testing.T) {
 		name             string
 		expectedLBRYHash string
 	}{
-		{"decoding 1", LBRYTestHashes[LBRYHashKey1]},
-		{"decoding 2", LBRYTestHashes[LBRYHashKey2]},
-		{"decoding 3", LBRYTestHashes[LBRYHashKey3]},
-		{"decoding 4", LBRYTestHashes[LBRYHashKey4]},
-		{"decoding 5", LBRYTestHashes[LBRYHashKey5]},
-		{"decoding 6", LBRYTestHashes[LBRYHashKey6]},
+		{"decoding 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]},
+		{"decoding 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2]},
+		{"decoding 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3]},
+		{"decoding 4", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey4]},
+		{"decoding 5", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey5]},
+		{"decoding 6", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey6]},
 	}
 
 	for _, tt := range tests {
@@ -273,16 +274,16 @@ func TestHasherCompatibility(t *testing.T) {
 		expected bool
 	}{
 		// Valid hashes
-		{"valid hash 1", LBRYTestHashes[LBRYHashKey1], true},
-		{"valid hash 2", LBRYTestHashes[LBRYHashKey2], true},
-		{"valid hash 3", LBRYTestHashes[LBRYHashKey3], true},
-		{"valid hash 4", LBRYTestHashes[LBRYHashKey4], true},
-		{"valid hash 5", LBRYTestHashes[LBRYHashKey5], true},
-		{"valid hash 6", LBRYTestHashes[LBRYHashKey6], true},
+		{"valid hash 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1], true},
+		{"valid hash 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2], true},
+		{"valid hash 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3], true},
+		{"valid hash 4", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey4], true},
+		{"valid hash 5", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey5], true},
+		{"valid hash 6", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey6], true},
 		// Invalid hashes
 		{"invalid wrong length", strings.Repeat("a", blob.BlobHashHexLength-1), false},
-		{"invalid uppercase", strings.ToUpper(LBRYTestHashes[LBRYHashKey1]), false},
-		{"invalid non-hex", LBRYTestHashes[LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
+		{"invalid uppercase", strings.ToUpper(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]), false},
+		{"invalid non-hex", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1][:blob.BlobHashHexLength-1] + "g", false},
 		{"invalid empty", "", false},
 	}
 
@@ -295,7 +296,7 @@ func TestHasherCompatibility(t *testing.T) {
 }
 
 func TestCIDFormatCompatibility(t *testing.T) {
-	lbryTestHash := LBRYTestHashes[LBRYHashKey1]
+	lbryTestHash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 
 	// Create a multihash
 	lbryBytes, err := hex.DecodeString(lbryTestHash)
@@ -342,9 +343,9 @@ func TestCompleteRoundTripCompatibility(t *testing.T) {
 		name     string
 		lbryHash string
 	}{
-		{"roundtrip 1", LBRYTestHashes[LBRYHashKey1]},
-		{"roundtrip 2", LBRYTestHashes[LBRYHashKey2]},
-		{"roundtrip 3", LBRYTestHashes[LBRYHashKey3]},
+		{"roundtrip 1", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]},
+		{"roundtrip 2", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey2]},
+		{"roundtrip 3", lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey3]},
 	}
 
 	for _, tt := range tests {
@@ -408,7 +409,7 @@ func TestHashBoundaryConditionsCompatibility(t *testing.T) {
 		},
 		{
 			name:          "real LBRY hash",
-			hash:          LBRYTestHashes[LBRYHashKey1],
+			hash:          lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1],
 			expectedType:  HashTypeLBRY,
 			expectedValid: true,
 		},

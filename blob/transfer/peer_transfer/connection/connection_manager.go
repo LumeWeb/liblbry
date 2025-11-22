@@ -1,0 +1,205 @@
+package connection
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"go.lumeweb.com/liblbry/protocol"
+	"go.uber.org/zap"
+)
+
+// ConnectionManager defines the interface for connection management functionality
+type ConnectionManager interface {
+	IsStopped() bool
+	Stop()
+	Start()
+	GetClient() (protocol.PeerClient, error)
+	ReturnClient(peerClient protocol.PeerClient)
+	DownloadFromPeer(ctx context.Context, peerAddr, hash string) ([]byte, error)
+}
+
+// DefaultConnectionManager manages peer client pooling and lifecycle
+type DefaultConnectionManager struct {
+	clientFactory protocol.PeerClientFactory
+	clientPool    *sync.Pool
+	clientPoolMu  sync.RWMutex
+	logger        *zap.Logger
+	stopped       int32
+}
+
+// NewConnectionManager creates a new DefaultConnectionManager instance
+func NewConnectionManager(clientFactory protocol.PeerClientFactory, logger *zap.Logger) (*DefaultConnectionManager, error) {
+	if clientFactory == nil {
+		return nil, fmt.Errorf("clientFactory cannot be nil")
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	cm := &DefaultConnectionManager{
+		clientFactory: clientFactory,
+		logger:        logger,
+	}
+
+	// Initialize the client pool
+	cm.createClientPool()
+
+	return cm, nil
+}
+
+// IsStopped checks if the connection manager is stopped
+func (cm *DefaultConnectionManager) IsStopped() bool {
+	return atomic.LoadInt32(&cm.stopped) == 1
+}
+
+// Stop stops the connection manager and clears the client pool
+func (cm *DefaultConnectionManager) Stop() {
+	atomic.StoreInt32(&cm.stopped, 1)
+
+	cm.clientPoolMu.Lock()
+	defer cm.clientPoolMu.Unlock()
+
+	// Clear the client pool reference to allow garbage collection
+	// Note: We don't drain the pool because sync.Pool.Get() with a New function
+	// will never return nil, which would cause an infinite loop
+	cm.clientPool = nil
+}
+
+// Start starts the connection manager and recreates the client pool
+func (cm *DefaultConnectionManager) Start() {
+	atomic.StoreInt32(&cm.stopped, 0)
+	cm.createClientPool()
+}
+
+// GetClient safely gets and validates a peer client from the pool
+func (cm *DefaultConnectionManager) GetClient() (protocol.PeerClient, error) {
+	if cm.IsStopped() {
+		return nil, fmt.Errorf("connection manager is stopped")
+	}
+
+	cm.clientPoolMu.RLock()
+	defer cm.clientPoolMu.RUnlock()
+
+	// Check if client pool is available
+	if cm.clientPool == nil {
+		return nil, fmt.Errorf("client pool is not available")
+	}
+
+	// Get a peer client from the pool
+	client := cm.clientPool.Get()
+	if client == nil {
+		return nil, fmt.Errorf("failed to get client from pool: client is nil")
+	}
+
+	// Type assert to protocol.PeerClient
+	peerClient, ok := client.(protocol.PeerClient)
+	if !ok {
+		return nil, fmt.Errorf("failed to assert client as PeerClient: got %T", client)
+	}
+
+	return peerClient, nil
+}
+
+// ReturnClient safely returns a client to the pool if both pool and client are valid
+func (cm *DefaultConnectionManager) ReturnClient(peerClient protocol.PeerClient) {
+	if cm.IsStopped() {
+		if cm.logger != nil {
+			cm.logger.Debug("Discarding client because connection manager is stopped")
+		}
+		return
+	}
+
+	if peerClient == nil {
+		return
+	}
+
+	cm.returnClientToPool(peerClient)
+}
+
+// DownloadFromPeer attempts to download a blob from a specific peer
+// This method handles the full lifecycle: get client, connect, download, return client
+func (cm *DefaultConnectionManager) DownloadFromPeer(ctx context.Context, peerAddr, hash string) ([]byte, error) {
+	if cm.IsStopped() {
+		return nil, fmt.Errorf("connection manager is stopped")
+	}
+
+	// Get and validate peer client
+	peerClient, err := cm.GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Attempt to connect and download
+	if err = peerClient.Connect(ctx, peerAddr); err != nil {
+		// Return client to pool even on error
+		cm.ReturnClient(peerClient)
+		// Preserve context errors without wrapping
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("connect to peer %s: %w", peerAddr, err)
+	}
+
+	// Defer return client to pool when done
+	defer cm.ReturnClient(peerClient)
+
+	data, err := peerClient.GetBlob(ctx, hash)
+	if err != nil {
+		// Preserve context errors without wrapping
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("fetch blob from peer %s: %w", peerAddr, err)
+	}
+
+	return data, nil
+}
+
+// createClientPool creates a new sync.Pool using the stored factory
+func (cm *DefaultConnectionManager) createClientPool() {
+	cm.clientPoolMu.Lock()
+	defer cm.clientPoolMu.Unlock()
+
+	if cm.clientPool == nil {
+		// Defensive check - this should never happen due to constructor validation
+		if cm.clientFactory == nil {
+			if cm.logger != nil {
+				cm.logger.Error("clientFactory is nil - client pool not created")
+			}
+			return
+		}
+		cm.clientPool = &sync.Pool{
+			New: func() interface{} {
+				return cm.clientFactory()
+			},
+		}
+	}
+}
+
+// returnClientToPool resets the client and returns it to the pool
+func (cm *DefaultConnectionManager) returnClientToPool(peerClient protocol.PeerClient) {
+	// Check if transfer is stopped first (without lock for performance)
+	if cm.IsStopped() {
+		if cm.logger != nil {
+			cm.logger.Debug("Discarding client because connection manager is stopped")
+		}
+		return
+	}
+
+	if resetErr := peerClient.Reset(); resetErr != nil {
+		if cm.logger != nil {
+			cm.logger.Debug("Discarding client due to reset failure", zap.Error(resetErr))
+		}
+		return
+	}
+
+	// Use a single lock to check pool existence and put client
+	cm.clientPoolMu.RLock()
+	defer cm.clientPoolMu.RUnlock()
+
+	if cm.clientPool != nil {
+		cm.clientPool.Put(peerClient)
+	}
+}

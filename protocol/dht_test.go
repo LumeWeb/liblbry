@@ -20,12 +20,12 @@ func TestNewDHTConfig(t *testing.T) {
 		t.Errorf("Expected default address '127.0.0.1:4444', got '%s'", cfg.Address)
 	}
 
-	if len(cfg.SeedNodes) != 4 {
-		t.Errorf("Expected 4 seed nodes, got %d", len(cfg.SeedNodes))
+	if len(cfg.SeedNodes) != 5 {
+		t.Errorf("Expected 5 seed nodes, got %d", len(cfg.SeedNodes))
 	}
 
-	if cfg.PeerProtocolPort != 3333 {
-		t.Errorf("Expected default peer port 3333, got %d", cfg.PeerProtocolPort)
+	if cfg.PeerProtocolPort != DefaultDistributedPeerPortLegacy {
+		t.Errorf("Expected default peer port DefaultDistributedPeerPortLegacy, got %d", cfg.PeerProtocolPort)
 	}
 }
 
@@ -46,9 +46,9 @@ func TestDHTOptions(t *testing.T) {
 	}
 
 	// Test WithDHTPeerProtocolPort
-	WithDHTPeerProtocolPort(4444)(cfg)
-	if cfg.PeerProtocolPort != 4444 {
-		t.Errorf("Expected peer port 4444, got %d", cfg.PeerProtocolPort)
+	WithDHTPeerProtocolPort(DefaultDistributedPeerPort)(cfg)
+	if cfg.PeerProtocolPort != DefaultDistributedPeerPort {
+		t.Errorf("Expected peer port DefaultDistributedPeerPort, got %d", cfg.PeerProtocolPort)
 	}
 
 	// Test WithDHTAnnounceRate
@@ -327,8 +327,8 @@ func TestDHTNodeGet(t *testing.T) {
 		{
 			ID:       bits.Rand(),
 			IP:       net.ParseIP("192.168.1.1"),
-			Port:     4444,
-			PeerPort: 3333,
+			Port:     DefaultDistributedPeerPort,
+			PeerPort: DefaultDistributedPeerPortLegacy,
 		},
 	}
 

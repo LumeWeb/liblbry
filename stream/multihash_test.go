@@ -8,6 +8,7 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	testing2 "go.lumeweb.com/liblbry/internal/testing"
 )
 
 func TestToMultihash(t *testing.T) {
@@ -20,43 +21,43 @@ func TestToMultihash(t *testing.T) {
 		// Valid LBRY hashes
 		{
 			name:        "valid LBRY hash 1",
-			lbryHash:    LBRYTestHashes[LBRYHashKey1],
+			lbryHash:    testing2.LBRYTestHashes[testing2.LBRYHashKey1],
 			expectError: false,
 		},
 		{
 			name:        "valid LBRY hash 2",
-			lbryHash:    LBRYTestHashes[LBRYHashKey2],
+			lbryHash:    testing2.LBRYTestHashes[testing2.LBRYHashKey2],
 			expectError: false,
 		},
 		{
 			name:        "valid LBRY hash 3",
-			lbryHash:    LBRYTestHashes[LBRYHashKey3],
+			lbryHash:    testing2.LBRYTestHashes[testing2.LBRYHashKey3],
 			expectError: false,
 		},
 		{
 			name:        "valid LBRY hash 4",
-			lbryHash:    LBRYTestHashes[LBRYHashKey4],
+			lbryHash:    testing2.LBRYTestHashes[testing2.LBRYHashKey4],
 			expectError: false,
 		},
 		// Invalid LBRY hashes
 		{
 			name:        "invalid wrong length",
-			lbryHash:    InvalidHashLengths[InvalidLengthKeyWrongLength],
+			lbryHash:    testing2.InvalidHashLengths[testing2.InvalidLengthKeyWrongLength],
 			expectError: true,
 		},
 		{
 			name:        "invalid non-hex characters",
-			lbryHash:    InvalidHashHex[InvalidHexKeyInvalidG],
+			lbryHash:    testing2.InvalidHashHex[testing2.InvalidHexKeyInvalidG],
 			expectError: true,
 		},
 		{
 			name:        "invalid uppercase characters",
-			lbryHash:    InvalidHashUppercase[InvalidUppercaseKeyAllUppercase],
+			lbryHash:    testing2.InvalidHashUppercase[testing2.InvalidUppercaseKeyAllUppercase],
 			expectError: true,
 		},
 		{
 			name:        "invalid empty",
-			lbryHash:    InvalidHashLengths[InvalidLengthKeyEmpty],
+			lbryHash:    testing2.InvalidHashLengths[testing2.InvalidLengthKeyEmpty],
 			expectError: true,
 		},
 	}
@@ -97,14 +98,14 @@ func TestFromMultihash(t *testing.T) {
 		// Valid multihashes (converted from LBRY hashes)
 		{
 			name:         "valid multihash 1",
-			multihashStr: generateMultihashForTest(t, LBRYTestHashes[LBRYHashKey1]),
-			expected:     LBRYTestHashes[LBRYHashKey1],
+			multihashStr: generateMultihashForTest(t, testing2.LBRYTestHashes[testing2.LBRYHashKey1]),
+			expected:     testing2.LBRYTestHashes[testing2.LBRYHashKey1],
 			expectError:  false,
 		},
 		{
 			name:         "valid multihash 2",
-			multihashStr: generateMultihashForTest(t, LBRYTestHashes[LBRYHashKey2]),
-			expected:     LBRYTestHashes[LBRYHashKey2],
+			multihashStr: generateMultihashForTest(t, testing2.LBRYTestHashes[testing2.LBRYHashKey2]),
+			expected:     testing2.LBRYTestHashes[testing2.LBRYHashKey2],
 			expectError:  false,
 		},
 		// Invalid multihashes
@@ -150,12 +151,12 @@ func TestMultihashRoundTripConversion(t *testing.T) {
 		name     string
 		lbryHash string
 	}{
-		{"roundtrip 1", LBRYTestHashes[LBRYHashKey1]},
-		{"roundtrip 2", LBRYTestHashes[LBRYHashKey2]},
-		{"roundtrip 3", LBRYTestHashes[LBRYHashKey3]},
-		{"roundtrip 4", LBRYTestHashes[LBRYHashKey4]},
-		{"roundtrip 5", LBRYTestHashes[LBRYHashKey5]},
-		{"roundtrip 6", LBRYTestHashes[LBRYHashKey6]},
+		{"roundtrip 1", testing2.LBRYTestHashes[testing2.LBRYHashKey1]},
+		{"roundtrip 2", testing2.LBRYTestHashes[testing2.LBRYHashKey2]},
+		{"roundtrip 3", testing2.LBRYTestHashes[testing2.LBRYHashKey3]},
+		{"roundtrip 4", testing2.LBRYTestHashes[testing2.LBRYHashKey4]},
+		{"roundtrip 5", testing2.LBRYTestHashes[testing2.LBRYHashKey5]},
+		{"roundtrip 6", testing2.LBRYTestHashes[testing2.LBRYHashKey6]},
 	}
 
 	for _, tt := range tests {
@@ -178,10 +179,10 @@ func TestMultihashRoundTripConversion(t *testing.T) {
 
 func TestMultihashValidation(t *testing.T) {
 	// Generate valid multihashes from LBRY test hashes
-	lbryHashKeys := GetLBRYTestHashKeys()
+	lbryHashKeys := testing2.GetLBRYTestHashKeys()
 	validMultihashes := make([]string, 0, len(lbryHashKeys))
 	for _, key := range lbryHashKeys[:2] { // Use first 2 for efficiency
-		lbryHash := LBRYTestHashes[key]
+		lbryHash := testing2.LBRYTestHashes[key]
 		multihashStr, err := ToMultihash(lbryHash)
 		require.NoError(t, err)
 		validMultihashes = append(validMultihashes, multihashStr)
@@ -206,17 +207,17 @@ func TestMultihashValidation(t *testing.T) {
 		// Invalid multihashes
 		{
 			name:     "invalid string",
-			hash:     InvalidMultihashes[InvalidMultihashKeyInvalid],
+			hash:     testing2.InvalidMultihashes[testing2.InvalidMultihashKeyInvalid],
 			expected: false,
 		},
 		{
 			name:     "empty string",
-			hash:     InvalidMultihashes[InvalidMultihashKeyEmpty],
+			hash:     testing2.InvalidMultihashes[testing2.InvalidMultihashKeyEmpty],
 			expected: false,
 		},
 		{
 			name:     "CIDv0 incompatible",
-			hash:     InvalidMultihashes[InvalidMultihashKeyCIDv0],
+			hash:     testing2.InvalidMultihashes[testing2.InvalidMultihashKeyCIDv0],
 			expected: false,
 		},
 	}
@@ -234,9 +235,9 @@ func TestMultihashEncodingConsistency(t *testing.T) {
 		name     string
 		lbryHash string
 	}{
-		{"consistency 1", LBRYTestHashes[LBRYHashKey1]},
-		{"consistency 2", LBRYTestHashes[LBRYHashKey2]},
-		{"consistency 3", LBRYTestHashes[LBRYHashKey3]},
+		{"consistency 1", testing2.LBRYTestHashes[testing2.LBRYHashKey1]},
+		{"consistency 2", testing2.LBRYTestHashes[testing2.LBRYHashKey2]},
+		{"consistency 3", testing2.LBRYTestHashes[testing2.LBRYHashKey3]},
 	}
 
 	for _, tt := range tests {
