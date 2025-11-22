@@ -15,7 +15,7 @@ require (
 	github.com/sergi/go-diff v1.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
-	go.lumeweb.com/lbry-dht v0.0.0-20251121061118-741f2c0c6daa
+	go.lumeweb.com/lbry-dht v0.0.0-20251122030212-8156f51f8639
 	go.uber.org/zap v1.27.0
 	golang.org/x/text v0.31.0
 )

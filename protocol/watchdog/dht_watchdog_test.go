@@ -79,7 +79,7 @@ func TestValidateContactForHash(t *testing.T) {
 	blobHash := bits.Bitmap{9, 8, 7}
 
 	// Should fail due to no actual server
-	result := watchdog.ValidateContactForHash(blobHash, *contact)
+	_, result := watchdog.ValidateContactForHash(blobHash, contact)
 	assert.False(t, result)
 
 	// Contact should be blacklisted
@@ -101,7 +101,7 @@ func TestValidateContact_Cached(t *testing.T) {
 
 	// First validation runs against a non-listening port, so it should fail
 	// and cause the contact to be blacklisted.
-	result := watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result := watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result) // Should fail due to no actual server
 
 	// Contact should now be blacklisted
@@ -115,7 +115,7 @@ func TestValidateContact_Cached(t *testing.T) {
 	watchdog.AddToCache(contact, time.Now())
 
 	// Now validation should return true due to cache
-	result = watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result = watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.True(t, result)
 }
 
@@ -132,14 +132,14 @@ func TestValidateContact_Blacklisted(t *testing.T) {
 	ctx := context.Background()
 
 	// First validation should fail and blacklist
-	result := watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result := watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result)
 
 	// Contact should be blacklisted
 	assert.True(t, watchdog.IsBlacklisted(contact.ID))
 
 	// Second validation should return false due to blacklist
-	result = watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result = watchdog.ValidateAndUpdateContact(ctx, contact)
 	assert.False(t, result)
 }
 
@@ -396,7 +396,7 @@ func TestValidateContact_WithRealServer(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result := watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result := watchdog.ValidateAndUpdateContact(ctx, contact)
 
 	// Should succeed since we have a server running
 	assert.True(t, result)
@@ -432,7 +432,7 @@ func TestValidateAndUpdateContact_MutationBehavior(t *testing.T) {
 	assert.Equal(t, 0, contact.PeerPort)
 
 	ctx := context.Background()
-	result := watchdog.ValidateAndUpdateContact(ctx, contact)
+	_, result := watchdog.ValidateAndUpdateContact(ctx, contact)
 
 	// Should fail due to no server, but mutation behavior is tested
 	assert.False(t, result)
@@ -465,7 +465,7 @@ func TestValidateContactForHash_UsesValidateAndUpdateContact(t *testing.T) {
 	assert.Equal(t, 0, contact.PeerPort)
 
 	// This should use ValidateAndUpdateContact internally
-	result := watchdog.ValidateContactForHash(blobHash, *contact)
+	_, result := watchdog.ValidateContactForHash(blobHash, contact)
 
 	// Should fail due to no server, but the method should work
 	assert.False(t, result)

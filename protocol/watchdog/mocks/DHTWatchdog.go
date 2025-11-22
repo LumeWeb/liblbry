@@ -435,46 +435,6 @@ func (_c *MockDHTWatchdog_RemoveFromCache_Call) RunAndReturn(run func(contactID 
 	return _c
 }
 
-// SetDHT provides a mock function for the type MockDHTWatchdog
-func (_mock *MockDHTWatchdog) SetDHT(dht1 watchdog.DHT) {
-	_mock.Called(dht1)
-	return
-}
-
-// MockDHTWatchdog_SetDHT_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetDHT'
-type MockDHTWatchdog_SetDHT_Call struct {
-	*mock.Call
-}
-
-// SetDHT is a helper method to define mock.On call
-//   - dht1 watchdog.DHT
-func (_e *MockDHTWatchdog_Expecter) SetDHT(dht1 interface{}) *MockDHTWatchdog_SetDHT_Call {
-	return &MockDHTWatchdog_SetDHT_Call{Call: _e.mock.On("SetDHT", dht1)}
-}
-
-func (_c *MockDHTWatchdog_SetDHT_Call) Run(run func(dht1 watchdog.DHT)) *MockDHTWatchdog_SetDHT_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 watchdog.DHT
-		if args[0] != nil {
-			arg0 = args[0].(watchdog.DHT)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *MockDHTWatchdog_SetDHT_Call) Return() *MockDHTWatchdog_SetDHT_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *MockDHTWatchdog_SetDHT_Call) RunAndReturn(run func(dht1 watchdog.DHT)) *MockDHTWatchdog_SetDHT_Call {
-	_c.Run(run)
-	return _c
-}
-
 // Stop provides a mock function for the type MockDHTWatchdog
 func (_mock *MockDHTWatchdog) Stop() {
 	_mock.Called()
@@ -509,20 +469,31 @@ func (_c *MockDHTWatchdog_Stop_Call) RunAndReturn(run func()) *MockDHTWatchdog_S
 }
 
 // ValidateContactForHash provides a mock function for the type MockDHTWatchdog
-func (_mock *MockDHTWatchdog) ValidateContactForHash(blobHash bits.Bitmap, contact dht.Contact) bool {
+func (_mock *MockDHTWatchdog) ValidateContactForHash(blobHash bits.Bitmap, contact *dht.Contact) (*dht.Contact, bool) {
 	ret := _mock.Called(blobHash, contact)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ValidateContactForHash")
 	}
 
-	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, dht.Contact) bool); ok {
+	var r0 *dht.Contact
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, *dht.Contact) (*dht.Contact, bool)); ok {
+		return returnFunc(blobHash, contact)
+	}
+	if returnFunc, ok := ret.Get(0).(func(bits.Bitmap, *dht.Contact) *dht.Contact); ok {
 		r0 = returnFunc(blobHash, contact)
 	} else {
-		r0 = ret.Get(0).(bool)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*dht.Contact)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(bits.Bitmap, *dht.Contact) bool); ok {
+		r1 = returnFunc(blobHash, contact)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
 }
 
 // MockDHTWatchdog_ValidateContactForHash_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ValidateContactForHash'
@@ -532,20 +503,20 @@ type MockDHTWatchdog_ValidateContactForHash_Call struct {
 
 // ValidateContactForHash is a helper method to define mock.On call
 //   - blobHash bits.Bitmap
-//   - contact dht.Contact
+//   - contact *dht.Contact
 func (_e *MockDHTWatchdog_Expecter) ValidateContactForHash(blobHash interface{}, contact interface{}) *MockDHTWatchdog_ValidateContactForHash_Call {
 	return &MockDHTWatchdog_ValidateContactForHash_Call{Call: _e.mock.On("ValidateContactForHash", blobHash, contact)}
 }
 
-func (_c *MockDHTWatchdog_ValidateContactForHash_Call) Run(run func(blobHash bits.Bitmap, contact dht.Contact)) *MockDHTWatchdog_ValidateContactForHash_Call {
+func (_c *MockDHTWatchdog_ValidateContactForHash_Call) Run(run func(blobHash bits.Bitmap, contact *dht.Contact)) *MockDHTWatchdog_ValidateContactForHash_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 bits.Bitmap
 		if args[0] != nil {
 			arg0 = args[0].(bits.Bitmap)
 		}
-		var arg1 dht.Contact
+		var arg1 *dht.Contact
 		if args[1] != nil {
-			arg1 = args[1].(dht.Contact)
+			arg1 = args[1].(*dht.Contact)
 		}
 		run(
 			arg0,
@@ -555,12 +526,12 @@ func (_c *MockDHTWatchdog_ValidateContactForHash_Call) Run(run func(blobHash bit
 	return _c
 }
 
-func (_c *MockDHTWatchdog_ValidateContactForHash_Call) Return(b bool) *MockDHTWatchdog_ValidateContactForHash_Call {
-	_c.Call.Return(b)
+func (_c *MockDHTWatchdog_ValidateContactForHash_Call) Return(contact1 *dht.Contact, b bool) *MockDHTWatchdog_ValidateContactForHash_Call {
+	_c.Call.Return(contact1, b)
 	return _c
 }
 
-func (_c *MockDHTWatchdog_ValidateContactForHash_Call) RunAndReturn(run func(blobHash bits.Bitmap, contact dht.Contact) bool) *MockDHTWatchdog_ValidateContactForHash_Call {
+func (_c *MockDHTWatchdog_ValidateContactForHash_Call) RunAndReturn(run func(blobHash bits.Bitmap, contact *dht.Contact) (*dht.Contact, bool)) *MockDHTWatchdog_ValidateContactForHash_Call {
 	_c.Call.Return(run)
 	return _c
 }
