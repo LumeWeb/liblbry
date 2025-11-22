@@ -77,7 +77,12 @@ func NewDHTNode(dhtImpl DHT, options ...DHTOption) (DHTNode, error) {
 	// Set default watchdog if none provided
 	var ownsWatchdog bool
 	if config.Watchdog == nil {
-		config.Watchdog = watchdog.New()
+		// Pass the logger to the default watchdog if available
+		var watchdogOptions []watchdog.WatchdogOption
+		if config.ZapLogger != nil {
+			watchdogOptions = append(watchdogOptions, watchdog.WithLogger(config.ZapLogger))
+		}
+		config.Watchdog = watchdog.New(watchdogOptions...)
 		ownsWatchdog = true // Node owns the watchdog it created
 	}
 

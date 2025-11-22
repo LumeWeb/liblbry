@@ -17,6 +17,24 @@ import (
 	"go.uber.org/zap"
 )
 
+// logDebugIfLogger eliminates repeated logger nil checks for debug logs.
+//
+// It logs a debug message only if the logger is not nil.
+func logDebugIfLogger(logger *zap.Logger, msg string, fields ...zap.Field) {
+	if logger != nil {
+		logger.Debug(msg, fields...)
+	}
+}
+
+// logErrorIfLogger eliminates repeated logger nil checks for error logs.
+//
+// It logs an error message only if the logger is not nil.
+func logErrorIfLogger(logger *zap.Logger, msg string, err error, fields ...zap.Field) {
+	if logger != nil {
+		logger.Error(msg, append(fields, zap.Error(err))...)
+	}
+}
+
 // dht defines a minimal interface for DHT operations needed by the watchdog
 type DHT interface {
 	// GetRoutingTable returns the routing table for contact updates
@@ -232,19 +250,15 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 
 	// Check if already cached as successful
 	if w.IsCached(contactID) {
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Contact already cached as valid",
-				zap.String("contact_id", contactID.HexShort()))
-		}
+		logDebugIfLogger(w.config.Logger, "Contact already cached as valid",
+			zap.String("contact_id", contactID.HexShort()))
 		return true
 	}
 
 	// Check if blacklisted
 	if w.IsBlacklisted(contactID) {
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Contact is blacklisted",
-				zap.String("contact_id", contactID.HexShort()))
-		}
+		logDebugIfLogger(w.config.Logger, "Contact is blacklisted",
+			zap.String("contact_id", contactID.HexShort()))
 		return false
 	}
 
@@ -265,11 +279,9 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 		// Update the contact's PeerPort if we found a working port
 		if successfulPort > 0 && contact.PeerPort == 0 {
 			contact.PeerPort = successfulPort
-			if w.config.Logger != nil {
-				w.config.Logger.Debug("Updated contact PeerPort",
-					zap.String("contact_id", contactID.HexShort()),
-					zap.Int("port", successfulPort))
-			}
+			logDebugIfLogger(w.config.Logger, "Updated contact PeerPort",
+				zap.String("contact_id", contactID.HexShort()),
+				zap.Int("port", successfulPort))
 
 			// Update the contact in the DHT routing table if DHT interface is available
 			// Note: w.dht access is protected by w.mutex which is already held
@@ -277,30 +289,24 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 				_routingTable := w.dht.GetRoutingTable()
 				if _routingTable != nil {
 					_routingTable.Update(*contact)
-					if w.config.Logger != nil {
-						w.config.Logger.Debug("Updated contact in DHT routing table",
-							zap.String("contact_id", contactID.HexShort()),
-							zap.Int("port", successfulPort))
-					}
+					logDebugIfLogger(w.config.Logger, "Updated contact in DHT routing table",
+						zap.String("contact_id", contactID.HexShort()),
+						zap.Int("port", successfulPort))
 				}
 			}
 		}
 
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Contact validation succeeded",
-				zap.String("contact_id", contactID.HexShort()),
-				zap.Int("successful_port", successfulPort))
-		}
+		logDebugIfLogger(w.config.Logger, "Contact validation succeeded",
+			zap.String("contact_id", contactID.HexShort()),
+			zap.Int("successful_port", successfulPort))
 	} else {
 		// Add to blacklist
 		w.blacklist[contactID] = &blacklistedContact{
 			timestamp: time.Now(),
 		}
 
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Contact validation failed, blacklisting",
-				zap.String("contact_id", contactID.HexShort()))
-		}
+		logDebugIfLogger(w.config.Logger, "Contact validation failed, blacklisting",
+			zap.String("contact_id", contactID.HexShort()))
 	}
 
 	return success
@@ -348,10 +354,8 @@ func (w *DefaultDHTWatchdog) RemoveFromCache(contactID bits.Bitmap) {
 	defer w.mutex.Unlock()
 
 	delete(w.cache, contactID)
-	if w.config.Logger != nil {
-		w.config.Logger.Debug("Removed contact from cache",
-			zap.String("contact_id", contactID.HexShort()))
-	}
+	logDebugIfLogger(w.config.Logger, "Removed contact from cache",
+		zap.String("contact_id", contactID.HexShort()))
 }
 
 // RemoveFromBlacklist removes a contact from the blacklist
@@ -360,10 +364,8 @@ func (w *DefaultDHTWatchdog) RemoveFromBlacklist(contactID bits.Bitmap) {
 	defer w.mutex.Unlock()
 
 	delete(w.blacklist, contactID)
-	if w.config.Logger != nil {
-		w.config.Logger.Debug("Removed contact from blacklist",
-			zap.String("contact_id", contactID.HexShort()))
-	}
+	logDebugIfLogger(w.config.Logger, "Removed contact from blacklist",
+		zap.String("contact_id", contactID.HexShort()))
 }
 
 // AddToCache manually adds a contact to the cache with the specified timestamp
@@ -381,10 +383,8 @@ func (w *DefaultDHTWatchdog) AddToCache(contact *_dht.Contact, timestamp time.Ti
 		timestamp: timestamp,
 	}
 
-	if w.config.Logger != nil {
-		w.config.Logger.Debug("Manually added contact to cache",
-			zap.String("contact_id", contact.ID.HexShort()))
-	}
+	logDebugIfLogger(w.config.Logger, "Manually added contact to cache",
+		zap.String("contact_id", contact.ID.HexShort()))
 }
 
 // AddToBlacklist manually adds a contact to the blacklist with the specified timestamp
@@ -397,10 +397,8 @@ func (w *DefaultDHTWatchdog) AddToBlacklist(contactID bits.Bitmap, timestamp tim
 		timestamp: timestamp,
 	}
 
-	if w.config.Logger != nil {
-		w.config.Logger.Debug("Manually added contact to blacklist",
-			zap.String("contact_id", contactID.HexShort()))
-	}
+	logDebugIfLogger(w.config.Logger, "Manually added contact to blacklist",
+		zap.String("contact_id", contactID.HexShort()))
 }
 
 // CleanupExpired removes expired entries from cache and blacklist
@@ -425,12 +423,10 @@ func (w *DefaultDHTWatchdog) CleanupExpired() {
 		}
 	}
 
-	if w.config.Logger != nil {
-		w.config.Logger.Debug("Completed cleanup of expired entries",
-			zap.Time("cleanup_time", now),
-			zap.Int("cache_size", len(w.cache)),
-			zap.Int("blacklist_size", len(w.blacklist)))
-	}
+	logDebugIfLogger(w.config.Logger, "Completed cleanup of expired entries",
+		zap.Time("cleanup_time", now),
+		zap.Int("cache_size", len(w.cache)),
+		zap.Int("blacklist_size", len(w.blacklist)))
 }
 
 // GetStats returns statistics about the watchdog state
@@ -479,20 +475,16 @@ func (w *DefaultDHTWatchdog) testPort(ctx context.Context, ip string, port int) 
 
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Port test failed",
-				zap.String("address", address),
-				zap.Error(err))
-		}
+		logDebugIfLogger(w.config.Logger, "Port test failed",
+			zap.String("address", address),
+			zap.Error(err))
 		return false
 	}
 
 	if err = conn.Close(); err != nil {
-		if w.config.Logger != nil {
-			w.config.Logger.Debug("Failed to close connection after successful port test",
-				zap.String("address", address),
-				zap.Error(err))
-		}
+		logDebugIfLogger(w.config.Logger, "Failed to close connection after successful port test",
+			zap.String("address", address),
+			zap.Error(err))
 		// Connection was successfully established, so we still return true
 		// The close error is logged for debugging purposes
 	}
