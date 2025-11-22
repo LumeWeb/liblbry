@@ -94,6 +94,10 @@ type DHT interface {
 	// Returns:
 	//   - dht.RoutingTable: Live routing table interface for advanced operations
 	GetRoutingTable() dht.RoutingTable
+
+	// RemoveBadPeerFromHash removes a bad peer from the hash-to-peer mapping
+	// This is called when a peer fails to provide a blob for a specific hash
+	RemoveBadPeerFromHash(blobHash bits.Bitmap, contact dht.Contact)
 }
 
 // DHTRoutable provides access to routing table functionality for contact management
@@ -151,6 +155,10 @@ type DHTNode interface {
 
 	// GetRoutingTable returns the routing table for contact updates
 	GetRoutingTable() dht.RoutingTable
+
+	// RemoveBadPeerFromHash removes a bad peer from the hash-to-peer mapping
+	// This is called when a peer fails to provide a blob for a specific hash
+	RemoveBadPeerFromHash(blobHash bits.Bitmap, contact dht.Contact)
 }
 
 // DHTConfig holds configuration for DHT peer operations

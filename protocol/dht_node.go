@@ -605,6 +605,20 @@ func (w *managedDHTNode) GetRoutingTable() dht.RoutingTable {
 	return w.dht.GetRoutingTable()
 }
 
+// RemoveBadPeerFromHash removes a bad peer from the hash-to-peer mapping
+// This is called when a peer fails to provide a blob for a specific hash
+func (w *managedDHTNode) RemoveBadPeerFromHash(blobHash bits.Bitmap, contact dht.Contact) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if !w.isActive() {
+		return
+	}
+
+	// Delegate to the underlying DHT implementation
+	w.dht.RemoveBadPeerFromHash(blobHash, contact)
+}
+
 // exploreNetwork performs systematic network exploration to populate routing table
 func (w *managedDHTNode) exploreNetwork() error {
 	// Acquire read lock to safely access stopped and dht fields
