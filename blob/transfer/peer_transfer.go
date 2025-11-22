@@ -623,6 +623,8 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 		// Capture loop variables
 		peerAddrCopy := peerAddr
 		hashCopy := hash
+		contactCopy := contact
+		hashBitmapCopy := hashBitmap
 
 		t.workerPoolMu.RLock()
 		workerPool := t.workerPool
@@ -658,6 +660,12 @@ func (t *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 					raceCancel() // This cancels all other in-flight tasks
 				})
 			} else {
+				// Only mark peer as bad for non-context errors (connection failures, protocol errors, etc.)
+				// Context cancellation/timeout errors shouldn't penalize the peer
+				if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					t.dhtNode.RemoveBadPeerFromHash(hashBitmapCopy, contactCopy)
+				}
+
 				// Track failed peer
 				completed := atomic.AddInt32(&req.completed, 1)
 				t.logger.Debug("Peer download failed",

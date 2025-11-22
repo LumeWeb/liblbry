@@ -759,6 +759,52 @@ func (_c *MockDHTNode_Remove_Call) RunAndReturn(run func(hash bits.Bitmap)) *Moc
 	return _c
 }
 
+// RemoveBadPeerFromHash provides a mock function for the type MockDHTNode
+func (_mock *MockDHTNode) RemoveBadPeerFromHash(blobHash bits.Bitmap, contact dht.Contact) {
+	_mock.Called(blobHash, contact)
+	return
+}
+
+// MockDHTNode_RemoveBadPeerFromHash_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RemoveBadPeerFromHash'
+type MockDHTNode_RemoveBadPeerFromHash_Call struct {
+	*mock.Call
+}
+
+// RemoveBadPeerFromHash is a helper method to define mock.On call
+//   - blobHash bits.Bitmap
+//   - contact dht.Contact
+func (_e *MockDHTNode_Expecter) RemoveBadPeerFromHash(blobHash interface{}, contact interface{}) *MockDHTNode_RemoveBadPeerFromHash_Call {
+	return &MockDHTNode_RemoveBadPeerFromHash_Call{Call: _e.mock.On("RemoveBadPeerFromHash", blobHash, contact)}
+}
+
+func (_c *MockDHTNode_RemoveBadPeerFromHash_Call) Run(run func(blobHash bits.Bitmap, contact dht.Contact)) *MockDHTNode_RemoveBadPeerFromHash_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 bits.Bitmap
+		if args[0] != nil {
+			arg0 = args[0].(bits.Bitmap)
+		}
+		var arg1 dht.Contact
+		if args[1] != nil {
+			arg1 = args[1].(dht.Contact)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDHTNode_RemoveBadPeerFromHash_Call) Return() *MockDHTNode_RemoveBadPeerFromHash_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockDHTNode_RemoveBadPeerFromHash_Call) RunAndReturn(run func(blobHash bits.Bitmap, contact dht.Contact)) *MockDHTNode_RemoveBadPeerFromHash_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Restart provides a mock function for the type MockDHTNode
 func (_mock *MockDHTNode) Restart() error {
 	ret := _mock.Called()

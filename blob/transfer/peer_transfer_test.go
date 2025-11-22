@@ -358,6 +358,13 @@ func TestPeerTransfer_Get_AllPeersFail(t *testing.T) {
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: 99997, PeerPort: 99997},
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
+
+	// Mock RemoveBadPeerFromHash calls for each failing peer
+	hashBitmap, _ := bits.FromShortHex(testHash)
+	for _, contact := range contacts {
+		dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
+	}
+
 	transfer.maxPeers = 3
 
 	data, err := transfer.Get(context.Background(), testHash)
@@ -378,6 +385,12 @@ func TestPeerTransfer_Get_AllPeersFail_ImmediateError(t *testing.T) {
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: 99997, PeerPort: 99997},
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
+
+	// Mock RemoveBadPeerFromHash calls for each failing peer
+	hashBitmap, _ := bits.FromShortHex(testHash)
+	for _, contact := range contacts {
+		dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
+	}
 
 	transfer.maxPeers = 3
 
@@ -448,6 +461,12 @@ func TestPeerTransfer_Get_ErrorAggregation(t *testing.T) {
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
 
+	// Mock RemoveBadPeerFromHash calls for each failing peer
+	hashBitmap, _ := bits.FromShortHex(testHash)
+	for _, contact := range contacts {
+		dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
+	}
+
 	transfer.maxPeers = 2
 
 	data, err := transfer.Get(context.Background(), testHash)
@@ -479,6 +498,10 @@ func TestPeerTransfer_Get_PeerClientFailure(t *testing.T) {
 			}
 			dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
+			// Mock RemoveBadPeerFromHash call for the failing peer
+			hashBitmap, _ := bits.FromShortHex(testHash)
+			dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
+
 			_, err := transfer.Get(context.Background(), testHash)
 
 			assert.Error(t, err)
@@ -499,6 +522,10 @@ func TestPeerTransfer_Get_PeerCancellation(t *testing.T) {
 		PeerPort: 99999,
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
+
+	// Mock RemoveBadPeerFromHash call for the failing peer
+	hashBitmap, _ := bits.FromShortHex(testHash)
+	dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
 
 	// Operation should fail with connection error
 	_, err := transfer.Get(context.Background(), testHash)
@@ -667,6 +694,10 @@ func TestPeerTransfer_Get_Timeout(t *testing.T) {
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return([]dht.Contact{contact}, nil)
 
+	// Mock RemoveBadPeerFromHash call for the failing peer
+	hashBitmap, _ := bits.FromShortHex(testHash)
+	dhtNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return()
+
 	transfer.timeout = 100 * time.Millisecond
 
 	_, err := transfer.Get(context.Background(), testHash)
@@ -735,7 +766,6 @@ func TestPeerTransfer_Get_FallbackPath(t *testing.T) {
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: testServer.port, PeerPort: testServer.port}, // Third succeeds
 	}
 	dhtNode.EXPECT().Get(mock.AnythingOfType("bits.Bitmap")).Return(contacts, nil)
-
 	transfer.maxPeers = 3
 
 	data, err := transfer.Get(context.Background(), testHash)
@@ -899,6 +929,12 @@ func TestPeerTransfer_Get_ConcurrentSameHash(t *testing.T) {
 		{ID: bits.Rand(), IP: net.ParseIP("127.0.0.1"), Port: server.port, PeerPort: server.port},
 	}
 	mockDHT.EXPECT().Get(hashBitmap).Return(contacts, nil).Times(1)
+
+	// Mock RemoveBadPeerFromHash calls for any potentially failing peers
+	// Use Maybe() since these contacts should succeed, but we add them defensively
+	for _, contact := range contacts {
+		mockDHT.EXPECT().RemoveBadPeerFromHash(hashBitmap, contact).Return().Maybe()
+	}
 
 	// Number of concurrent goroutines
 	numGoroutines := 10
