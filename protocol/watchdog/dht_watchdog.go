@@ -1,8 +1,8 @@
 // Package watchdog provides DHT contact validation with caching and blacklisting functionality.
 //
-// IMPORTANT: The validation methods in this package may mutate contact parameters by updating
-// the PeerPort field when a working port is discovered. This behavior is intentional for DHT
-// integration to dynamically update contact information with discovered working ports.
+// IMPORTANT: The validation methods in this package return updated contact information when a working
+// port is discovered. The DHT library will handle updating the contact in the routing table
+// with the returned contact information.
 package watchdog
 
 import (
@@ -33,12 +33,6 @@ func logErrorIfLogger(logger *zap.Logger, msg string, err error, fields ...zap.F
 	if logger != nil {
 		logger.Error(msg, append(fields, zap.Error(err))...)
 	}
-}
-
-// dht defines a minimal interface for DHT operations needed by the watchdog
-type DHT interface {
-	// GetRoutingTable returns the routing table for contact updates
-	GetRoutingTable() _dht.RoutingTable
 }
 
 // DHTWatchdog extends the existing _dht.ContactValidator interface with caching and blacklisting functionality
@@ -73,10 +67,6 @@ type DHTWatchdog interface {
 
 	// Name returns the watchdog name
 	Name() string
-
-	// SetDHT sets the DHT interface for updating contacts in the routing table
-	// This method is used when the DHT needs to be created after the watchdog
-	SetDHT(dht DHT)
 
 	// Stop stops the watchdog and cleans up resources
 	Stop()
@@ -187,14 +177,6 @@ func WithLogger(logger *zap.Logger) WatchdogOption {
 	}
 }
 
-// SetDHT sets the DHT interface for updating contacts in the routing table
-// This method is used when the DHT needs to be created after the watchdog
-func (w *DefaultDHTWatchdog) SetDHT(dht DHT) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-	w.dht = dht
-}
-
 // DefaultDHTWatchdog implements DHTWatchdog interface
 type DefaultDHTWatchdog struct {
 	config      *WatchdogConfig
@@ -205,7 +187,6 @@ type DefaultDHTWatchdog struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
-	dht         DHT
 }
 
 // New creates a new DHT watchdog with the given options
@@ -233,17 +214,18 @@ func New(options ...WatchdogOption) *DefaultDHTWatchdog {
 
 // ValidateContactForHash implements _dht.ContactValidator interface
 // Validates if a contact is suitable for storing/returning for a specific blob hash
-func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact _dht.Contact) bool {
+// Returns a pointer to the (possibly modified) contact, or nil if no update needed, and a boolean indicating validity
+func (w *DefaultDHTWatchdog) ValidateContactForHash(_ bits.Bitmap, contact *_dht.Contact) (*_dht.Contact, bool) {
 	// Use our port testing validation logic
-	return w.ValidateAndUpdateContact(w.ctx, &contact)
+	return w.ValidateAndUpdateContact(w.ctx, contact)
 }
 
 // ValidateAndUpdateContact tests connectivity to a contact and updates its port information.
-// This method mutates the contact's PeerPort field if it is 0 and a working port is discovered.
-// The mutation is intentional for DHT integration to update contact information with discovered working ports.
-func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, contact *_dht.Contact) bool {
+// This method returns a pointer to the (possibly modified) contact, or nil if no update needed, and a boolean indicating validity.
+// The DHT library will handle updating the contact in the routing table if an updated contact is returned.
+func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, contact *_dht.Contact) (*_dht.Contact, bool) {
 	if contact == nil {
-		return false
+		return nil, false
 	}
 
 	contactID := contact.ID
@@ -252,14 +234,14 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 	if w.IsCached(contactID) {
 		logDebugIfLogger(w.config.Logger, "Contact already cached as valid",
 			zap.String("contact_id", contactID.HexShort()))
-		return true
+		return nil, true
 	}
 
 	// Check if blacklisted
 	if w.IsBlacklisted(contactID) {
 		logDebugIfLogger(w.config.Logger, "Contact is blacklisted",
 			zap.String("contact_id", contactID.HexShort()))
-		return false
+		return nil, false
 	}
 
 	// Test connectivity on configured ports
@@ -267,6 +249,8 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
+
+	var updatedContact *_dht.Contact
 
 	if success {
 		// Cache the successful validation and update contact port
@@ -279,21 +263,10 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 		// Update the contact's PeerPort if we found a working port
 		if successfulPort > 0 && contact.PeerPort == 0 {
 			contact.PeerPort = successfulPort
+			updatedContact = contact // Return the updated contact
 			logDebugIfLogger(w.config.Logger, "Updated contact PeerPort",
 				zap.String("contact_id", contactID.HexShort()),
 				zap.Int("port", successfulPort))
-
-			// Update the contact in the DHT routing table if DHT interface is available
-			// Note: w.dht access is protected by w.mutex which is already held
-			if w.dht != nil {
-				_routingTable := w.dht.GetRoutingTable()
-				if _routingTable != nil {
-					_routingTable.Update(*contact)
-					logDebugIfLogger(w.config.Logger, "Updated contact in DHT routing table",
-						zap.String("contact_id", contactID.HexShort()),
-						zap.Int("port", successfulPort))
-				}
-			}
 		}
 
 		logDebugIfLogger(w.config.Logger, "Contact validation succeeded",
@@ -309,7 +282,7 @@ func (w *DefaultDHTWatchdog) ValidateAndUpdateContact(ctx context.Context, conta
 			zap.String("contact_id", contactID.HexShort()))
 	}
 
-	return success
+	return updatedContact, success
 }
 
 // IsCached checks if a contact is in the successful validation cache
