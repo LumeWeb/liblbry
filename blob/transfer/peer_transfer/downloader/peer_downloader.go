@@ -44,6 +44,8 @@ type DefaultPeerDownloader struct {
 // NewPeerDownloader creates a new DefaultPeerDownloader instance.
 // All dependency parameters must be non-nil. This constructor is intended for internal use
 // where components are pre-configured. For most use cases, use NewPeerDownloaderWithDefaults.
+//
+// maxPeers must be > 0. Values <= 0 will be clamped to 1 to ensure at least one peer is tried.
 func NewPeerDownloader(
 	connMgr connection.ConnectionManager,
 	discovery discovery.PeerDiscovery,
@@ -70,6 +72,11 @@ func NewPeerDownloader(
 		logger = zap.NewNop()
 	}
 
+	// Validate and clamp maxPeers to ensure at least one peer is tried
+	if maxPeers <= 0 {
+		maxPeers = 1
+	}
+
 	pd := &DefaultPeerDownloader{
 		connMgr:      connMgr,
 		discovery:    discovery,
@@ -85,6 +92,8 @@ func NewPeerDownloader(
 
 // NewPeerDownloaderWithDefaults creates a new DefaultPeerDownloader with default component implementations.
 // All dependency parameters must be non-nil. This is the recommended constructor for most use cases.
+//
+// maxPeers must be > 0. Values <= 0 will be clamped to 1 to ensure at least one peer is tried.
 func NewPeerDownloaderWithDefaults(
 	connMgr connection.ConnectionManager,
 	discovery discovery.PeerDiscovery,
@@ -105,6 +114,11 @@ func NewPeerDownloaderWithDefaults(
 	}
 	if logger == nil {
 		logger = zap.NewNop()
+	}
+
+	// Validate and clamp maxPeers to ensure at least one peer is tried
+	if maxPeers <= 0 {
+		maxPeers = 1
 	}
 
 	// Create component dependencies
@@ -163,9 +177,16 @@ func (pd *DefaultPeerDownloader) GetMaxPeers() int {
 // - Phase manager's maxPeers (limits peers tried per download phase)
 // - Task executor's maxConcurrency (limits concurrent peer tasks)
 //
+// maxPeers must be > 0. Values <= 0 will be clamped to 1 to ensure at least one peer is tried.
+//
 // Use SetMaxConcurrency() if you need to decouple these values and control
 // concurrency independently from the peer limit per phase.
 func (pd *DefaultPeerDownloader) SetMaxPeers(maxPeers int) {
+	// Validate and clamp maxPeers to ensure at least one peer is tried
+	if maxPeers <= 0 {
+		maxPeers = 1
+	}
+
 	pd.maxPeers = maxPeers
 	// Update phase manager max peers
 	pd.phaseManager.SetMaxPeers(maxPeers)
@@ -176,6 +197,8 @@ func (pd *DefaultPeerDownloader) SetMaxPeers(maxPeers int) {
 // SetMaxConcurrency updates the maximum concurrency for peer tasks independently.
 // This method only affects the task executor's worker pool concurrency and does not
 // change the maximum number of peers tried per phase (controlled by SetMaxPeers).
+//
+// maxConcurrency must be > 0. Values <= 0 will be clamped to 1 to ensure at least one worker.
 //
 // Use this when you want to decouple task concurrency from peer limits, such as:
 // - Allowing more concurrent tasks than peers per phase (for retry scenarios)

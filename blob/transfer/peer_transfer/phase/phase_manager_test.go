@@ -282,9 +282,6 @@ func TestDefaultPhaseManager_ExecutePhases_DHTPhaseFailsFixedSuccess(t *testing.
 	// Mock DHT peer discovery with fixed peers
 	setupMockDiscoveryForDHTAndFixedPeers(setup, hashBitmap, dhtContacts, fixedContacts)
 
-	// Mock IsFixedPeer to return false (DHT contact is not a fixed peer)
-	setup.peerDiscovery.EXPECT().IsFixedPeer(dhtContacts[0]).Return(false)
-
 	// Mock DHT race execution failure (completeOnFailure=false since fixed peers are available)
 	setup.raceCoordinator.EXPECT().ExecuteRace(mock.Anything, hash, dhtContacts, hashBitmap, req, false).Return(nil, assert.AnError)
 
@@ -315,9 +312,6 @@ func TestDefaultPhaseManager_ExecutePhases_AllPhasesFail(t *testing.T) {
 
 	// Mock DHT peer discovery with fixed peers
 	setupMockDiscoveryForDHTAndFixedPeers(setup, hashBitmap, dhtContacts, fixedContacts)
-
-	// Mock IsFixedPeer to return false (DHT contact is not a fixed peer)
-	setup.peerDiscovery.EXPECT().IsFixedPeer(dhtContacts[0]).Return(false)
 
 	// Mock DHT race execution failure
 	setup.raceCoordinator.EXPECT().ExecuteRace(mock.Anything, hash, dhtContacts, hashBitmap, req, false).Return(nil, assert.AnError)

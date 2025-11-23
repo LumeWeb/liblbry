@@ -302,7 +302,7 @@ func TestDefaultPeerRaceCoordinator_SetTimeout(t *testing.T) {
 	newTimeout := 10 * time.Second
 	setup.coordinator.SetTimeout(newTimeout)
 
-	assert.Equal(t, newTimeout, setup.coordinator.(*DefaultPeerRaceCoordinator).timeout)
+	assert.Equal(t, newTimeout, setup.coordinator.GetTimeout())
 }
 
 func TestDefaultPeerRaceCoordinator_GetComponents(t *testing.T) {

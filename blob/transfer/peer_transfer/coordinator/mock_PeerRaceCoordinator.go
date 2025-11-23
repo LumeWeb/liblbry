@@ -317,6 +317,12 @@ func (_mock *MockPeerRaceCoordinator) SetTimeout(timeout time.Duration) {
 	return
 }
 
+// GetTimeout provides a mock function for the type MockPeerRaceCoordinator
+func (_mock *MockPeerRaceCoordinator) GetTimeout() time.Duration {
+	ret := _mock.Called()
+	return ret.Get(0).(time.Duration)
+}
+
 // MockPeerRaceCoordinator_SetTimeout_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetTimeout'
 type MockPeerRaceCoordinator_SetTimeout_Call struct {
 	*mock.Call
@@ -326,6 +332,16 @@ type MockPeerRaceCoordinator_SetTimeout_Call struct {
 //   - timeout time.Duration
 func (_e *MockPeerRaceCoordinator_Expecter) SetTimeout(timeout interface{}) *MockPeerRaceCoordinator_SetTimeout_Call {
 	return &MockPeerRaceCoordinator_SetTimeout_Call{Call: _e.mock.On("SetTimeout", timeout)}
+}
+
+// MockPeerRaceCoordinator_GetTimeout_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetTimeout'
+type MockPeerRaceCoordinator_GetTimeout_Call struct {
+	*mock.Call
+}
+
+// GetTimeout is a helper method to define mock.On call
+func (_e *MockPeerRaceCoordinator_Expecter) GetTimeout() *MockPeerRaceCoordinator_GetTimeout_Call {
+	return &MockPeerRaceCoordinator_GetTimeout_Call{Call: _e.mock.On("GetTimeout")}
 }
 
 func (_c *MockPeerRaceCoordinator_SetTimeout_Call) Run(run func(timeout time.Duration)) *MockPeerRaceCoordinator_SetTimeout_Call {

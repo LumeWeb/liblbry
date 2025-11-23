@@ -154,7 +154,6 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 	}
 
 	var lastError error
-	var dhtContacts []dht.Contact
 
 	// Execute phases in order
 	for phaseType := PhaseDHT; phaseType <= PhaseFixed; phaseType++ {
@@ -182,11 +181,6 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 			}
 		}
 
-		// Store DHT contacts for fallback logic
-		if phaseType == PhaseDHT {
-			dhtContacts = contacts
-		}
-
 		// Check if we should execute this phase
 		if !phaseConfig.ShouldExecute(pm, contacts) {
 			if phaseType == PhaseDHT {
@@ -199,7 +193,7 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 		}
 
 		// For fixed peers phase, check if we should try it based on DHT results
-		if phaseType == PhaseFixed && !pm.shouldTryFixedPeers(dhtContacts) {
+		if phaseType == PhaseFixed && !pm.shouldTryFixedPeers() {
 			continue
 		}
 
@@ -264,7 +258,7 @@ func (pm *DefaultPhaseManager) executePhaseWithConfig(ctx context.Context, hash 
 }
 
 // shouldTryFixedPeers determines if we should proceed to fixed peers phase
-func (pm *DefaultPhaseManager) shouldTryFixedPeers(dhtContacts []dht.Contact) bool {
+func (pm *DefaultPhaseManager) shouldTryFixedPeers() bool {
 	fixed := pm.discovery.GetFixedPeers()
 	if len(fixed) == 0 {
 		return false

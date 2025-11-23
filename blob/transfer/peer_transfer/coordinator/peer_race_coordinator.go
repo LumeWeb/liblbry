@@ -35,6 +35,9 @@ type PeerRaceCoordinator interface {
 	// SetTimeout updates the race timeout
 	SetTimeout(timeout time.Duration)
 
+	// GetTimeout returns the current race timeout
+	GetTimeout() time.Duration
+
 	// GetCoordinator returns the underlying request coordinator
 	GetCoordinator() RequestCoordinator
 
@@ -194,6 +197,13 @@ func (prc *DefaultPeerRaceCoordinator) SetTimeout(timeout time.Duration) {
 	prc.timeoutMu.Lock()
 	prc.timeout = timeout
 	prc.timeoutMu.Unlock()
+}
+
+// GetTimeout returns the current race timeout
+func (prc *DefaultPeerRaceCoordinator) GetTimeout() time.Duration {
+	prc.timeoutMu.RLock()
+	defer prc.timeoutMu.RUnlock()
+	return prc.timeout
 }
 
 // SetLogger updates the logger for this race coordinator instance and propagates to subcomponents
