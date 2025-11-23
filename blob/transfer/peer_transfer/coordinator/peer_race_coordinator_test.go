@@ -116,6 +116,7 @@ func (b *testDataBuilder) build() (string, []dht.Contact, bits.Bitmap, *blob.Blo
 // assertRaceError checks common race error patterns
 // Consolidates repetitive assertions for race error test scenarios.
 func assertRaceError(t *testing.T, err error, expectedMsg string) {
+	t.Helper()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), expectedMsg)
 }
@@ -123,6 +124,7 @@ func assertRaceError(t *testing.T, err error, expectedMsg string) {
 // assertSuccessfulRace checks common successful race execution patterns
 // Reduces duplication of success assertions across race test cases.
 func assertSuccessfulRace(t *testing.T, err error, result []byte, expectedData []byte) {
+	t.Helper()
 	require.NoError(t, err)
 	assert.Equal(t, expectedData, result)
 }
@@ -130,7 +132,8 @@ func assertSuccessfulRace(t *testing.T, err error, result []byte, expectedData [
 // setupMockRaceSuccess configures mocks for successful race execution
 // This helper eliminates repetitive mock setup for success scenarios.
 func setupMockRaceSuccess(setup *testSetup, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, testData []byte) {
-	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
+	totalPeers := int32(len(contacts))
+	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), totalPeers).Return()
 	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
 	setup.requestCoordinator.EXPECT().WaitForResult(mock.Anything, req).Return(testData, nil)
 }
@@ -138,7 +141,8 @@ func setupMockRaceSuccess(setup *testSetup, hash string, contacts []dht.Contact,
 // setupMockRaceTaskError configures mocks for task execution error scenarios
 // This helper eliminates repetitive mock setup for task error scenarios.
 func setupMockRaceTaskError(setup *testSetup, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) {
-	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
+	totalPeers := int32(len(contacts))
+	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), totalPeers).Return()
 	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(assert.AnError)
 }
 

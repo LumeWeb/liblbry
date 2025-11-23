@@ -150,6 +150,10 @@ func assertNoPeersAvailable(t *testing.T, err error, result interface{}) {
 func setupMockDiscoveryForDHTSuccess(setup *testSetup, hashBitmap bits.Bitmap, contacts []dht.Contact) {
 	setup.peerDiscovery.EXPECT().DiscoverPeers(mock.Anything, hashBitmap).Return(contacts, nil)
 	setup.peerDiscovery.EXPECT().GetFixedPeers().Return([]dht.Contact{}).Maybe()
+	// Mock IsFixedPeer calls for each DHT contact (they should not be fixed peers)
+	for _, contact := range contacts {
+		setup.peerDiscovery.EXPECT().IsFixedPeer(contact).Return(false)
+	}
 }
 
 // setupMockDiscoveryForDHTFailure sets up mock expectations for DHT discovery failure
@@ -166,6 +170,10 @@ func setupMockDiscoveryForFixedPeers(setup *testSetup, fixedContacts []dht.Conta
 func setupMockDiscoveryForDHTAndFixedPeers(setup *testSetup, hashBitmap bits.Bitmap, dhtContacts []dht.Contact, fixedContacts []dht.Contact) {
 	setup.peerDiscovery.EXPECT().DiscoverPeers(mock.Anything, hashBitmap).Return(dhtContacts, nil)
 	setup.peerDiscovery.EXPECT().GetFixedPeers().Return(fixedContacts).Maybe()
+	// Mock IsFixedPeer calls for each DHT contact (they should not be fixed peers)
+	for _, contact := range dhtContacts {
+		setup.peerDiscovery.EXPECT().IsFixedPeer(contact).Return(false)
+	}
 }
 
 // setupMockCoordinatorForPhaseReset sets up mock expectations for phase reset

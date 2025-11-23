@@ -112,6 +112,11 @@ func (pt *PeerTransfer) Name() string {
 	return TransferName
 }
 
+// GetLogger returns the logger for this PeerTransfer instance
+func (pt *PeerTransfer) GetLogger() *zap.Logger {
+	return pt.logger
+}
+
 // Start initializes or restarts all components
 func (pt *PeerTransfer) Start() {
 	pt.logger.Debug("Starting PeerTransfer components")
@@ -134,12 +139,17 @@ func (pt *PeerTransfer) Stop() {
 
 // Configuration Options
 
-// WithPeerTransferLogger sets the logger for the main PeerTransfer
-// Note: Component loggers are set in their constructors, so we only set the main logger here
+// WithPeerTransferLogger sets the logger for the main PeerTransfer and all subcomponents
+// This ensures consistent logging across the entire peer transfer stack
 func WithPeerTransferLogger(logger *zap.Logger) PeerTransferOption {
 	return func(pt *PeerTransfer) {
 		if logger != nil {
 			pt.logger = logger
+			// Propagate logger to all subcomponents
+			pt.discovery.SetLogger(logger)
+			pt.connMgr.SetLogger(logger)
+			pt.coordinator.SetLogger(logger)
+			pt.downloader.SetLogger(logger)
 		}
 	}
 }

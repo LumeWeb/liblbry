@@ -58,6 +58,9 @@ type PeerTaskExecutor interface {
 	GetWorkerPoolStats() (size int, waitingQueueSize int, stopped bool)
 
 	// WaitAllTasksComplete waits for all tasks to complete using the worker pool's StopWait mechanism
+
+	// SetLogger updates the logger for this task executor instance
+	SetLogger(logger *zap.Logger)
 	WaitAllTasksComplete() error
 
 	// GetTaskStats returns statistics about submitted, completed, and pending tasks
@@ -293,6 +296,14 @@ func (pte *DefaultPeerTaskExecutor) Stop() {
 func (pte *DefaultPeerTaskExecutor) Start() {
 	atomic.StoreUint32(&pte.stopped, 0)
 	pte.createWorkerPool()
+}
+
+// SetLogger updates the logger for this task executor instance
+func (pte *DefaultPeerTaskExecutor) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	pte.logger = logger
 }
 
 // GetTaskStats returns statistics about submitted, completed, and pending tasks

@@ -25,7 +25,7 @@ const (
 // PhaseConfig defines the configuration and behavior for a specific phase
 type PhaseConfig struct {
 	Name          string
-	GetContacts   func(pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error)
+	GetContacts   func(ctx context.Context, pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error)
 	IsFallback    bool
 	MaxContacts   func(pm *DefaultPhaseManager) int
 	ShouldExecute func(pm *DefaultPhaseManager, contacts []dht.Contact) bool
@@ -54,6 +54,9 @@ type PhaseManager interface {
 
 	// GetRaceCoordinator returns the underlying race coordinator
 	GetRaceCoordinator() coordinator.PeerRaceCoordinator
+
+	// SetLogger updates the logger for this phase manager instance
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultPhaseManager manages the execution of different download phases
@@ -98,8 +101,21 @@ func NewPhaseManager(
 func (pm *DefaultPhaseManager) initializePhases() {
 	pm.phases[PhaseDHT] = &PhaseConfig{
 		Name: "DHT",
-		GetContacts: func(pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
-			return pm.discovery.DiscoverPeers(context.Background(), hashBitmap)
+		GetContacts: func(ctx context.Context, pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
+			contacts, err := pm.discovery.DiscoverPeers(ctx, hashBitmap)
+			if err != nil {
+				return nil, err
+			}
+
+			// Filter out fixed peers from DHT results to avoid duplication
+			var filteredContacts []dht.Contact
+			for _, contact := range contacts {
+				if !pm.discovery.IsFixedPeer(contact) {
+					filteredContacts = append(filteredContacts, contact)
+				}
+			}
+
+			return filteredContacts, nil
 		},
 		IsFallback: false,
 		MaxContacts: func(pm *DefaultPhaseManager) int {
@@ -115,7 +131,7 @@ func (pm *DefaultPhaseManager) initializePhases() {
 
 	pm.phases[PhaseFixed] = &PhaseConfig{
 		Name: "Fixed",
-		GetContacts: func(pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
+		GetContacts: func(ctx context.Context, pm *DefaultPhaseManager, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
 			return pm.discovery.GetFixedPeers(), nil
 		},
 		IsFallback: true,
@@ -149,7 +165,7 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 		}
 
 		// Get contacts for this phase
-		contacts, err := phaseConfig.GetContacts(pm, hashBitmap)
+		contacts, err := phaseConfig.GetContacts(ctx, pm, hashBitmap)
 		if err != nil {
 			if phaseType == PhaseDHT {
 				pm.logger.Warn("DHT discovery failed, falling back to fixed peers if available",
@@ -220,6 +236,14 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 func (pm *DefaultPhaseManager) executePhaseWithConfig(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, phaseConfig *PhaseConfig) ([]byte, error) {
 	// Limit number of peers to try based on phase configuration
 	maxContacts := phaseConfig.MaxContacts(pm)
+	// Guard against invalid maxContacts values (0 or negative)
+	if maxContacts <= 0 {
+		pm.logger.Debug("Phase: Invalid maxContacts value, skipping phase",
+			zap.String("phase", phaseConfig.Name),
+			zap.String("hash", hash),
+			zap.Int("maxContacts", maxContacts))
+		return nil, fmt.Errorf("invalid maxContacts value %d for phase %s", maxContacts, phaseConfig.Name)
+	}
 	phaseContacts := contacts
 	if len(contacts) > maxContacts {
 		phaseContacts = contacts[:maxContacts]
@@ -246,20 +270,9 @@ func (pm *DefaultPhaseManager) shouldTryFixedPeers(dhtContacts []dht.Contact) bo
 		return false
 	}
 
-	// If any fixed peer was *not* seen in DHT, we should run the fixed‑peer phase.
-	for _, fp := range fixed {
-		found := false
-		for _, dhtContact := range dhtContacts {
-			if pm.discovery.IsFixedPeer(dhtContact) && dhtContact.Equals(fp, false) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return true
-		}
-	}
-	return false
+	// If we have any fixed peers configured, we should try the fixed-peer phase
+	// since DHT contacts are now filtered to exclude fixed peers
+	return len(fixed) > 0
 }
 
 // IsStopped checks if the phase manager is stopped
@@ -275,6 +288,17 @@ func (pm *DefaultPhaseManager) Stop() {
 // Start starts the phase manager
 func (pm *DefaultPhaseManager) Start() {
 	atomic.StoreInt32(&pm.stopped, 0)
+}
+
+// SetLogger updates the logger for this phase manager instance and propagates to subcomponents
+func (pm *DefaultPhaseManager) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	pm.logger = logger
+	// Propagate logger to subcomponents
+	pm.discovery.SetLogger(logger)
+	pm.raceCoordinator.SetLogger(logger)
 }
 
 // SetMaxPeers updates the maximum number of peers to try per phase

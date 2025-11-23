@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/lbry-dht/bits"
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/executor"
+	"go.uber.org/zap"
 )
 
 // NewMockPeerRaceCoordinator creates a new instance of MockPeerRaceCoordinator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -267,6 +268,46 @@ func (_c *MockPeerRaceCoordinator_IsStopped_Call) Return(b bool) *MockPeerRaceCo
 
 func (_c *MockPeerRaceCoordinator_IsStopped_Call) RunAndReturn(run func() bool) *MockPeerRaceCoordinator_IsStopped_Call {
 	_c.Call.Return(run)
+	return _c
+}
+
+// SetLogger provides a mock function for the type MockPeerRaceCoordinator
+func (_mock *MockPeerRaceCoordinator) SetLogger(logger *zap.Logger) {
+	_mock.Called(logger)
+	return
+}
+
+// MockPeerRaceCoordinator_SetLogger_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetLogger'
+type MockPeerRaceCoordinator_SetLogger_Call struct {
+	*mock.Call
+}
+
+// SetLogger is a helper method to define mock.On call
+//   - logger *zap.Logger
+func (_e *MockPeerRaceCoordinator_Expecter) SetLogger(logger interface{}) *MockPeerRaceCoordinator_SetLogger_Call {
+	return &MockPeerRaceCoordinator_SetLogger_Call{Call: _e.mock.On("SetLogger", logger)}
+}
+
+func (_c *MockPeerRaceCoordinator_SetLogger_Call) Run(run func(logger *zap.Logger)) *MockPeerRaceCoordinator_SetLogger_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *zap.Logger
+		if args[0] != nil {
+			arg0 = args[0].(*zap.Logger)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPeerRaceCoordinator_SetLogger_Call) Return() *MockPeerRaceCoordinator_SetLogger_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockPeerRaceCoordinator_SetLogger_Call) RunAndReturn(run func(logger *zap.Logger)) *MockPeerRaceCoordinator_SetLogger_Call {
+	_c.Run(run)
 	return _c
 }
 

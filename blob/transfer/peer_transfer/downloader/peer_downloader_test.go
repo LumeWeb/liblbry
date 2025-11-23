@@ -26,8 +26,8 @@ func TestPeerDownloader_DownloadFromPeers_Stopped(t *testing.T) {
 	pd := setup.downloader
 	pd.Stop()
 
-	_, err := pd.DownloadFromPeers(context.Background(), "testhash", bits.Bitmap{}, blob.NewBlobRequest())
-	assertStoppedDownloader(t, pd, err, nil)
+	result, err := pd.DownloadFromPeers(context.Background(), "testhash", bits.Bitmap{}, blob.NewBlobRequest())
+	assertStoppedDownloader(t, pd, err, result)
 }
 
 func TestPeerDownloader_DownloadFromPeers_DiscoveryFails(t *testing.T) {
@@ -183,6 +183,7 @@ func setupTestWithCustomMocks(t *testing.T, mockPhaseManager *phaseMocks.MockPha
 // assertStoppedDownloader checks common stopped downloader behavior
 // Consolidates repetitive assertions for stopped downloader test scenarios.
 func assertStoppedDownloader(t *testing.T, downloader *DefaultPeerDownloader, err error, result interface{}) {
+	t.Helper()
 	assert.True(t, downloader.IsStopped())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "peer downloader is stopped")
@@ -192,6 +193,7 @@ func assertStoppedDownloader(t *testing.T, downloader *DefaultPeerDownloader, er
 // assertSuccessfulOperation checks common successful operation patterns
 // Reduces duplication of success assertions across test cases.
 func assertSuccessfulOperation(t *testing.T, err error, result interface{}) {
+	t.Helper()
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 }
@@ -199,6 +201,7 @@ func assertSuccessfulOperation(t *testing.T, err error, result interface{}) {
 // assertErrorContains checks that an error contains expected text
 // Reduces duplication of error assertion patterns.
 func assertErrorContains(t *testing.T, err error, expectedText string) {
+	t.Helper()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), expectedText)
 }

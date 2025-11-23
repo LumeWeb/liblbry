@@ -27,6 +27,7 @@ type PeerDownloader interface {
 	SetMaxConcurrency(maxConcurrency int)
 	GetTimeout() time.Duration
 	GetMaxPeers() int
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultPeerDownloader orchestrates peer downloads using specialized components
@@ -182,4 +183,17 @@ func (pd *DefaultPeerDownloader) SetMaxPeers(maxPeers int) {
 func (pd *DefaultPeerDownloader) SetMaxConcurrency(maxConcurrency int) {
 	// Update task executor max concurrency through the race coordinator
 	pd.phaseManager.GetRaceCoordinator().GetTaskExecutor().SetMaxConcurrency(maxConcurrency)
+}
+
+// SetLogger updates the logger for this downloader instance and propagates to all subcomponents
+func (pd *DefaultPeerDownloader) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	pd.logger = logger
+	// Propagate logger to all subcomponents
+	pd.connMgr.SetLogger(logger)
+	pd.discovery.SetLogger(logger)
+	pd.coordinator.SetLogger(logger)
+	pd.phaseManager.SetLogger(logger)
 }

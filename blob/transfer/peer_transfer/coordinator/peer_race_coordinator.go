@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,9 @@ type PeerRaceCoordinator interface {
 
 	// GetTaskExecutor returns the underlying task executor
 	GetTaskExecutor() executor.PeerTaskExecutor
+
+	// SetLogger updates the logger for this race coordinator instance
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultPeerRaceCoordinator handles peer race coordination and task execution
@@ -48,6 +52,7 @@ type DefaultPeerRaceCoordinator struct {
 	coordinator  RequestCoordinator
 	taskExecutor executor.PeerTaskExecutor
 	timeout      time.Duration
+	timeoutMu    sync.RWMutex
 	logger       *zap.Logger
 	stopped      int32
 }
@@ -61,6 +66,18 @@ func NewPeerRaceCoordinator(
 	timeout time.Duration,
 	logger *zap.Logger,
 ) PeerRaceCoordinator {
+	if connMgr == nil {
+		panic("connection manager cannot be nil")
+	}
+	if discovery == nil {
+		panic("peer discovery cannot be nil")
+	}
+	if coordinator == nil {
+		panic("request coordinator cannot be nil")
+	}
+	if taskExecutor == nil {
+		panic("task executor cannot be nil")
+	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -88,7 +105,9 @@ func (prc *DefaultPeerRaceCoordinator) ExecuteRace(ctx context.Context, hash str
 	}
 
 	// Create race context for cancellation
+	prc.timeoutMu.RLock()
 	raceCtx, raceCancel := context.WithTimeout(ctx, prc.timeout)
+	prc.timeoutMu.RUnlock()
 	defer raceCancel()
 
 	// Initialize the request with race context and total peers
@@ -172,7 +191,22 @@ func (prc *DefaultPeerRaceCoordinator) Start() {
 
 // SetTimeout updates the race timeout
 func (prc *DefaultPeerRaceCoordinator) SetTimeout(timeout time.Duration) {
+	prc.timeoutMu.Lock()
 	prc.timeout = timeout
+	prc.timeoutMu.Unlock()
+}
+
+// SetLogger updates the logger for this race coordinator instance and propagates to subcomponents
+func (prc *DefaultPeerRaceCoordinator) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	prc.logger = logger
+	// Propagate logger to subcomponents
+	prc.connMgr.SetLogger(logger)
+	prc.discovery.SetLogger(logger)
+	prc.coordinator.SetLogger(logger)
+	prc.taskExecutor.SetLogger(logger)
 }
 
 // GetCoordinator returns the underlying request coordinator

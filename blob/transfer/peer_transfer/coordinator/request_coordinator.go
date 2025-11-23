@@ -28,6 +28,7 @@ type RequestCoordinator interface {
 	IsStopped() bool
 	Stop()
 	Start()
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultRequestCoordinator manages blob requests and coordinates peer downloads
@@ -66,6 +67,14 @@ func (rc *DefaultRequestCoordinator) Stop() {
 // Start starts the request coordinator
 func (rc *DefaultRequestCoordinator) Start() {
 	atomic.StoreInt32(&rc.stopped, 0)
+}
+
+// SetLogger updates the logger for this request coordinator instance
+func (rc *DefaultRequestCoordinator) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	rc.logger = logger
 }
 
 // GetOrCreateRequest retrieves an existing request or creates a new one

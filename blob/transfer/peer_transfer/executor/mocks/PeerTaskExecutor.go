@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
+	"go.uber.org/zap"
 )
 
 // NewMockPeerTaskExecutor creates a new instance of MockPeerTaskExecutor. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -319,6 +320,46 @@ func (_c *MockPeerTaskExecutor_IsStopped_Call) Return(b bool) *MockPeerTaskExecu
 
 func (_c *MockPeerTaskExecutor_IsStopped_Call) RunAndReturn(run func() bool) *MockPeerTaskExecutor_IsStopped_Call {
 	_c.Call.Return(run)
+	return _c
+}
+
+// SetLogger provides a mock function for the type MockPeerTaskExecutor
+func (_mock *MockPeerTaskExecutor) SetLogger(logger *zap.Logger) {
+	_mock.Called(logger)
+	return
+}
+
+// MockPeerTaskExecutor_SetLogger_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetLogger'
+type MockPeerTaskExecutor_SetLogger_Call struct {
+	*mock.Call
+}
+
+// SetLogger is a helper method to define mock.On call
+//   - logger *zap.Logger
+func (_e *MockPeerTaskExecutor_Expecter) SetLogger(logger interface{}) *MockPeerTaskExecutor_SetLogger_Call {
+	return &MockPeerTaskExecutor_SetLogger_Call{Call: _e.mock.On("SetLogger", logger)}
+}
+
+func (_c *MockPeerTaskExecutor_SetLogger_Call) Run(run func(logger *zap.Logger)) *MockPeerTaskExecutor_SetLogger_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *zap.Logger
+		if args[0] != nil {
+			arg0 = args[0].(*zap.Logger)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPeerTaskExecutor_SetLogger_Call) Return() *MockPeerTaskExecutor_SetLogger_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockPeerTaskExecutor_SetLogger_Call) RunAndReturn(run func(logger *zap.Logger)) *MockPeerTaskExecutor_SetLogger_Call {
+	_c.Run(run)
 	return _c
 }
 

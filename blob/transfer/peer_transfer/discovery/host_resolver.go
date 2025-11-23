@@ -114,3 +114,11 @@ func (dhr *DefaultHostResolver) ResolveHostToIPWithTimeout(host, originalAddr st
 	}
 	return tempResolver.ResolveHostToIP(host, originalAddr)
 }
+
+// SetLogger updates the logger for this host resolver instance
+func (dhr *DefaultHostResolver) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	dhr.logger = logger
+}

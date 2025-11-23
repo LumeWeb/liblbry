@@ -29,6 +29,7 @@ type PeerDiscovery interface {
 	DHTNode() protocol.DHTNode
 	RetryAttempts() int
 	RetryDelay() time.Duration
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultPeerDiscovery handles DHT peer discovery with retry logic and fixed peers fallback
@@ -92,6 +93,22 @@ func (pd *DefaultPeerDiscovery) SetFixedPeers(peers []dht.Contact) {
 	defer pd.mu.Unlock()
 
 	pd.fixedPeers = peers
+}
+
+// SetLogger updates the logger for this discovery instance
+func (pd *DefaultPeerDiscovery) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+	pd.logger = logger
+	// Also update the host resolver logger
+	if pd.hostResolver != nil {
+		if resolver, ok := pd.hostResolver.(*DefaultHostResolver); ok {
+			resolver.SetLogger(logger)
+		}
+	}
 }
 
 // IsStopped checks if discovery is stopped
@@ -224,7 +241,11 @@ func (pd *DefaultPeerDiscovery) RetryDelay() time.Duration {
 func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
 	var contacts []dht.Contact
 
-	for attempt := 0; attempt <= pd.retryAttempts; attempt++ {
+	// Atomically capture retry configuration to prevent data races with SetRetryConfig
+	retryAttempts := pd.RetryAttempts()
+	retryDelay := pd.RetryDelay()
+
+	for attempt := 0; attempt <= retryAttempts; attempt++ {
 		// Check if context is cancelled before retrying
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -237,10 +258,10 @@ func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitma
 		if attempt > 0 {
 			pd.logger.Debug("Retrying DHT contact discovery",
 				zap.Int("attempt", attempt),
-				zap.Int("maxAttempts", pd.retryAttempts))
+				zap.Int("maxAttempts", retryAttempts))
 
 			// Add delay between retries using configurable delay with exponential backoff
-			delay := calculateBackoffDelay(attempt, pd.retryDelay)
+			delay := calculateBackoffDelay(attempt, retryDelay)
 			timer := time.NewTimer(delay)
 			select {
 			case <-timer.C:
@@ -268,9 +289,9 @@ func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitma
 		}
 
 		// If this was the last attempt, we'll fall through to return empty contacts
-		if attempt == pd.retryAttempts {
+		if attempt == retryAttempts {
 			pd.logger.Debug("No contacts found after all retry attempts",
-				zap.Int("totalAttempts", pd.retryAttempts+1))
+				zap.Int("totalAttempts", retryAttempts+1))
 		}
 	}
 

@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
 	"go.lumeweb.com/liblbry/protocol"
+	"go.uber.org/zap"
 )
 
 // NewMockPeerDiscovery creates a new instance of MockPeerDiscovery. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -482,6 +483,46 @@ func (_c *MockPeerDiscovery_SetFixedPeers_Call) Return() *MockPeerDiscovery_SetF
 }
 
 func (_c *MockPeerDiscovery_SetFixedPeers_Call) RunAndReturn(run func(peers []dht.Contact)) *MockPeerDiscovery_SetFixedPeers_Call {
+	_c.Run(run)
+	return _c
+}
+
+// SetLogger provides a mock function for the type MockPeerDiscovery
+func (_mock *MockPeerDiscovery) SetLogger(logger *zap.Logger) {
+	_mock.Called(logger)
+	return
+}
+
+// MockPeerDiscovery_SetLogger_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetLogger'
+type MockPeerDiscovery_SetLogger_Call struct {
+	*mock.Call
+}
+
+// SetLogger is a helper method to define mock.On call
+//   - logger *zap.Logger
+func (_e *MockPeerDiscovery_Expecter) SetLogger(logger interface{}) *MockPeerDiscovery_SetLogger_Call {
+	return &MockPeerDiscovery_SetLogger_Call{Call: _e.mock.On("SetLogger", logger)}
+}
+
+func (_c *MockPeerDiscovery_SetLogger_Call) Run(run func(logger *zap.Logger)) *MockPeerDiscovery_SetLogger_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *zap.Logger
+		if args[0] != nil {
+			arg0 = args[0].(*zap.Logger)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockPeerDiscovery_SetLogger_Call) Return() *MockPeerDiscovery_SetLogger_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockPeerDiscovery_SetLogger_Call) RunAndReturn(run func(logger *zap.Logger)) *MockPeerDiscovery_SetLogger_Call {
 	_c.Run(run)
 	return _c
 }

@@ -9,6 +9,7 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 	"go.lumeweb.com/liblbry/protocol"
+	"go.uber.org/zap"
 )
 
 // NewMockConnectionManager creates a new instance of MockConnectionManager. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -247,6 +248,46 @@ func (_c *MockConnectionManager_ReturnClient_Call) Return() *MockConnectionManag
 }
 
 func (_c *MockConnectionManager_ReturnClient_Call) RunAndReturn(run func(peerClient protocol.PeerClient)) *MockConnectionManager_ReturnClient_Call {
+	_c.Run(run)
+	return _c
+}
+
+// SetLogger provides a mock function for the type MockConnectionManager
+func (_mock *MockConnectionManager) SetLogger(logger *zap.Logger) {
+	_mock.Called(logger)
+	return
+}
+
+// MockConnectionManager_SetLogger_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetLogger'
+type MockConnectionManager_SetLogger_Call struct {
+	*mock.Call
+}
+
+// SetLogger is a helper method to define mock.On call
+//   - logger *zap.Logger
+func (_e *MockConnectionManager_Expecter) SetLogger(logger interface{}) *MockConnectionManager_SetLogger_Call {
+	return &MockConnectionManager_SetLogger_Call{Call: _e.mock.On("SetLogger", logger)}
+}
+
+func (_c *MockConnectionManager_SetLogger_Call) Run(run func(logger *zap.Logger)) *MockConnectionManager_SetLogger_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 *zap.Logger
+		if args[0] != nil {
+			arg0 = args[0].(*zap.Logger)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockConnectionManager_SetLogger_Call) Return() *MockConnectionManager_SetLogger_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockConnectionManager_SetLogger_Call) RunAndReturn(run func(logger *zap.Logger)) *MockConnectionManager_SetLogger_Call {
 	_c.Run(run)
 	return _c
 }

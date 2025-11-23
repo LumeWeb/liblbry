@@ -18,6 +18,7 @@ type ConnectionManager interface {
 	GetClient() (protocol.PeerClient, error)
 	ReturnClient(peerClient protocol.PeerClient)
 	DownloadFromPeer(ctx context.Context, peerAddr, hash string) ([]byte, error)
+	SetLogger(logger *zap.Logger)
 }
 
 // DefaultConnectionManager manages peer client pooling and lifecycle
@@ -80,6 +81,14 @@ func (cm *DefaultConnectionManager) Stop() {
 func (cm *DefaultConnectionManager) Start() {
 	atomic.StoreInt32(&cm.stopped, 0)
 	cm.createClientPool()
+}
+
+// SetLogger updates the logger for this connection manager instance
+func (cm *DefaultConnectionManager) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	cm.logger = logger
 }
 
 // GetClient safely gets and validates a peer client from the pool
@@ -186,10 +195,14 @@ func (cm *DefaultConnectionManager) createClientPool() {
 
 // returnClientToPool resets the client and returns it to the pool
 func (cm *DefaultConnectionManager) returnClientToPool(peerClient protocol.PeerClient) {
-	// If the manager is stopped, close the client instead of pooling it
-	if cm.IsStopped() {
+	// Decide under lock whether to pool or close
+	cm.clientPoolMu.Lock()
+	defer cm.clientPoolMu.Unlock()
+
+	if cm.IsStopped() || cm.clientPool == nil {
+		// Manager is stopped or pool unavailable: close instead of pooling
 		if cm.logger != nil {
-			cm.logger.Debug("Closing client because connection manager is stopped")
+			cm.logger.Debug("Closing client because connection manager is stopped or pool is unavailable")
 		}
 		if err := peerClient.Close(); err != nil && cm.logger != nil {
 			cm.logger.Debug("Error closing client on stop", zap.Error(err))
@@ -208,13 +221,7 @@ func (cm *DefaultConnectionManager) returnClientToPool(peerClient protocol.PeerC
 		return
 	}
 
-	// Use a single lock to check pool existence and put client
-	cm.clientPoolMu.Lock()
-	defer cm.clientPoolMu.Unlock()
-
-	if cm.clientPool != nil {
-		cm.clientPool.Put(peerClient)
-		// Track the client for potential shutdown
-		cm.pooledClients[peerClient] = struct{}{}
-	}
+	cm.clientPool.Put(peerClient)
+	// Track the client for potential shutdown
+	cm.pooledClients[peerClient] = struct{}{}
 }
