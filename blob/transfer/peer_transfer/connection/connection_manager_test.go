@@ -164,7 +164,7 @@ func TestConnectionManager_DownloadFromPeer(t *testing.T) {
 		data, err := testSetup.manager.DownloadFromPeer(ctx, peerAddr, hash)
 
 		assert.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.True(t, errors.Is(err, context.Canceled))
 		assert.Nil(t, data)
 	})
 
@@ -178,10 +178,9 @@ func TestConnectionManager_DownloadFromPeer(t *testing.T) {
 }
 
 func TestConnectionManager_returnClientToPool(t *testing.T) {
-	setup := setupTest(t)
-	cm := setup.manager
-
 	t.Run("Successful reset", func(t *testing.T) {
+		setup := setupTest(t)
+		cm := setup.manager
 		mockClient := protocolMocks.NewMockPeerClient(t)
 		mockClient.EXPECT().Reset().Return(nil)
 
@@ -189,6 +188,8 @@ func TestConnectionManager_returnClientToPool(t *testing.T) {
 	})
 
 	t.Run("Reset failure", func(t *testing.T) {
+		setup := setupTest(t)
+		cm := setup.manager
 		resetErr := errors.New("reset failed")
 		mockClient := createMockClientForReset(t, resetErr)
 
@@ -197,6 +198,8 @@ func TestConnectionManager_returnClientToPool(t *testing.T) {
 	})
 
 	t.Run("Stopped manager", func(t *testing.T) {
+		setup := setupTest(t)
+		cm := setup.manager
 		mockClient := protocolMocks.NewMockPeerClient(t)
 		cm.Stop()
 

@@ -37,6 +37,7 @@ func TestPeerDownloader_DownloadFromPeers_DiscoveryFails(t *testing.T) {
 
 	// Mock the phase manager to simulate discovery failure
 	mockPhaseManager.EXPECT().Start().Return().Once()
+	mockPhaseManager.EXPECT().IsStopped().Return(false).Once()
 	mockPhaseManager.EXPECT().ExecutePhases(mock.Anything, "testhash", mock.AnythingOfType("bits.Bitmap"), mock.AnythingOfType("*blob.BlobRequest")).Return(nil, fmt.Errorf("discovery failed")).Once()
 
 	pd.Start()
@@ -52,15 +53,13 @@ func TestPeerDownloader_DownloadFromPeers_SuccessfulDHTDownload(t *testing.T) {
 
 	// Mock expectations for successful DHT download
 	mockPhaseManager.EXPECT().Start().Return().Once()
+	mockPhaseManager.EXPECT().IsStopped().Return(false).Once()
 	mockPhaseManager.EXPECT().ExecutePhases(mock.Anything, "testhash", mock.AnythingOfType("bits.Bitmap"), mock.AnythingOfType("*blob.BlobRequest")).Return([]byte("test data"), nil).Once()
 
 	pd.Start()
 
 	_, err := pd.DownloadFromPeers(context.Background(), "testhash", bits.Bitmap{}, blob.NewBlobRequest())
 	assert.NoError(t, err)
-
-	// Give some time for async worker tasks to complete
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestPeerDownloader_SetTimeout(t *testing.T) {

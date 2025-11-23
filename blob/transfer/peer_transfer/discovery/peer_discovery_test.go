@@ -426,21 +426,6 @@ func setupTest(t *testing.T) *testSetup {
 	}
 }
 
-// setupTestWithMockResolver creates a test environment with a mock host resolver
-// This allows for controlled hostname resolution testing
-func setupTestWithMockResolver(t *testing.T) *testSetup {
-	logger := zaptest.NewLogger(t)
-	mockDHT := protocolMocks.NewMockDHTNode(t)
-	mockResolver := NewMockHostResolver()
-	discovery := NewPeerDiscoveryWithHostResolver(mockDHT, logger, mockResolver)
-
-	return &testSetup{
-		logger:    logger,
-		mockDHT:   mockDHT,
-		discovery: discovery,
-	}
-}
-
 // assertStoppedDiscovery checks common stopped discovery behavior
 // Consolidates repetitive assertions for stopped discovery test scenarios.
 func assertStoppedDiscovery(t *testing.T, discovery PeerDiscovery, err error, result interface{}) {

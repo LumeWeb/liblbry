@@ -195,6 +195,12 @@ func (pd *DefaultPeerDiscovery) RetryDelay() time.Duration {
 }
 
 // discoverWithRetry attempts DHT discovery with exponential backoff retry logic
+//
+// IMPORTANT: This function has specific retry behavior:
+//   - Retries ONLY when DHT Get succeeds but returns zero contacts
+//   - Any non-nil error from DHT Get immediately short-circuits retries and falls back to fixed peers
+//   - This design treats DHT errors as network failures that should trigger immediate fallback,
+//     while zero-contact results are treated as temporary network conditions worth retrying
 func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitmap bits.Bitmap) ([]dht.Contact, error) {
 	var contacts []dht.Contact
 
@@ -216,12 +222,13 @@ func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitma
 			// Add delay between retries using configurable delay with exponential backoff
 			delay := calculateBackoffDelay(attempt, pd.retryDelay)
 			timer := time.NewTimer(delay)
-			defer timer.Stop()
 			select {
 			case <-timer.C:
 			case <-ctx.Done():
+				timer.Stop()
 				return nil, ctx.Err()
 			}
+			timer.Stop()
 		}
 
 		var err error
@@ -255,8 +262,22 @@ func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitma
 func calculateBackoffDelay(attempt int, baseDelay time.Duration) time.Duration {
 	backoffFactor := time.Duration(1 << uint(attempt-1)) // 1, 2, 4, 8...
 	delay := backoffFactor * baseDelay
+
+	// Guard against zero or negative delays
+	if delay <= 0 {
+		// Return a safe positive fallback
+		if baseDelay > 0 {
+			return baseDelay
+		}
+		return time.Nanosecond
+	}
+
 	// Add jitter: ±25% randomization
-	jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+	var jitter time.Duration
+	if delay/2 > 0 {
+		jitter = time.Duration(rand.Int63n(int64(delay / 2)))
+	}
+	// If delay/2 == 0, jitter remains 0 (no jitter for very small delays)
 	delay = delay - delay/4 + jitter
 	return delay
 }

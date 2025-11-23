@@ -86,7 +86,7 @@ func (rc *DefaultRequestCoordinator) GetOrCreateRequest(hash string) (*blob.Blob
 	}
 
 	// If request exists, increment waiters
-	req.SetWaiters(req.GetWaiters() + 1)
+	req.AddWaiter()
 	return req, false
 }
 
@@ -106,8 +106,12 @@ func (rc *DefaultRequestCoordinator) RemoveRequest(hash string) {
 func (rc *DefaultRequestCoordinator) WaitForResult(ctx context.Context, req *blob.BlobRequest) ([]byte, error) {
 	defer func() {
 		// Decrement waiters when done
-		newWaiters := req.GetWaiters() - 1
-		req.SetWaiters(newWaiters)
+		newWaiters, ok := req.DoneWaiter()
+		if !ok {
+			// This indicates a bug - more WaitForResult calls than waiters
+			rc.logger.Warn("Waiter underflow detected - more WaitForResult calls than waiters added")
+			return
+		}
 
 		// If this was the last waiter and context was cancelled, cancel the race
 		if newWaiters == 0 && ctx.Err() != nil {
@@ -161,6 +165,10 @@ func (rc *DefaultRequestCoordinator) CompleteWithError(req *blob.BlobRequest, er
 
 // CompleteWithErrorAndCancel completes a request with an error and cancels race attempts
 func (rc *DefaultRequestCoordinator) CompleteWithErrorAndCancel(req *blob.BlobRequest, err error, raceCancel context.CancelFunc, hash string) {
+	if rc.IsStopped() {
+		return
+	}
+
 	req.CompleteOnce(func() {
 		// Cancel any remaining race attempts
 		if raceCancel != nil {

@@ -42,6 +42,7 @@ const (
 )
 
 // LBRYTestHashes contains real LBRY blob hashes from lbry.go test fixtures
+// These are deterministic test vectors only, not credentials or secrets
 var LBRYTestHashes = map[string]string{
 	LBRYHashKey1: "a2f1841bb9c5f3b583ac3b8c07ee1a5bf9cc48923721c30d5ca6318615776c284e8936d72fa4db7fdda2e4e9598b1e6c",
 	LBRYHashKey2: "0c9675ad7f40f29dcd41883ed9cf7e145bbb13976d9b83ab9354f4f61a87f0f7771a56724c2aa7a5ab43c68d7942e5cb",
@@ -75,6 +76,7 @@ var KnownHashVectors = map[string]struct {
 }
 
 // ValidLBRYHashes includes all valid LBRY hashes for testing validation
+// These are deterministic test vectors only, not credentials or secrets
 var ValidLBRYHashes = map[string]string{
 	ValidHashKeyEmptyString: "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b", // empty string hash
 	ValidHashKeyHelloWorld:  "fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd", // "hello world" hash
@@ -86,6 +88,7 @@ var ValidLBRYHashes = map[string]string{
 }
 
 // InvalidHashLengths contains hashes with invalid lengths for testing
+// These are deterministic test vectors only, not credentials or secrets
 var InvalidHashLengths = map[string]string{
 	InvalidLengthKeyEmpty:       "",                                                                                               // empty
 	InvalidLengthKeyTooShort:    "abc",                                                                                            // too short
@@ -93,6 +96,7 @@ var InvalidHashLengths = map[string]string{
 }
 
 // InvalidHashHex contains hashes with invalid hex characters for testing
+// These are deterministic test vectors only, not credentials or secrets
 var InvalidHashHex = map[string]string{
 	InvalidHexKeyInvalidG: "38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383g",     // invalid hex character
 	InvalidHexKeyInvalidZ: "38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383z",     // invalid hex character
@@ -100,12 +104,14 @@ var InvalidHashHex = map[string]string{
 }
 
 // InvalidHashUppercase contains hashes with uppercase characters for testing
+// These are deterministic test vectors only, not credentials or secrets
 var InvalidHashUppercase = map[string]string{
 	InvalidUppercaseKeyAllUppercase: "38383838383838383838383838383838383838383838383838383838383838383838383838383838383838383838383A",    // uppercase
 	InvalidUppercaseKeyMixedCase:    "ABCDEF" + "3838383838383838383838383838383838383838383838383838383838383838383838383838383838383838", // mixed case
 }
 
 // InvalidMultihashes contains invalid multihash strings for testing
+// These are deterministic test vectors only, not credentials or secrets
 var InvalidMultihashes = map[string]string{
 	InvalidMultihashKeyInvalid: "invalid",
 	InvalidMultihashKeyEmpty:   "",

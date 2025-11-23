@@ -120,6 +120,50 @@ func (_c *MockPhaseManager_ExecutePhases_Call) RunAndReturn(run func(ctx context
 	return _c
 }
 
+// GetMaxPeers provides a mock function for the type MockPhaseManager
+func (_mock *MockPhaseManager) GetMaxPeers() int32 {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetMaxPeers")
+	}
+
+	var r0 int32
+	if returnFunc, ok := ret.Get(0).(func() int32); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(int32)
+	}
+	return r0
+}
+
+// MockPhaseManager_GetMaxPeers_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetMaxPeers'
+type MockPhaseManager_GetMaxPeers_Call struct {
+	*mock.Call
+}
+
+// GetMaxPeers is a helper method to define mock.On call
+func (_e *MockPhaseManager_Expecter) GetMaxPeers() *MockPhaseManager_GetMaxPeers_Call {
+	return &MockPhaseManager_GetMaxPeers_Call{Call: _e.mock.On("GetMaxPeers")}
+}
+
+func (_c *MockPhaseManager_GetMaxPeers_Call) Run(run func()) *MockPhaseManager_GetMaxPeers_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockPhaseManager_GetMaxPeers_Call) Return(n int32) *MockPhaseManager_GetMaxPeers_Call {
+	_c.Call.Return(n)
+	return _c
+}
+
+func (_c *MockPhaseManager_GetMaxPeers_Call) RunAndReturn(run func() int32) *MockPhaseManager_GetMaxPeers_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetRaceCoordinator provides a mock function for the type MockPhaseManager
 func (_mock *MockPhaseManager) GetRaceCoordinator() coordinator.PeerRaceCoordinator {
 	ret := _mock.Called()

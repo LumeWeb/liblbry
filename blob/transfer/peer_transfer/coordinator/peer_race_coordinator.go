@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"go.lumeweb.com/lbry-dht"
@@ -48,7 +49,7 @@ type DefaultPeerRaceCoordinator struct {
 	taskExecutor executor.PeerTaskExecutor
 	timeout      time.Duration
 	logger       *zap.Logger
-	stopped      bool
+	stopped      int32
 }
 
 // NewPeerRaceCoordinator creates a new DefaultPeerRaceCoordinator instance
@@ -87,7 +88,8 @@ func (prc *DefaultPeerRaceCoordinator) ExecuteRace(ctx context.Context, hash str
 	}
 
 	// Create race context for cancellation
-	raceCtx, raceCancel := context.WithTimeout(context.Background(), prc.timeout)
+	raceCtx, raceCancel := context.WithTimeout(ctx, prc.timeout)
+	defer raceCancel()
 
 	// Initialize the request with race context and total peers
 	prc.coordinator.InitializeRequest(req, raceCancel, int32(len(contacts)))
@@ -112,9 +114,15 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 	// This is not the final phase - wait for either success or all peers to fail
 	for {
 		select {
+		case <-ctx.Done():
+			// Context was cancelled
+			return nil, ctx.Err()
 		case <-req.GetDone():
 			// Request was completed successfully
-			completed, total, _ := prc.coordinator.GetRequestState(req)
+			completed, total, err := prc.coordinator.GetRequestState(req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get request state: %w", err)
+			}
 			prc.logger.Debug("Request completed successfully in non-final phase",
 				zap.String("hash", hash),
 				zap.Int32("completed", completed),
@@ -123,9 +131,13 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 			// Get the result from the request
 			res := req.GetResult()
 			return res.GetData(), res.GetErr()
-		default:
+		case <-time.After(10 * time.Millisecond):
 			// Check if all peers have completed
-			completed, total, lastError := prc.coordinator.GetRequestState(req)
+			completed, total, err := prc.coordinator.GetRequestState(req)
+			lastError := req.GetLastError()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get request state: %w", err)
+			}
 
 			if completed >= total {
 				// Give a brief moment for async completion to propagate
@@ -147,25 +159,22 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 				}
 			}
 		}
-
-		// Wait a bit and check again
-		time.Sleep(1 * time.Millisecond)
 	}
 }
 
 // IsStopped checks if the coordinator is stopped
 func (prc *DefaultPeerRaceCoordinator) IsStopped() bool {
-	return prc.stopped
+	return atomic.LoadInt32(&prc.stopped) != 0
 }
 
 // Stop stops the coordinator
 func (prc *DefaultPeerRaceCoordinator) Stop() {
-	prc.stopped = true
+	atomic.StoreInt32(&prc.stopped, 1)
 }
 
 // Start starts the coordinator
 func (prc *DefaultPeerRaceCoordinator) Start() {
-	prc.stopped = false
+	atomic.StoreInt32(&prc.stopped, 0)
 }
 
 // SetTimeout updates the race timeout

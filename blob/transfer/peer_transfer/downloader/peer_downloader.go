@@ -3,7 +3,6 @@ package downloader
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"go.lumeweb.com/lbry-dht/bits"
@@ -39,10 +38,11 @@ type DefaultPeerDownloader struct {
 	maxPeers     int
 	timeout      time.Duration
 	logger       *zap.Logger
-	stopped      int32
 }
 
-// NewPeerDownloader creates a new DefaultPeerDownloader instance
+// NewPeerDownloader creates a new DefaultPeerDownloader instance.
+// All dependency parameters must be non-nil. This constructor is intended for internal use
+// where components are pre-configured. For most use cases, use NewPeerDownloaderWithDefaults.
 func NewPeerDownloader(
 	connMgr connection.ConnectionManager,
 	discovery discovery.PeerDiscovery,
@@ -52,6 +52,19 @@ func NewPeerDownloader(
 	timeout time.Duration,
 	logger *zap.Logger,
 ) *DefaultPeerDownloader {
+	// Validate required dependencies
+	if connMgr == nil {
+		panic("connection manager cannot be nil")
+	}
+	if discovery == nil {
+		panic("peer discovery cannot be nil")
+	}
+	if coordinator == nil {
+		panic("request coordinator cannot be nil")
+	}
+	if phaseManager == nil {
+		panic("phase manager cannot be nil")
+	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -69,7 +82,8 @@ func NewPeerDownloader(
 	return pd
 }
 
-// NewPeerDownloaderWithDefaults creates a new DefaultPeerDownloader with default component implementations
+// NewPeerDownloaderWithDefaults creates a new DefaultPeerDownloader with default component implementations.
+// All dependency parameters must be non-nil. This is the recommended constructor for most use cases.
 func NewPeerDownloaderWithDefaults(
 	connMgr connection.ConnectionManager,
 	discovery discovery.PeerDiscovery,
@@ -78,6 +92,16 @@ func NewPeerDownloaderWithDefaults(
 	timeout time.Duration,
 	logger *zap.Logger,
 ) *DefaultPeerDownloader {
+	// Validate required dependencies
+	if connMgr == nil {
+		panic("connection manager cannot be nil")
+	}
+	if discovery == nil {
+		panic("peer discovery cannot be nil")
+	}
+	if coordinator == nil {
+		panic("request coordinator cannot be nil")
+	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -92,18 +116,16 @@ func NewPeerDownloaderWithDefaults(
 
 // IsStopped checks if downloader is stopped
 func (pd *DefaultPeerDownloader) IsStopped() bool {
-	return atomic.LoadInt32(&pd.stopped) == 1
+	return pd.phaseManager.IsStopped()
 }
 
 // Stop stops the downloader and its components
 func (pd *DefaultPeerDownloader) Stop() {
-	atomic.StoreInt32(&pd.stopped, 1)
 	pd.phaseManager.Stop()
 }
 
 // Start starts the downloader and its components
 func (pd *DefaultPeerDownloader) Start() {
-	atomic.StoreInt32(&pd.stopped, 0)
 	pd.phaseManager.Start()
 }
 
@@ -135,7 +157,13 @@ func (pd *DefaultPeerDownloader) GetMaxPeers() int {
 	return pd.maxPeers
 }
 
-// SetMaxPeers updates the maximum number of peers to try
+// SetMaxPeers updates the maximum number of peers to try per phase.
+// This method couples peer limits with task execution concurrency by setting both:
+// - Phase manager's maxPeers (limits peers tried per download phase)
+// - Task executor's maxConcurrency (limits concurrent peer tasks)
+//
+// Use SetMaxConcurrency() if you need to decouple these values and control
+// concurrency independently from the peer limit per phase.
 func (pd *DefaultPeerDownloader) SetMaxPeers(maxPeers int) {
 	pd.maxPeers = maxPeers
 	// Update phase manager max peers
@@ -144,7 +172,13 @@ func (pd *DefaultPeerDownloader) SetMaxPeers(maxPeers int) {
 	pd.phaseManager.GetRaceCoordinator().GetTaskExecutor().SetMaxConcurrency(maxPeers)
 }
 
-// SetMaxConcurrency updates the maximum concurrency for peer tasks
+// SetMaxConcurrency updates the maximum concurrency for peer tasks independently.
+// This method only affects the task executor's worker pool concurrency and does not
+// change the maximum number of peers tried per phase (controlled by SetMaxPeers).
+//
+// Use this when you want to decouple task concurrency from peer limits, such as:
+// - Allowing more concurrent tasks than peers per phase (for retry scenarios)
+// - Limiting concurrency for resource management while keeping peer limits high
 func (pd *DefaultPeerDownloader) SetMaxConcurrency(maxConcurrency int) {
 	// Update task executor max concurrency through the race coordinator
 	pd.phaseManager.GetRaceCoordinator().GetTaskExecutor().SetMaxConcurrency(maxConcurrency)

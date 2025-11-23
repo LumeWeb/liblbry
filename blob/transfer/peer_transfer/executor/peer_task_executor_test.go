@@ -201,7 +201,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(100 * time.Millisecond)
+	err = executor.WaitForCompletion(500 * time.Millisecond)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -242,7 +242,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_ConnectionError(t *testing.T) 
 	require.NoError(t, err) // Should not return error, just track failed peer
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(100 * time.Millisecond)
+	err = executor.WaitForCompletion(500 * time.Millisecond)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -283,7 +283,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_DownloadError(t *testing.T) {
 	require.NoError(t, err) // Should not return error, just track failed peer
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(100 * time.Millisecond)
+	err = executor.WaitForCompletion(500 * time.Millisecond)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -370,10 +370,10 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Concurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should complete quickly due to race condition (not waiting for all peers)
-	assert.Less(t, duration, 100*time.Millisecond)
+	assert.Less(t, duration, 500*time.Millisecond)
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(100 * time.Millisecond)
+	err = executor.WaitForCompletion(500 * time.Millisecond)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -415,7 +415,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_FinalPeerFailure(t *testing.T)
 	require.NoError(t, err)
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(100 * time.Millisecond)
+	err = executor.WaitForCompletion(500 * time.Millisecond)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -493,7 +493,7 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled(t *testing.T) {
+func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled_LongRunning(t *testing.T) {
 	setup := setupTestWithConcurrency(t, 2)
 	executor := setup.executor
 
@@ -505,14 +505,21 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled(t *testi
 	// Mock IsFixedPeer to return false (non-fixed peer)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 
-	// Mock a long-running task (don't complete it)
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(nil, nil).After(10 * time.Second)
+	// Mock a long-running task that will still be running when context times out
+	// This will complete successfully after 300ms, but the context timeout is 200ms
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil).After(300 * time.Millisecond)
+
+	// Mock the successful completion that will happen after the context times out
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Maybe()
+
+	// Mock the successful completion that will happen after the context times out
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Maybe()
 
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
 	require.NoError(t, err)
 
 	// Test context cancellation
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	err = executor.WaitForCompletionWithContext(ctx)

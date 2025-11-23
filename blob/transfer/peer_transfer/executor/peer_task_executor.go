@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -16,6 +17,15 @@ import (
 	"go.uber.org/zap"
 
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
+)
+
+// errorType represents the type of error that occurred during peer transfer
+type errorType string
+
+const (
+	errorTypeProtocol errorType = "protocol"
+	errorTypeContext  errorType = "context"
+	errorTypeTimeout  errorType = "timeout"
 )
 
 // PeerTaskExecutor defines the interface for executing individual peer download tasks
@@ -63,7 +73,7 @@ type DefaultPeerTaskExecutor struct {
 	workerPoolMu      sync.RWMutex
 	maxConcurrency    int
 	logger            *zap.Logger
-	stopped           int32
+	stopped           uint32
 
 	// Task tracking fields
 	submittedTasks int64
@@ -110,7 +120,6 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 
 	// Check if request is already done before submitting tasks
 	if pte.shouldSkipTask(req) {
-		// Counters are already reset by shouldSkipTask
 		return nil
 	}
 
@@ -140,12 +149,12 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 
 	// Check if request is done after context check
 	if pte.shouldSkipTask(req) {
-		// Counters are already reset by shouldSkipTask
 		return nil
 	}
 
 	for _, contact := range contacts {
-		// Check again if we should proceed with each task
+		// Check if we should proceed with this task before creating it
+		// This ensures we only create and submit tasks that will actually execute
 		if !pte.shouldProceedWithTask(ctx, req) {
 			continue
 		}
@@ -155,12 +164,10 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 			continue
 		}
 
-		// Only increment if we're actually going to submit the task
-		// This is a double-check to prevent race conditions
-		if pte.shouldProceedWithTask(ctx, req) {
-			atomic.AddInt64(&pte.submittedTasks, 1)
-			workerPool.Submit(task)
-		}
+		// Increment counters only for tasks that will actually execute
+		atomic.AddInt64(&pte.submittedTasks, 1)
+		atomic.AddInt64(&pte.pendingTasks, 1)
+		workerPool.Submit(task)
 	}
 
 	return nil
@@ -187,13 +194,11 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 	peerHashBitmap := hashBitmap
 
 	return func() {
-		// Check if we should skip this task
-		if !pte.shouldProceedWithTask(ctx, req) {
+		// Quick side-effect-free check for context cancellation or request completion
+		// This handles race conditions where the request might complete between task submission and execution
+		if pte.checkEarlyExit(ctx, req) {
 			return
 		}
-
-		// Increment pending tasks
-		atomic.AddInt64(&pte.pendingTasks, 1)
 
 		data, err := pte.connMgr.DownloadFromPeer(ctx, peerAddress, blobHash)
 
@@ -222,9 +227,21 @@ func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *
 
 	// Track failed peer
 	_, isFinal := pte.completionHandler.TrackFailedPeer(req, err)
+
+	// Determine error type for logging
+	var errType errorType = errorTypeProtocol
+	if ctx.Err() != nil {
+		errType = errorTypeContext
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		errType = errorTypeTimeout
+	}
+
 	pte.logger.Debug("Peer download failed",
 		zap.String("hash", hash),
 		zap.String("peer", peerAddr),
+		zap.String("error_type", string(errType)),
+		zap.Bool("is_fixed_peer", isFixed),
+		zap.Bool("removed_from_dht", ctx.Err() == nil && !isFixed),
 		zap.Error(err))
 
 	// Check if this was the last peer to fail
@@ -253,25 +270,28 @@ func (pte *DefaultPeerTaskExecutor) createWorkerPool() {
 
 // IsStopped checks if the executor is stopped
 func (pte *DefaultPeerTaskExecutor) IsStopped() bool {
-	return pte.stopped == 1
+	return atomic.LoadUint32(&pte.stopped) == 1
 }
 
-// Stop stops the executor and its worker pool
+// Stop stops the executor and its worker pool.
+// This method is idempotent and safe for concurrent calls.
+// Multiple calls to Stop will not cause errors and will only stop the worker pool once.
 func (pte *DefaultPeerTaskExecutor) Stop() {
-	pte.stopped = 1
+	// Only proceed with worker pool shutdown if we're the first goroutine to set the flag to 1
+	if atomic.CompareAndSwapUint32(&pte.stopped, 0, 1) {
+		pte.workerPoolMu.Lock()
+		defer pte.workerPoolMu.Unlock()
 
-	pte.workerPoolMu.Lock()
-	defer pte.workerPoolMu.Unlock()
-
-	if pte.workerPool != nil {
-		pte.workerPool.Stop()
-		pte.workerPool = nil // Clear to allow recreation
+		if pte.workerPool != nil {
+			pte.workerPool.Stop()
+			pte.workerPool = nil // Clear to allow recreation
+		}
 	}
 }
 
 // Start starts the executor and recreates worker pool
 func (pte *DefaultPeerTaskExecutor) Start() {
-	pte.stopped = 0
+	atomic.StoreUint32(&pte.stopped, 0)
 	pte.createWorkerPool()
 }
 
@@ -287,6 +307,15 @@ func (pte *DefaultPeerTaskExecutor) WaitForCompletion(timeout time.Duration) err
 	return pte.WaitForCompletionWithContext(ctx)
 }
 
+// WaitForCompletionWithContextAndTimeout waits for all currently submitted tasks to complete,
+// using both the provided context and timeout. The context is cancelled when either the
+// parent context is cancelled or the timeout is reached, whichever comes first.
+func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContextAndTimeout(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return pte.WaitForCompletionWithContext(ctx)
+}
+
 // GetMaxConcurrency returns the current maximum concurrency for peer tasks
 func (pte *DefaultPeerTaskExecutor) GetMaxConcurrency() int {
 	return pte.maxConcurrency
@@ -297,10 +326,6 @@ func (pte *DefaultPeerTaskExecutor) shouldSkipTask(req *blob.BlobRequest) bool {
 	// Check if request is already done before submitting tasks
 	select {
 	case <-req.GetDone():
-		// Request is done, reset counters to 0 since no tasks were actually submitted
-		atomic.StoreInt64(&pte.submittedTasks, 0)
-		atomic.StoreInt64(&pte.completedTasks, 0)
-		atomic.StoreInt64(&pte.pendingTasks, 0)
 		return true
 	default:
 		// Request is not done yet, continue with task submission
@@ -313,10 +338,7 @@ func (pte *DefaultPeerTaskExecutor) shouldProceedWithTask(ctx context.Context, r
 	// Check if request is already done or context is cancelled before doing any work
 	select {
 	case <-req.GetDone():
-		// Request is done, decrement pending tasks and increment completed tasks
-		// But only if we've already incremented pending tasks
-		atomic.AddInt64(&pte.completedTasks, 1)
-		atomic.AddInt64(&pte.pendingTasks, -1)
+		pte.logger.Debug("Skipping peer task: request already completed")
 		return false
 	default:
 	}
@@ -324,15 +346,38 @@ func (pte *DefaultPeerTaskExecutor) shouldProceedWithTask(ctx context.Context, r
 	// Check if context is cancelled
 	select {
 	case <-ctx.Done():
-		// Context is cancelled, decrement pending tasks and increment completed tasks
-		// But only if we've already incremented pending tasks
-		atomic.AddInt64(&pte.completedTasks, 1)
-		atomic.AddInt64(&pte.pendingTasks, -1)
+		pte.logger.Debug("Skipping peer task: context cancelled", zap.Error(ctx.Err()))
 		return false
 	default:
 	}
 
 	return true
+}
+
+// handleEarlyTaskExit handles the counter adjustments when a task exits early due to
+// context cancellation or request completion. This should only be called after
+// pendingTasks has been incremented for the task.
+func (pte *DefaultPeerTaskExecutor) handleEarlyTaskExit() {
+	atomic.AddInt64(&pte.completedTasks, 1)
+	atomic.AddInt64(&pte.pendingTasks, -1)
+}
+
+// checkEarlyExit checks if the task should exit early due to context cancellation or request completion.
+// If so, it handles the counter adjustments and returns true. Otherwise, returns false.
+// This should only be called after pendingTasks has been incremented for the task.
+func (pte *DefaultPeerTaskExecutor) checkEarlyExit(ctx context.Context, req *blob.BlobRequest) bool {
+	select {
+	case <-req.GetDone():
+		// Request already completed, handle counter adjustments and return
+		pte.handleEarlyTaskExit()
+		return true
+	case <-ctx.Done():
+		// Context cancelled, handle counter adjustments and return
+		pte.handleEarlyTaskExit()
+		return true
+	default:
+		return false
+	}
 }
 
 // WaitForCompletionWithContext waits for all currently submitted tasks to complete with context support
@@ -367,7 +412,12 @@ func (pte *DefaultPeerTaskExecutor) GetWorkerPoolStats() (size int, waitingQueue
 	return workerPool.Size(), workerPool.WaitingQueueSize(), workerPool.Stopped()
 }
 
-// WaitAllTasksComplete waits for all tasks to complete using the worker pool's StopWait mechanism
+// WaitAllTasksComplete waits for all tasks to complete using the worker pool's StopWait mechanism.
+// This is a heavyweight synchronization operation that:
+// - Blocks all other operations (Start/Stop/SetMaxConcurrency) until all tasks complete
+// - Stops and recreates the worker pool, which is expensive
+// - Should not be called in hot paths or frequently
+// Use this only when you need to ensure all in-flight tasks are completed before proceeding.
 func (pte *DefaultPeerTaskExecutor) WaitAllTasksComplete() error {
 	workerPool := pte.getWorkerPool()
 	if workerPool == nil {

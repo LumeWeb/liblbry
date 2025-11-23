@@ -301,10 +301,10 @@ func TestRequestCoordinator_InitializeRequest(t *testing.T) {
 
 func TestRequestCoordinator_TrackFailedPeer(t *testing.T) {
 	setup := setupRequestTest(t)
-	req, _, _ := newRequestBuilder().withWaiters(1).withTotalPeers(3).build()
 	testErr := assert.AnError
 
 	t.Run("Non-final peer", func(t *testing.T) {
+		req, _, _ := newRequestBuilder().withWaiters(1).withTotalPeers(3).build()
 		completed, isFinal := setup.coordinator.TrackFailedPeer(req, testErr)
 
 		assert.Equal(t, int32(1), completed)
@@ -313,7 +313,9 @@ func TestRequestCoordinator_TrackFailedPeer(t *testing.T) {
 	})
 
 	t.Run("Final peer", func(t *testing.T) {
-		// Track two more failures to reach total
+		req, _, _ := newRequestBuilder().withWaiters(1).withTotalPeers(3).build()
+		// Track two failures to reach total
+		setup.coordinator.TrackFailedPeer(req, testErr)
 		setup.coordinator.TrackFailedPeer(req, testErr)
 		completed, isFinal := setup.coordinator.TrackFailedPeer(req, testErr)
 

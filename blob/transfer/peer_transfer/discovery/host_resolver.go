@@ -101,6 +101,11 @@ func (dhr *DefaultHostResolver) ResolveHostToIP(host, originalAddr string) (net.
 // ResolveHostToIPWithTimeout resolves a host to an IP address with a custom timeout
 // This is a convenience method that allows overriding the default timeout for a single resolution
 func (dhr *DefaultHostResolver) ResolveHostToIPWithTimeout(host, originalAddr string, timeout time.Duration) (net.IP, error) {
+	// Normalize timeout to match constructor behavior
+	if timeout <= 0 {
+		timeout = dhr.timeout
+	}
+
 	// Create a temporary resolver with the custom timeout
 	tempResolver := &DefaultHostResolver{
 		logger:   dhr.logger,

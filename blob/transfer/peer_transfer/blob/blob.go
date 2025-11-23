@@ -15,6 +15,7 @@ type BlobRequest struct {
 	result     taskResult
 	lastError  error // tracks the last error from any peer attempt
 	done       chan struct{}
+	doneOnce   sync.Once
 	mu         sync.Mutex
 	once       sync.Once
 }
@@ -80,21 +81,39 @@ func (br *BlobRequest) GetWaiters() int {
 func (br *BlobRequest) SetWaiters(waiters int) {
 	br.mu.Lock()
 	defer br.mu.Unlock()
+	if waiters < 0 {
+		panic("waiters count cannot be negative")
+	}
 	br.waiters = waiters
+}
+
+// AddWaiter atomically increments the waiters count
+func (br *BlobRequest) AddWaiter() {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	br.waiters++
+}
+
+// DoneWaiter atomically decrements the waiters count and returns the new count
+// Returns false if the count would go negative (indicates a bug)
+func (br *BlobRequest) DoneWaiter() (int, bool) {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	if br.waiters <= 0 {
+		return br.waiters, false
+	}
+	br.waiters--
+	return br.waiters, true
 }
 
 // GetCompleted returns the completed count
 func (br *BlobRequest) GetCompleted() int32 {
-	br.mu.Lock()
-	defer br.mu.Unlock()
-	return br.completed
+	return atomic.LoadInt32(&br.completed)
 }
 
 // SetCompleted sets the completed count
 func (br *BlobRequest) SetCompleted(completed int32) {
-	br.mu.Lock()
-	defer br.mu.Unlock()
-	br.completed = completed
+	atomic.StoreInt32(&br.completed, completed)
 }
 
 // IncrementCompleted atomically increments the completed counter
@@ -155,11 +174,11 @@ func (br *BlobRequest) GetDone() <-chan struct{} {
 	return br.done
 }
 
-// MarkDone safely closes the done channel
+// MarkDone safely closes the done channel idempotently
 func (br *BlobRequest) MarkDone() {
-	br.mu.Lock()
-	defer br.mu.Unlock()
-	close(br.done)
+	br.doneOnce.Do(func() {
+		close(br.done)
+	})
 }
 
 // GetData returns the data from taskResult

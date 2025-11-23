@@ -229,8 +229,7 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_Success(t *testing
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *testing.T) {
 	setup := setupTest(t)
-	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(1).build()
-	testErr := assert.AnError
+	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(2).build()
 
 	// Mock coordinator initialization
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
@@ -238,13 +237,13 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *
 	// Mock task execution
 	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
 
-	// Mock request state - all peers completed but no success
-	setupMockRaceStateCheck(setup, req, 1, 1, testErr)
+	// Mock request state - all peers completed but no success (multiple peers)
+	setupMockRaceStateCheck(setup, req, 2, 2, nil)
 
 	result, err := setup.coordinator.ExecuteRace(context.Background(), hash, contacts, hashBitmap, req, false)
 
 	assert.Error(t, err)
-	assert.Equal(t, testErr, err)
+	assert.EqualError(t, err, "all peers in this phase failed")
 	assert.Nil(t, result)
 	setup.requestCoordinator.AssertExpectations(t)
 	setup.taskExecutor.AssertExpectations(t)
@@ -267,7 +266,7 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_SinglePeerError(t 
 	result, err := setup.coordinator.ExecuteRace(context.Background(), hash, contacts, hashBitmap, req, false)
 
 	assert.Error(t, err)
-	assert.Equal(t, testErr, err)
+	assert.ErrorIs(t, err, testErr)
 	assert.Nil(t, result)
 	setup.requestCoordinator.AssertExpectations(t)
 	setup.taskExecutor.AssertExpectations(t)

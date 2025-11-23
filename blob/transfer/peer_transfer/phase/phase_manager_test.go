@@ -12,7 +12,6 @@ import (
 	"go.lumeweb.com/lbry-dht/bits"
 	coordinatorMocks "go.lumeweb.com/liblbry/blob/transfer/peer_transfer/coordinator"
 	discoveryMocks "go.lumeweb.com/liblbry/blob/transfer/peer_transfer/discovery/mocks"
-	"go.lumeweb.com/liblbry/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -170,8 +169,8 @@ func setupMockDiscoveryForDHTAndFixedPeers(setup *testSetup, hashBitmap bits.Bit
 }
 
 // setupMockCoordinatorForPhaseReset sets up mock expectations for phase reset
-func setupMockCoordinatorForPhaseReset(setup *testSetup, req *blob.BlobRequest, contactCount int, t *testing.T) *mocks.MockRequestCoordinator {
-	mockCoordinator := mocks.NewMockRequestCoordinator(t)
+func setupMockCoordinatorForPhaseReset(setup *testSetup, req *blob.BlobRequest, contactCount int, t *testing.T) *coordinatorMocks.MockRequestCoordinator {
+	mockCoordinator := coordinatorMocks.NewMockRequestCoordinator(t)
 	setup.raceCoordinator.EXPECT().GetCoordinator().Return(mockCoordinator)
 	mockCoordinator.EXPECT().ResetForNewPhase(req, int32(contactCount))
 	return mockCoordinator
@@ -182,7 +181,7 @@ func TestNewPhaseManager(t *testing.T) {
 	manager := setup.manager
 
 	require.NotNil(t, manager)
-	assert.Equal(t, setup.maxPeers, manager.(*DefaultPhaseManager).maxPeers)
+	assert.Equal(t, int32(setup.maxPeers), manager.GetMaxPeers())
 	assert.Equal(t, setup.logger, manager.(*DefaultPhaseManager).logger)
 	assert.False(t, manager.IsStopped())
 }
@@ -195,6 +194,9 @@ func TestDefaultPhaseManager_ExecutePhases_DHTSuccess(t *testing.T) {
 
 	// Mock DHT peer discovery
 	setupMockDiscoveryForDHTSuccess(setup, hashBitmap, contacts)
+
+	// Mock GetCoordinator().ResetForNewPhase for DHT phase
+	_ = setupMockCoordinatorForPhaseReset(setup, req, len(contacts), t)
 
 	// Mock successful race execution
 	testData := []byte("test data")
@@ -364,11 +366,13 @@ func TestDefaultPhaseManager_ExecutePhases_ContextCancellation(t *testing.T) {
 
 	// Mock DiscoverPeers to return an error due to context cancellation
 	setup.peerDiscovery.EXPECT().DiscoverPeers(mock.Anything, hashBitmap).Return(nil, context.Canceled)
+	// Mock GetFixedPeers to return empty list for fallback
+	setup.peerDiscovery.EXPECT().GetFixedPeers().Return([]dht.Contact{})
 
 	result, err := setup.manager.ExecutePhases(ctx, hash, hashBitmap, req)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to discover peers: context canceled")
+	assert.Contains(t, err.Error(), "no peers available for phase Fixed")
 	assert.Nil(t, result)
 }
 
@@ -395,7 +399,7 @@ func TestDefaultPhaseManager_SetMaxPeers(t *testing.T) {
 	newMaxPeers := 20
 	manager.SetMaxPeers(newMaxPeers)
 
-	assert.Equal(t, newMaxPeers, manager.(*DefaultPhaseManager).maxPeers)
+	assert.Equal(t, int32(newMaxPeers), manager.GetMaxPeers())
 }
 
 func TestDefaultPhaseManager_GetRaceCoordinator(t *testing.T) {

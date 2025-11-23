@@ -132,7 +132,7 @@ func TestPeerTransfer_Get_Success(t *testing.T) {
 	setup.coordinator.AssertExpectations(t)
 }
 
-func TestPeerTransfer_Get_PhaseManagerError(t *testing.T) {
+func TestPeerTransfer_Get_DownloadError(t *testing.T) {
 	// Test handling of errors from downloader
 	setup := setupTest(t)
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
@@ -161,7 +161,7 @@ func TestPeerTransfer_Get_ContextCancellation(t *testing.T) {
 	// Mock coordinator call
 	setupCoordinatorExpectations(setup.coordinator, hash, mockRequest)
 
-	// Mock download call (should not be reached due to context cancellation)
+	// Mock download call (should see a canceled context)
 	setup.downloader.EXPECT().DownloadFromPeers(mock.Anything, hash, mock.AnythingOfType("bits.Bitmap"), mockRequest).Return(nil, context.Canceled)
 
 	// Create a context that will be cancelled

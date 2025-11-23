@@ -27,6 +27,7 @@ type DefaultConnectionManager struct {
 	clientPoolMu  sync.RWMutex
 	logger        *zap.Logger
 	stopped       int32
+	pooledClients map[protocol.PeerClient]struct{}
 }
 
 // NewConnectionManager creates a new DefaultConnectionManager instance
@@ -61,6 +62,14 @@ func (cm *DefaultConnectionManager) Stop() {
 	cm.clientPoolMu.Lock()
 	defer cm.clientPoolMu.Unlock()
 
+	// Close all tracked pooled clients to clean up resources
+	for client := range cm.pooledClients {
+		if err := client.Close(); err != nil && cm.logger != nil {
+			cm.logger.Debug("Error closing pooled client during shutdown", zap.Error(err))
+		}
+		delete(cm.pooledClients, client)
+	}
+
 	// Clear the client pool reference to allow garbage collection
 	// Note: We don't drain the pool because sync.Pool.Get() with a New function
 	// will never return nil, which would cause an infinite loop
@@ -79,8 +88,8 @@ func (cm *DefaultConnectionManager) GetClient() (protocol.PeerClient, error) {
 		return nil, fmt.Errorf("connection manager is stopped")
 	}
 
-	cm.clientPoolMu.RLock()
-	defer cm.clientPoolMu.RUnlock()
+	cm.clientPoolMu.Lock()
+	defer cm.clientPoolMu.Unlock()
 
 	// Check if client pool is available
 	if cm.clientPool == nil {
@@ -98,6 +107,9 @@ func (cm *DefaultConnectionManager) GetClient() (protocol.PeerClient, error) {
 	if !ok {
 		return nil, fmt.Errorf("failed to assert client as PeerClient: got %T", client)
 	}
+
+	// Remove client from tracking since it's now in use
+	delete(cm.pooledClients, peerClient)
 
 	return peerClient, nil
 }
@@ -170,6 +182,7 @@ func (cm *DefaultConnectionManager) createClientPool() {
 			}
 			return
 		}
+		cm.pooledClients = make(map[protocol.PeerClient]struct{})
 		cm.clientPool = &sync.Pool{
 			New: func() interface{} {
 				return cm.clientFactory()
@@ -196,10 +209,12 @@ func (cm *DefaultConnectionManager) returnClientToPool(peerClient protocol.PeerC
 	}
 
 	// Use a single lock to check pool existence and put client
-	cm.clientPoolMu.RLock()
-	defer cm.clientPoolMu.RUnlock()
+	cm.clientPoolMu.Lock()
+	defer cm.clientPoolMu.Unlock()
 
 	if cm.clientPool != nil {
 		cm.clientPool.Put(peerClient)
+		// Track the client for potential shutdown
+		cm.pooledClients[peerClient] = struct{}{}
 	}
 }
