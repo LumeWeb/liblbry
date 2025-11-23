@@ -28,18 +28,29 @@ const (
 	errorTypeTimeout  errorType = "timeout"
 )
 
-// PeerTaskExecutor defines the interface for executing individual peer download tasks
+// PeerTaskExecutor defines the interface for executing individual peer download tasks.
+//
+// Concurrency Semantics:
+//   - ExecutePeerTasks can be called concurrently from multiple goroutines
+//   - Start/Stop/SetMaxConcurrency are synchronized and safe for concurrent use
+//   - WaitForCompletionWithContext snapshots the submitted task count at entry to handle
+//     concurrent submissions gracefully. New tasks submitted after the call will not
+//     be considered for that completion cycle.
+//   - The executor is designed for high-concurrency scenarios but callers should
+//     avoid overlapping WaitForCompletionWithContext calls unless this behavior is desired.
 type PeerTaskExecutor interface {
 	// ExecutePeerTasks executes download tasks for all provided peers concurrently
 	ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error
 
-	// IsStopped checks if the executor is stopped
+	// IsStopped checks if the executor is stopped. Returns true only after Stop() has been called.
+	// During Start(), this returns false only after the worker pool is fully initialized.
 	IsStopped() bool
 
-	// Stop stops the executor and its worker pool
+	// Stop stops the executor and its worker pool. This method is idempotent and safe for concurrent calls.
 	Stop()
 
-	// Start starts the executor and recreates worker pool
+	// Start starts the executor and recreates worker pool. The executor is considered started
+	// only after the worker pool is fully initialized.
 	Start()
 
 	// SetMaxConcurrency updates the maximum concurrency for peer tasks
@@ -51,7 +62,8 @@ type PeerTaskExecutor interface {
 	// WaitForCompletion waits for all currently submitted tasks to complete
 	WaitForCompletion(timeout time.Duration) error
 
-	// WaitForCompletionWithContext waits for all currently submitted tasks to complete with context support
+	// WaitForCompletionWithContext waits for all currently submitted tasks to complete with context support.
+	// It snapshots the submitted task count at entry to handle concurrent task submissions gracefully.
 	WaitForCompletionWithContext(ctx context.Context) error
 
 	// GetWorkerPoolStats returns detailed statistics about the worker pool state
@@ -235,7 +247,9 @@ func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *
 	// Context cancellation/timeout errors shouldn't penalize the peer
 	// Also, never remove fixed peers from DHT as they are fallback peers
 	if ctx.Err() == nil && !isFixed {
-		pte.discovery.DHTNode().RemoveBadPeerFromHash(hashBitmap, contact)
+		if dhtNode := pte.discovery.DHTNode(); dhtNode != nil {
+			dhtNode.RemoveBadPeerFromHash(hashBitmap, contact)
+		}
 	}
 
 	// Track failed peer
@@ -304,8 +318,8 @@ func (pte *DefaultPeerTaskExecutor) Stop() {
 
 // Start starts the executor and recreates worker pool
 func (pte *DefaultPeerTaskExecutor) Start() {
-	atomic.StoreUint32(&pte.stopped, 0)
 	pte.createWorkerPool()
+	atomic.StoreUint32(&pte.stopped, 0)
 }
 
 // SetLogger updates the logger for this task executor instance
@@ -394,8 +408,14 @@ func (pte *DefaultPeerTaskExecutor) checkEarlyExit(ctx context.Context, req *blo
 	}
 }
 
-// WaitForCompletionWithContext waits for all currently submitted tasks to complete with context support
+// WaitForCompletionWithContext waits for all currently submitted tasks to complete with context support.
+// It snapshots the submitted task count at entry to handle concurrent task submissions gracefully.
+// If new tasks are submitted while waiting, they will not be considered for this completion cycle.
 func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContext(ctx context.Context) error {
+	// Snapshot the submitted task count at entry to handle concurrent submissions
+	// This ensures we wait for a consistent set of tasks even if new ones are submitted
+	submittedAtStart, _, _ := pte.GetTaskStats()
+
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -404,9 +424,9 @@ func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContext(ctx context.Con
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			// Check if all tasks are completed
-			submitted, completed, pending := pte.GetTaskStats()
-			if submitted == 0 || (completed >= submitted && pending == 0) {
+			// Check if all tasks that were submitted at the start are completed
+			_, completed, pending := pte.GetTaskStats()
+			if submittedAtStart == 0 || (completed >= submittedAtStart && pending == 0) {
 				return nil
 			}
 

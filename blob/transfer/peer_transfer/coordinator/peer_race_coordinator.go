@@ -194,12 +194,12 @@ func (prc *DefaultPeerRaceCoordinator) Stop() {
 
 // Start starts the coordinator and all underlying components
 func (prc *DefaultPeerRaceCoordinator) Start() {
-	atomic.StoreInt32(&prc.stopped, 0)
-	// Propagate start to subcomponents
+	// Start subcomponents first, then mark the coordinator as running.
 	prc.connMgr.Start()
 	prc.discovery.Start()
 	prc.coordinator.Start()
 	prc.taskExecutor.Start()
+	atomic.StoreInt32(&prc.stopped, 0)
 }
 
 // SetTimeout updates the race timeout

@@ -137,6 +137,7 @@ func createTestHashBitmap(bitCount int) bits.Bitmap {
 // assertStoppedExecutor checks common stopped executor behavior
 // Consolidates repetitive assertions for stopped executor test scenarios.
 func assertStoppedExecutor(t *testing.T, executor PeerTaskExecutor, err error, result interface{}) {
+	t.Helper()
 	assert.True(t, executor.IsStopped())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "peer task executor is stopped")
@@ -146,6 +147,7 @@ func assertStoppedExecutor(t *testing.T, executor PeerTaskExecutor, err error, r
 // assertSuccessfulOperation checks common successful operation patterns
 // Reduces duplication of success assertions across test cases.
 func assertSuccessfulOperation(t *testing.T, err error, result interface{}) {
+	t.Helper()
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 }
@@ -153,6 +155,7 @@ func assertSuccessfulOperation(t *testing.T, err error, result interface{}) {
 // assertTaskStats verifies task statistics match expected values
 // Consolidates repetitive task stats verification across test functions.
 func assertTaskStats(t *testing.T, executor PeerTaskExecutor, submitted, completed, pending int64) {
+	t.Helper()
 	actualSubmitted, actualCompleted, actualPending := executor.GetTaskStats()
 	assert.Equal(t, submitted, actualSubmitted, "Submitted tasks count mismatch")
 	assert.Equal(t, completed, actualCompleted, "Completed tasks count mismatch")
@@ -161,6 +164,7 @@ func assertTaskStats(t *testing.T, executor PeerTaskExecutor, submitted, complet
 
 // assertWorkerPoolStats verifies worker pool statistics match expected values
 func assertWorkerPoolStats(t *testing.T, executor PeerTaskExecutor, size, waitingQueueSize int, stopped bool) {
+	t.Helper()
 	actualSize, actualWaitingQueueSize, actualStopped := executor.GetWorkerPoolStats()
 	assert.Equal(t, size, actualSize, "Worker pool size mismatch")
 	assert.Equal(t, waitingQueueSize, actualWaitingQueueSize, "Waiting queue size mismatch")

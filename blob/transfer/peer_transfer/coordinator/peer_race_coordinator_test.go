@@ -250,10 +250,10 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_Success(t *testing
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *testing.T) {
 	setup := setupTest(t)
-	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(2).build()
+	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(2).withContacts([]dht.Contact{{ID: bits.Bitmap{1}}, {ID: bits.Bitmap{2}}}).build()
 
 	// Mock coordinator initialization
-	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
+	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(2)).Return()
 
 	// Mock task execution
 	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
@@ -270,22 +270,22 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_SinglePeerError(t *testing.T) {
 	setup := setupTest(t)
-	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(1).build()
+	hash, contacts, hashBitmap, req := newTestDataBuilder().withWaiters(2).withContacts([]dht.Contact{{ID: bits.Bitmap{1}}, {ID: bits.Bitmap{2}}}).build()
 	testErr := assert.AnError
 
 	// Mock coordinator initialization
-	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
+	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(2)).Return()
 
 	// Mock task execution
 	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
 
-	// Mock request state - single peer failed
-	setupMockRaceStateCheck(setup, req, 1, 1, testErr)
+	// Mock request state - all peers failed with error
+	setupMockRaceStateCheck(setup, req, 2, 2, testErr)
 
 	result, err := setup.coordinator.ExecuteRace(context.Background(), hash, contacts, hashBitmap, req, false)
 
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, testErr)
+	assert.EqualError(t, err, "all peers in this phase failed")
 	assert.Nil(t, result)
 }
 
