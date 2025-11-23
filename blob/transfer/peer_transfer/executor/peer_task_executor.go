@@ -92,6 +92,15 @@ func NewPeerTaskExecutor(
 	maxConcurrency int,
 	logger *zap.Logger,
 ) PeerTaskExecutor {
+	if connMgr == nil {
+		panic("connection manager cannot be nil")
+	}
+	if discovery == nil {
+		panic("peer discovery cannot be nil")
+	}
+	if completionHandler == nil {
+		panic("completion handler cannot be nil")
+	}
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -315,15 +324,6 @@ func (pte *DefaultPeerTaskExecutor) GetTaskStats() (submitted, completed, pendin
 // WaitForCompletion waits for all currently submitted tasks to complete
 func (pte *DefaultPeerTaskExecutor) WaitForCompletion(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return pte.WaitForCompletionWithContext(ctx)
-}
-
-// WaitForCompletionWithContextAndTimeout waits for all currently submitted tasks to complete,
-// using both the provided context and timeout. The context is cancelled when either the
-// parent context is cancelled or the timeout is reached, whichever comes first.
-func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContextAndTimeout(ctx context.Context, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return pte.WaitForCompletionWithContext(ctx)
 }

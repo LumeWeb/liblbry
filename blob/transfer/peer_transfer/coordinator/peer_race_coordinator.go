@@ -182,14 +182,24 @@ func (prc *DefaultPeerRaceCoordinator) IsStopped() bool {
 	return atomic.LoadInt32(&prc.stopped) != 0
 }
 
-// Stop stops the coordinator
+// Stop stops the coordinator and all underlying components
 func (prc *DefaultPeerRaceCoordinator) Stop() {
 	atomic.StoreInt32(&prc.stopped, 1)
+	// Propagate stop to subcomponents
+	prc.connMgr.Stop()
+	prc.discovery.Stop()
+	prc.coordinator.Stop()
+	prc.taskExecutor.Stop()
 }
 
-// Start starts the coordinator
+// Start starts the coordinator and all underlying components
 func (prc *DefaultPeerRaceCoordinator) Start() {
 	atomic.StoreInt32(&prc.stopped, 0)
+	// Propagate start to subcomponents
+	prc.connMgr.Start()
+	prc.discovery.Start()
+	prc.coordinator.Start()
+	prc.taskExecutor.Start()
 }
 
 // SetTimeout updates the race timeout

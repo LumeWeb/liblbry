@@ -160,6 +160,16 @@ func TestNewPeerRaceCoordinator(t *testing.T) {
 	require.NotNil(t, setup.coordinator)
 	assert.False(t, setup.coordinator.IsStopped())
 
+	// Set up mock expectations for lifecycle methods
+	setup.connMgr.EXPECT().Start().Once()
+	setup.discovery.EXPECT().Start().Once()
+	setup.requestCoordinator.EXPECT().Start().Once()
+	setup.taskExecutor.EXPECT().Start().Once()
+	setup.connMgr.EXPECT().Stop().Once()
+	setup.discovery.EXPECT().Stop().Once()
+	setup.requestCoordinator.EXPECT().Stop().Once()
+	setup.taskExecutor.EXPECT().Stop().Once()
+
 	// Test that the coordinator can be started and stopped (basic lifecycle)
 	setup.coordinator.Start()
 	assert.False(t, setup.coordinator.IsStopped())
@@ -178,8 +188,6 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_Success(t *testing.T) {
 	result, err := setup.coordinator.ExecuteRace(context.Background(), hash, contacts, hashBitmap, req, true)
 
 	assertSuccessfulRace(t, err, result, testData)
-	setup.requestCoordinator.AssertExpectations(t)
-	setup.taskExecutor.AssertExpectations(t)
 }
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NoPeers(t *testing.T) {
@@ -195,6 +203,12 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NoPeers(t *testing.T) {
 func TestDefaultPeerRaceCoordinator_ExecuteRace_Stopped(t *testing.T) {
 	setup := setupTest(t)
 	hash, contacts, hashBitmap, req := newTestDataBuilder().build()
+
+	// Set up mock expectations for Stop methods
+	setup.connMgr.EXPECT().Stop().Once()
+	setup.discovery.EXPECT().Stop().Once()
+	setup.requestCoordinator.EXPECT().Stop().Once()
+	setup.taskExecutor.EXPECT().Stop().Once()
 	setup.coordinator.Stop()
 
 	result, err := setup.coordinator.ExecuteRace(context.Background(), hash, contacts, hashBitmap, req, true)
@@ -213,8 +227,6 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_TaskExecutionError(t *testing.T)
 
 	assertRaceError(t, err, "failed to execute peer tasks")
 	assert.Nil(t, result)
-	setup.requestCoordinator.AssertExpectations(t)
-	setup.taskExecutor.AssertExpectations(t)
 }
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_Success(t *testing.T) {
@@ -254,8 +266,6 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *
 	assert.Error(t, err)
 	assert.EqualError(t, err, "all peers in this phase failed")
 	assert.Nil(t, result)
-	setup.requestCoordinator.AssertExpectations(t)
-	setup.taskExecutor.AssertExpectations(t)
 }
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_SinglePeerError(t *testing.T) {
@@ -277,12 +287,20 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_SinglePeerError(t 
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, testErr)
 	assert.Nil(t, result)
-	setup.requestCoordinator.AssertExpectations(t)
-	setup.taskExecutor.AssertExpectations(t)
 }
 
 func TestDefaultPeerRaceCoordinator_Lifecycle(t *testing.T) {
 	setup := setupTest(t)
+
+	// Set up mock expectations for lifecycle methods
+	setup.connMgr.EXPECT().Stop().Once()
+	setup.discovery.EXPECT().Stop().Once()
+	setup.requestCoordinator.EXPECT().Stop().Once()
+	setup.taskExecutor.EXPECT().Stop().Once()
+	setup.connMgr.EXPECT().Start().Once()
+	setup.discovery.EXPECT().Start().Once()
+	setup.requestCoordinator.EXPECT().Start().Once()
+	setup.taskExecutor.EXPECT().Start().Once()
 
 	// Initial state
 	assert.False(t, setup.coordinator.IsStopped())

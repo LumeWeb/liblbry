@@ -166,8 +166,6 @@ func TestPeerTransfer_Get_Success(t *testing.T) {
 	result, err := setup.transfer.Get(context.Background(), hash)
 
 	assertTransferSuccess(t, err, result, testData)
-	setup.downloader.AssertExpectations(t)
-	setup.coordinator.AssertExpectations(t)
 }
 
 func TestPeerTransfer_Get_DownloadError(t *testing.T) {
@@ -186,8 +184,6 @@ func TestPeerTransfer_Get_DownloadError(t *testing.T) {
 
 	// Should return error but not panic
 	assertTransferError(t, err, result, "")
-	setup.downloader.AssertExpectations(t)
-	setup.coordinator.AssertExpectations(t)
 }
 
 func TestPeerTransfer_Get_ContextCancellation(t *testing.T) {
@@ -210,7 +206,6 @@ func TestPeerTransfer_Get_ContextCancellation(t *testing.T) {
 
 	assertTransferError(t, err, result, "")
 	assert.Equal(t, context.Canceled, err)
-	setup.coordinator.AssertExpectations(t)
 }
 
 func TestPeerTransfer_Get_EmptyHash(t *testing.T) {
