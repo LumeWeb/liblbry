@@ -103,7 +103,7 @@ func TestConcurrentHas(t assert.TestingT, store StoreOperations, hash string, ex
 				return fmt.Errorf("Has error: %v", err)
 			}
 			if exists != expectedExists {
-				return fmt.Errorf("expected exists=%v, got %v", expectedExists, exists)
+				return fmt.Errorf("Expected exists=%v, got %v", expectedExists, exists)
 			}
 			return nil
 		}
@@ -140,7 +140,7 @@ func TestConcurrentGet(t assert.TestingT, store StoreOperations, hash string, ex
 				return fmt.Errorf("Get error: %v", err)
 			}
 			if string(data) != string(expectedData) {
-				return fmt.Errorf("expected data %q, got %q", expectedData, data)
+				return fmt.Errorf("Expected data %q, got %q", expectedData, data)
 			}
 			return nil
 		}
@@ -216,7 +216,7 @@ func TestConcurrentHasMultiple(t assert.TestingT, storeFactory func() StoreOpera
 				return fmt.Errorf("Has error: %v", err)
 			}
 			if exists != expectedExists {
-				return fmt.Errorf("expected exists=%v, got %v", expectedExists, exists)
+				return fmt.Errorf("Expected exists=%v, got %v", expectedExists, exists)
 			}
 			return nil
 		}

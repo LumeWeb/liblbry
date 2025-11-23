@@ -29,6 +29,16 @@ func IsValidNonZeroPortRange(port int) bool {
 // Production deployments must explicitly set their external IP using WithDHTAddress().
 const DefaultDHTAddress = "127.0.0.1:4444"
 
+// DefaultSeedNodes is the default list of DHT seed nodes for joining the network
+// These are well-known LBRY DHT nodes that help bootstrap new nodes
+var DefaultSeedNodes = []string{
+	"s1.lbry.network:4444",
+	"dht.lbry.pigg.es:4444",
+	"lbrynet2.lbry.com:4444",
+	"lbrynet3.lbry.com:4444",
+	"lbrynet4.lbry.com:4444",
+}
+
 // DHT abstracts the underlying dht.DHT implementation
 type DHT interface {
 	// Start begins listening for DHT connections
@@ -265,8 +275,8 @@ func validateDHTConfig(c *DHTConfig) error {
 func NewDHTConfig() (*DHTConfig, error) {
 	cfg := &DHTConfig{
 		Address:          DefaultDHTAddress,
-		SeedNodes:        []string{"lbrynet1.lbry.com:4444", "lbrynet2.lbry.com:4444", "lbrynet3.lbry.com:4444", "lbrynet4.lbry.com:4444"},
-		PeerProtocolPort: 3333,
+		SeedNodes:        DefaultSeedNodes,
+		PeerProtocolPort: DefaultDistributedPeerPortLegacy,
 		ReannounceTime:   50 * time.Minute,
 		AnnounceRate:     10,
 	}

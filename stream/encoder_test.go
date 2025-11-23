@@ -10,9 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/errors"
-	liblbrytesting "go.lumeweb.com/liblbry/internal/testing"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
 // computeHash computes the hash of data using SHA384
@@ -32,7 +31,7 @@ var testdataBlobHashes = []string{
 func TestStreamToFile(t *testing.T) {
 	stream := make(Stream, len(testdataBlobHashes))
 	for i, hash := range testdataBlobHashes {
-		stream[i] = blob.Blob(liblbrytesting.TestData(t, hash))
+		stream[i] = lbryTesting.TestData(t, hash)
 	}
 
 	data, err := stream.Decode()
@@ -49,7 +48,7 @@ func TestStreamToFile(t *testing.T) {
 
 	expectedFileHash := sha512.Sum384(data)
 
-	expectedSha256 := liblbrytesting.Unhex(t, "51e4d03bd6d69ea17d1be3ce01fdffa44ffe053f2dbce8d42a50283b2890fea2")
+	expectedSha256 := lbryTesting.Unhex(t, "51e4d03bd6d69ea17d1be3ce01fdffa44ffe053f2dbce8d42a50283b2890fea2")
 	actualSha256 := sha256.Sum256(data)
 
 	if !bytes.Equal(actualSha256[:], expectedSha256) {

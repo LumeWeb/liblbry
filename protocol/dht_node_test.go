@@ -18,7 +18,7 @@ const (
 	testDHTAddress  = "127.0.0.1:4444"
 	testPingAddress = "127.0.0.1:5567"
 	testContactIP   = "127.0.0.1"
-	testContactPort = 5567
+	testContactPort = DefaultPeerPort
 )
 
 // Test helper functions

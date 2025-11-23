@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry"
-	"go.lumeweb.com/liblbry/blob/transfer"
+	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/mocks"
@@ -414,8 +414,8 @@ func TestWithTransferOptions(t *testing.T) {
 			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
-				transfer.WithPeerTransferTimeoutOption(60*time.Second),
-				transfer.WithPeerTransferMaxPeersOption(10),
+				peer_transfer.WithPeerTransferTimeoutOption(60*time.Second),
+				peer_transfer.WithPeerTransferMaxPeersOption(10),
 			).
 			WithLogger(testMocks.logger)
 
@@ -469,8 +469,8 @@ func TestWithTransferOptions(t *testing.T) {
 			WithPeer(lbryTesting.GetFreePort(t)).
 			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
-			WithTransferOptions(transfer.WithPeerTransferTimeoutOption(30*time.Second)).
-			WithTransferOptions(transfer.WithPeerTransferMaxPeersOption(5), transfer.WithPeerTransferMaxConcurrencyOption(8)).
+			WithTransferOptions(peer_transfer.WithPeerTransferTimeoutOption(30*time.Second)).
+			WithTransferOptions(peer_transfer.WithPeerTransferMaxPeersOption(5), peer_transfer.WithPeerTransferMaxConcurrencyOption(8)).
 			WithLogger(testMocks.logger)
 
 		// Should have 3 options total (1 from first call, 2 from second call)
@@ -493,7 +493,7 @@ func TestWithTransferOptions(t *testing.T) {
 			WithStorage(testMocks.storage).
 			WithPeer(lbryTesting.GetFreePort(t)).
 			WithDHT(lbryTesting.GetFreePort(t)).
-			WithTransferOptions(transfer.WithPeerTransferTimeoutOption(45 * time.Second)).
+			WithTransferOptions(peer_transfer.WithPeerTransferTimeoutOption(45 * time.Second)).
 			WithLogger(testMocks.logger)
 
 		assert.Len(t, builder.transferOptions, 1)
@@ -515,10 +515,10 @@ func TestWithTransferOptions(t *testing.T) {
 			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
-				transfer.WithPeerTransferTimeoutOption(75*time.Second),
-				transfer.WithPeerTransferMaxPeersOption(12),
-				transfer.WithPeerTransferMaxConcurrencyOption(6),
-				transfer.WithPeerTransferLoggerOption(logger.Named("test_transfer")),
+				peer_transfer.WithPeerTransferTimeoutOption(75*time.Second),
+				peer_transfer.WithPeerTransferMaxPeersOption(12),
+				peer_transfer.WithPeerTransferMaxConcurrencyOption(6),
+				peer_transfer.WithPeerTransferLoggerOption(logger.Named("test_transfer")),
 			).
 			WithLogger(logger)
 
@@ -560,8 +560,8 @@ func TestWithTransferOptions(t *testing.T) {
 			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
-				transfer.WithPeerTransferMaxConcurrencyOption(0),       // Invalid, should be ignored
-				transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid
+				peer_transfer.WithPeerTransferMaxConcurrencyOption(0),       // Invalid, should be ignored
+				peer_transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid
 			).
 			WithLogger(testMocks.logger)
 
@@ -592,9 +592,9 @@ func TestWithTransferOptions(t *testing.T) {
 			WithDHT(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
-				transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid option
+				peer_transfer.WithPeerTransferTimeoutOption(30*time.Second), // Valid option
 				nil, // Nil option should be ignored
-				transfer.WithPeerTransferMaxPeersOption(5), // Another valid option
+				peer_transfer.WithPeerTransferMaxPeersOption(5), // Another valid option
 			).
 			WithLogger(testMocks.logger)
 
@@ -633,12 +633,12 @@ func TestTransferOptionsIntegration(t *testing.T) {
 			WithPeer(lbryTesting.GetFreePort(t)).
 			WithDefaultAcquirer().
 			WithTransferOptions(
-				transfer.WithPeerTransferTimeoutOption(20*time.Second),
-				transfer.WithPeerTransferMaxPeersOption(3),
-				transfer.WithPeerTransferMaxConcurrencyOption(2),
-				transfer.WithPeerTransferDHTRetryAttemptsOption(1),
-				transfer.WithPeerTransferDHTRetryDelayOption(50*time.Millisecond),
-				transfer.WithPeerTransferLoggerOption(logger.Named("integration_test")),
+				peer_transfer.WithPeerTransferTimeoutOption(20*time.Second),
+				peer_transfer.WithPeerTransferMaxPeersOption(3),
+				peer_transfer.WithPeerTransferMaxConcurrencyOption(2),
+				peer_transfer.WithPeerTransferDHTRetryAttemptsOption(1),
+				peer_transfer.WithPeerTransferDHTRetryDelayOption(50*time.Millisecond),
+				peer_transfer.WithPeerTransferLoggerOption(logger.Named("integration_test")),
 			).
 			WithLogger(logger)
 
@@ -671,8 +671,8 @@ func TestTransferOptionsIntegration(t *testing.T) {
 		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Test creating a custom transfer option
-		customOption, err := transfer.NewPeerTransferOptionAdapter(
-			transfer.WithPeerTransferTimeout(120 * time.Second),
+		customOption, err := peer_transfer.NewPeerTransferOptionAdapter(
+			peer_transfer.WithPeerTransferTimeout(120 * time.Second),
 		)
 		require.NoError(t, err)
 
@@ -683,7 +683,7 @@ func TestTransferOptionsIntegration(t *testing.T) {
 			WithDefaultAcquirer().
 			WithTransferOptions(
 				customOption,
-				transfer.WithPeerTransferMaxPeersOption(8),
+				peer_transfer.WithPeerTransferMaxPeersOption(8),
 			).
 			WithLogger(testMocks.logger)
 
