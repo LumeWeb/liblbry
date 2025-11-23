@@ -31,7 +31,7 @@ const (
 // PeerTaskExecutor defines the interface for executing individual peer download tasks
 type PeerTaskExecutor interface {
 	// ExecutePeerTasks executes download tasks for all provided peers concurrently
-	ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) error
+	ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error
 
 	// IsStopped checks if the executor is stopped
 	IsStopped() bool
@@ -116,7 +116,7 @@ func NewPeerTaskExecutor(
 }
 
 // ExecutePeerTasks executes download tasks for all provided peers concurrently
-func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) error {
+func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error {
 	if pte.IsStopped() {
 		return fmt.Errorf("peer task executor is stopped")
 	}
@@ -162,7 +162,7 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 			continue
 		}
 
-		task := pte.createPeerTask(ctx, hash, contact, hashBitmap, req)
+		task := pte.createPeerTask(ctx, hash, contact, hashBitmap, req, raceCancel)
 		if task == nil {
 			continue
 		}
@@ -177,7 +177,7 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 }
 
 // createPeerTask creates a task function for downloading from a specific peer
-func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash string, contact dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) func() {
+func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash string, contact dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) func() {
 	// Check if this is a fixed peer
 	isFixed := pte.discovery.IsFixedPeer(contact)
 
@@ -195,6 +195,7 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 	isFixedPeer := isFixed
 	peerContact := contact
 	peerHashBitmap := hashBitmap
+	raceCancelFunc := raceCancel
 
 	return func() {
 		// Quick side-effect-free check for context cancellation or request completion
@@ -207,10 +208,10 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 
 		if err == nil {
 			// SUCCESS! Set result and notify all waiters
-			pte.completionHandler.CompleteWithData(req, data, func() {}, blobHash)
+			pte.completionHandler.CompleteWithData(req, data, raceCancelFunc, blobHash)
 		} else {
 			// Handle peer failure
-			pte.handlePeerFailure(ctx, req, err, peerContact, peerHashBitmap, isFixedPeer, peerAddress, blobHash)
+			pte.handlePeerFailure(ctx, req, err, peerContact, peerHashBitmap, isFixedPeer, peerAddress, blobHash, raceCancelFunc)
 		}
 
 		// Decrement pending tasks and increment completed tasks
@@ -220,7 +221,7 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 }
 
 // handlePeerFailure handles the failure of a peer download attempt
-func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *blob.BlobRequest, err error, contact dht.Contact, hashBitmap bits.Bitmap, isFixed bool, peerAddr string, hash string) {
+func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *blob.BlobRequest, err error, contact dht.Contact, hashBitmap bits.Bitmap, isFixed bool, peerAddr string, hash string, raceCancel context.CancelFunc) {
 	// Only mark peer as bad for non-context errors (connection failures, protocol errors, etc.)
 	// Context cancellation/timeout errors shouldn't penalize the peer
 	// Also, never remove fixed peers from DHT as they are fallback peers
@@ -250,7 +251,7 @@ func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *
 	// Check if this was the last peer to fail
 	if isFinal {
 		// Store the error and complete the request
-		pte.completionHandler.CompleteWithErrorAndCancel(req, err, func() {}, hash)
+		pte.completionHandler.CompleteWithErrorAndCancel(req, err, raceCancel, hash)
 	}
 }
 

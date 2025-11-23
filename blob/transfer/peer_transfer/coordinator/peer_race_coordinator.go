@@ -117,7 +117,7 @@ func (prc *DefaultPeerRaceCoordinator) ExecuteRace(ctx context.Context, hash str
 	prc.coordinator.InitializeRequest(req, raceCancel, int32(len(contacts)))
 
 	// Execute peer tasks
-	err := prc.taskExecutor.ExecutePeerTasks(raceCtx, hash, contacts, hashBitmap, req)
+	err := prc.taskExecutor.ExecutePeerTasks(raceCtx, hash, contacts, hashBitmap, req, raceCancel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute peer tasks: %w", err)
 	}

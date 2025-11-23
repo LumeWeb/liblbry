@@ -43,16 +43,16 @@ func (_m *MockPeerTaskExecutor) EXPECT() *MockPeerTaskExecutor_Expecter {
 }
 
 // ExecutePeerTasks provides a mock function for the type MockPeerTaskExecutor
-func (_mock *MockPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) error {
-	ret := _mock.Called(ctx, hash, contacts, hashBitmap, req)
+func (_mock *MockPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error {
+	ret := _mock.Called(ctx, hash, contacts, hashBitmap, req, raceCancel)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ExecutePeerTasks")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []dht.Contact, bits.Bitmap, *blob.BlobRequest) error); ok {
-		r0 = returnFunc(ctx, hash, contacts, hashBitmap, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []dht.Contact, bits.Bitmap, *blob.BlobRequest, context.CancelFunc) error); ok {
+		r0 = returnFunc(ctx, hash, contacts, hashBitmap, req, raceCancel)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -70,11 +70,12 @@ type MockPeerTaskExecutor_ExecutePeerTasks_Call struct {
 //   - contacts []dht.Contact
 //   - hashBitmap bits.Bitmap
 //   - req *blob.BlobRequest
-func (_e *MockPeerTaskExecutor_Expecter) ExecutePeerTasks(ctx interface{}, hash interface{}, contacts interface{}, hashBitmap interface{}, req interface{}) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
-	return &MockPeerTaskExecutor_ExecutePeerTasks_Call{Call: _e.mock.On("ExecutePeerTasks", ctx, hash, contacts, hashBitmap, req)}
+//   - raceCancel context.CancelFunc
+func (_e *MockPeerTaskExecutor_Expecter) ExecutePeerTasks(ctx interface{}, hash interface{}, contacts interface{}, hashBitmap interface{}, req interface{}, raceCancel interface{}) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
+	return &MockPeerTaskExecutor_ExecutePeerTasks_Call{Call: _e.mock.On("ExecutePeerTasks", ctx, hash, contacts, hashBitmap, req, raceCancel)}
 }
 
-func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) Run(run func(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest)) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
+func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) Run(run func(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc)) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -96,12 +97,17 @@ func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) Run(run func(ctx context.C
 		if args[4] != nil {
 			arg4 = args[4].(*blob.BlobRequest)
 		}
+		var arg5 context.CancelFunc
+		if args[5] != nil {
+			arg5 = args[5].(context.CancelFunc)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
 		)
 	})
 	return _c
@@ -112,7 +118,7 @@ func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) Return(err error) *MockPee
 	return _c
 }
 
-func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) RunAndReturn(run func(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) error) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
+func (_c *MockPeerTaskExecutor_ExecutePeerTasks_Call) RunAndReturn(run func(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error) *MockPeerTaskExecutor_ExecutePeerTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }

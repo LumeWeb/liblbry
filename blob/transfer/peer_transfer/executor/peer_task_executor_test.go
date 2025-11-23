@@ -194,9 +194,9 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Success(t *testing.T) {
 	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.2:6347", hash).Return([]byte("test data"), nil)
 
 	// Mock coordinator completion
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Times(2)
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Times(2)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err)
 
@@ -237,7 +237,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_ConnectionError(t *testing.T) 
 	// Mock failed peer tracking
 	setup.completionHandler.EXPECT().TrackFailedPeer(req, mock.Anything).Return(int32(1), false)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err) // Should not return error, just track failed peer
 
@@ -278,7 +278,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_DownloadError(t *testing.T) {
 	// Mock failed peer tracking
 	setup.completionHandler.EXPECT().TrackFailedPeer(req, mock.Anything).Return(int32(1), false)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err) // Should not return error, just track failed peer
 
@@ -305,7 +305,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_AlreadyCompleted(t *testing.T)
 	// Mark the request as done to simulate completion
 	req.MarkDone()
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err)
 	// No connection attempts should be made since request is already completed
@@ -331,7 +331,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_ContextCancellation(t *testing
 	// Don't expect IsFixedPeer to be called since context is cancelled before task submission
 	// The IsFixedPeer call happens inside createPeerTask, which is only called if the task is submitted
 
-	err := executor.ExecutePeerTasks(ctx, hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(ctx, hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err)
 	// No connection attempts should be made due to context cancellation
@@ -361,10 +361,10 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Concurrency(t *testing.T) {
 	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.3:6347", hash).Return([]byte("test data"), nil).Once()
 
 	// Mock coordinator completion - all 3 should succeed
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Times(3)
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Times(3)
 
 	start := time.Now()
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 	duration := time.Since(start)
 
 	require.NoError(t, err)
@@ -408,9 +408,9 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_FinalPeerFailure(t *testing.T)
 
 	// Mock failed peer tracking - this is the final peer
 	setup.completionHandler.EXPECT().TrackFailedPeer(req, mock.Anything).Return(int32(1), true)
-	setup.completionHandler.EXPECT().CompleteWithErrorAndCancel(req, mock.Anything, mock.Anything, hash)
+	setup.completionHandler.EXPECT().CompleteWithErrorAndCancel(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	require.NoError(t, err)
 
@@ -461,7 +461,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Stopped(t *testing.T) {
 	hashBitmap := createTestHashBitmap(1)
 	req := createTestBlobRequest()
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
 	assertStoppedExecutor(t, executor, err, nil)
 }
@@ -480,9 +480,9 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext(t *testing.T) {
 
 	// Mock successful download
 	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil)
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash)
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 	require.NoError(t, err)
 
 	// Test successful completion with context
@@ -510,9 +510,9 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled_LongRunn
 	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil).After(300 * time.Millisecond)
 
 	// Mock the successful completion that will happen after the context times out
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Maybe()
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Maybe()
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 	require.NoError(t, err)
 
 	// Test context cancellation
@@ -550,9 +550,9 @@ func TestDefaultPeerTaskExecutor_WaitAllTasksComplete(t *testing.T) {
 
 	// Mock successful download
 	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil)
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash)
+	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
 
-	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 	require.NoError(t, err)
 
 	// Wait for task to complete naturally first

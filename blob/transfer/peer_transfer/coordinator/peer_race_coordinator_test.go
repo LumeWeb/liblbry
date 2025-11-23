@@ -134,7 +134,7 @@ func assertSuccessfulRace(t *testing.T, err error, result []byte, expectedData [
 func setupMockRaceSuccess(setup *testSetup, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, testData []byte) {
 	totalPeers := int32(len(contacts))
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), totalPeers).Return()
-	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
+	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
 	setup.requestCoordinator.EXPECT().WaitForResult(mock.Anything, req).Return(testData, nil)
 }
 
@@ -143,7 +143,7 @@ func setupMockRaceSuccess(setup *testSetup, hash string, contacts []dht.Contact,
 func setupMockRaceTaskError(setup *testSetup, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest) {
 	totalPeers := int32(len(contacts))
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), totalPeers).Return()
-	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(assert.AnError)
+	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(assert.AnError)
 }
 
 // setupMockRaceStateCheck configures mocks for request state checking scenarios
@@ -226,7 +226,7 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_Success(t *testing
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
 
 	// Mock task execution
-	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
+	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
 
 	// Mock request state - not completed yet
 	setupMockRaceStateCheck(setup, req, 0, 1, nil)
@@ -244,7 +244,7 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_AllPeersFailed(t *
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
 
 	// Mock task execution
-	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
+	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
 
 	// Mock request state - all peers completed but no success (multiple peers)
 	setupMockRaceStateCheck(setup, req, 2, 2, nil)
@@ -267,7 +267,7 @@ func TestDefaultPeerRaceCoordinator_ExecuteRace_NonFinalPhase_SinglePeerError(t 
 	setup.requestCoordinator.EXPECT().InitializeRequest(req, mock.AnythingOfType("context.CancelFunc"), int32(1)).Return()
 
 	// Mock task execution
-	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req).Return(nil)
+	setup.taskExecutor.EXPECT().ExecutePeerTasks(mock.Anything, hash, contacts, hashBitmap, req, mock.AnythingOfType("context.CancelFunc")).Return(nil)
 
 	// Mock request state - single peer failed
 	setupMockRaceStateCheck(setup, req, 1, 1, testErr)
