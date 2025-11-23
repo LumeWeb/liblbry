@@ -318,6 +318,8 @@ func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContextAndTimeout(ctx c
 
 // GetMaxConcurrency returns the current maximum concurrency for peer tasks
 func (pte *DefaultPeerTaskExecutor) GetMaxConcurrency() int {
+	pte.workerPoolMu.RLock()
+	defer pte.workerPoolMu.RUnlock()
 	return pte.maxConcurrency
 }
 
@@ -392,7 +394,7 @@ func (pte *DefaultPeerTaskExecutor) WaitForCompletionWithContext(ctx context.Con
 		default:
 			// Check if all tasks are completed
 			submitted, completed, pending := pte.GetTaskStats()
-			if submitted > 0 && completed >= submitted && pending == 0 {
+			if submitted == 0 || (completed >= submitted && pending == 0) {
 				return nil
 			}
 
@@ -419,11 +421,6 @@ func (pte *DefaultPeerTaskExecutor) GetWorkerPoolStats() (size int, waitingQueue
 // - Should not be called in hot paths or frequently
 // Use this only when you need to ensure all in-flight tasks are completed before proceeding.
 func (pte *DefaultPeerTaskExecutor) WaitAllTasksComplete() error {
-	workerPool := pte.getWorkerPool()
-	if workerPool == nil {
-		return fmt.Errorf("worker pool is not available")
-	}
-
 	// Create a new worker pool to replace the old one after stopping
 	pte.workerPoolMu.Lock()
 	defer pte.workerPoolMu.Unlock()
@@ -441,14 +438,20 @@ func (pte *DefaultPeerTaskExecutor) WaitAllTasksComplete() error {
 	return nil
 }
 
-// SetMaxConcurrency updates the maximum concurrency for peer tasks
+// SetMaxConcurrency updates the maximum concurrency for peer tasks.
+// Note: This recreates the worker pool, which discards any queued-but-not-running tasks.
 func (pte *DefaultPeerTaskExecutor) SetMaxConcurrency(maxConcurrency int) {
-	pte.maxConcurrency = maxConcurrency
+	// Validate and clamp the value to prevent invalid worker pool configuration
+	if maxConcurrency <= 0 {
+		maxConcurrency = 1
+	}
 
-	// Recreate worker pool with new concurrency if it exists
 	pte.workerPoolMu.Lock()
 	defer pte.workerPoolMu.Unlock()
 
+	pte.maxConcurrency = maxConcurrency
+
+	// Recreate worker pool with new concurrency if it exists
 	if pte.workerPool != nil {
 		pte.workerPool.Stop()
 		pte.workerPool = workerpool.New(maxConcurrency)

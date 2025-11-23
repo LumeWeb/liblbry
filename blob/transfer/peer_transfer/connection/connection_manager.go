@@ -116,13 +116,6 @@ func (cm *DefaultConnectionManager) GetClient() (protocol.PeerClient, error) {
 
 // ReturnClient safely returns a client to the pool if both pool and client are valid
 func (cm *DefaultConnectionManager) ReturnClient(peerClient protocol.PeerClient) {
-	if cm.IsStopped() {
-		if cm.logger != nil {
-			cm.logger.Debug("Discarding client because connection manager is stopped")
-		}
-		return
-	}
-
 	if peerClient == nil {
 		return
 	}
@@ -193,17 +186,24 @@ func (cm *DefaultConnectionManager) createClientPool() {
 
 // returnClientToPool resets the client and returns it to the pool
 func (cm *DefaultConnectionManager) returnClientToPool(peerClient protocol.PeerClient) {
-	// Check if transfer is stopped first (without lock for performance)
+	// If the manager is stopped, close the client instead of pooling it
 	if cm.IsStopped() {
 		if cm.logger != nil {
-			cm.logger.Debug("Discarding client because connection manager is stopped")
+			cm.logger.Debug("Closing client because connection manager is stopped")
+		}
+		if err := peerClient.Close(); err != nil && cm.logger != nil {
+			cm.logger.Debug("Error closing client on stop", zap.Error(err))
 		}
 		return
 	}
 
+	// If the client cannot be reset, close and discard it
 	if resetErr := peerClient.Reset(); resetErr != nil {
 		if cm.logger != nil {
 			cm.logger.Debug("Discarding client due to reset failure", zap.Error(resetErr))
+		}
+		if err := peerClient.Close(); err != nil && cm.logger != nil {
+			cm.logger.Debug("Error closing client after reset failure", zap.Error(err))
 		}
 		return
 	}

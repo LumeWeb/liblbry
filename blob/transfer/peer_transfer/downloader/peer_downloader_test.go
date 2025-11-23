@@ -58,8 +58,9 @@ func TestPeerDownloader_DownloadFromPeers_SuccessfulDHTDownload(t *testing.T) {
 
 	pd.Start()
 
-	_, err := pd.DownloadFromPeers(context.Background(), "testhash", bits.Bitmap{}, blob.NewBlobRequest())
+	result, err := pd.DownloadFromPeers(context.Background(), "testhash", bits.Bitmap{}, blob.NewBlobRequest())
 	assert.NoError(t, err)
+	assert.Equal(t, []byte("test data"), result)
 }
 
 func TestPeerDownloader_SetTimeout(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,6 +40,7 @@ type DefaultPeerDiscovery struct {
 	logger        *zap.Logger
 	stopped       int32
 	hostResolver  HostResolver
+	mu            sync.RWMutex // Protects mutable configuration fields
 }
 
 // NewPeerDiscovery creates a new DefaultPeerDiscovery instance
@@ -77,12 +79,18 @@ func NewPeerDiscoveryWithHostResolver(dhtNode protocol.DHTNode, logger *zap.Logg
 
 // SetRetryConfig configures retry behavior
 func (pd *DefaultPeerDiscovery) SetRetryConfig(attempts int, delay time.Duration) {
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+
 	pd.retryAttempts = attempts
 	pd.retryDelay = delay
 }
 
 // SetFixedPeers configures fixed fallback peers
 func (pd *DefaultPeerDiscovery) SetFixedPeers(peers []dht.Contact) {
+	pd.mu.Lock()
+	defer pd.mu.Unlock()
+
 	pd.fixedPeers = peers
 }
 
@@ -113,11 +121,17 @@ func (pd *DefaultPeerDiscovery) DiscoverPeers(ctx context.Context, hashBitmap bi
 
 // GetFixedPeers returns the configured fixed peers
 func (pd *DefaultPeerDiscovery) GetFixedPeers() []dht.Contact {
+	pd.mu.RLock()
+	defer pd.mu.RUnlock()
+
 	return pd.fixedPeers
 }
 
 // IsFixedPeer checks if a contact is in the fixed peers list
 func (pd *DefaultPeerDiscovery) IsFixedPeer(contact dht.Contact) bool {
+	pd.mu.RLock()
+	defer pd.mu.RUnlock()
+
 	if len(pd.fixedPeers) == 0 {
 		return false
 	}
@@ -186,11 +200,17 @@ func (pd *DefaultPeerDiscovery) DHTNode() protocol.DHTNode {
 
 // RetryAttempts returns the configured retry attempts
 func (pd *DefaultPeerDiscovery) RetryAttempts() int {
+	pd.mu.RLock()
+	defer pd.mu.RUnlock()
+
 	return pd.retryAttempts
 }
 
 // RetryDelay returns the configured retry delay
 func (pd *DefaultPeerDiscovery) RetryDelay() time.Duration {
+	pd.mu.RLock()
+	defer pd.mu.RUnlock()
+
 	return pd.retryDelay
 }
 
@@ -259,6 +279,7 @@ func (pd *DefaultPeerDiscovery) discoverWithRetry(ctx context.Context, hashBitma
 
 // calculateBackoffDelay calculates exponential backoff delay with jitter
 // Exponential backoff: base_delay × 2^(attempt-1) with ±25% jitter
+// On overflow or invalid configuration, collapses to baseDelay (or time.Nanosecond if baseDelay <= 0)
 func calculateBackoffDelay(attempt int, baseDelay time.Duration) time.Duration {
 	backoffFactor := time.Duration(1 << uint(attempt-1)) // 1, 2, 4, 8...
 	delay := backoffFactor * baseDelay

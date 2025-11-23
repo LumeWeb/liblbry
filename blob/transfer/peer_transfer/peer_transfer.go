@@ -36,33 +36,37 @@ type PeerTransferOption func(*PeerTransfer)
 
 // NewPeerTransfer creates a new refactored PeerTransfer with the specified DHT node and peer client factory
 func NewPeerTransfer(dhtNode protocol.DHTNode, peerClientFactory protocol.PeerClientFactory, options ...PeerTransferOption) (*PeerTransfer, error) {
+	// Validate dhtNode at the start
+	if dhtNode == nil {
+		return nil, fmt.Errorf("dhtNode cannot be nil")
+	}
+
 	logger := zap.NewNop()
 
-	pt := &PeerTransfer{
-		logger: logger,
-	}
-
-	// Apply options before creating components to allow logger configuration
-	for _, option := range options {
-		option(pt)
-	}
-
-	// Create components with the configured logger
-	discovery := discovery.NewPeerDiscovery(dhtNode, pt.logger)
-	connMgr, err := connection.NewConnectionManager(peerClientFactory, pt.logger)
+	// Create components with the configured logger first
+	discovery := discovery.NewPeerDiscovery(dhtNode, logger)
+	connMgr, err := connection.NewConnectionManager(peerClientFactory, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection manager: %w", err)
 	}
-	coordinator, err := coordinator.NewRequestCoordinator(pt.logger)
+	coordinator, err := coordinator.NewRequestCoordinator(logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request coordinator: %w", err)
 	}
-	downloader := downloader.NewPeerDownloaderWithDefaults(connMgr, discovery, coordinator, 5, 30*time.Second, pt.logger)
+	downloader := downloader.NewPeerDownloaderWithDefaults(connMgr, discovery, coordinator, 5, 30*time.Second, logger)
 
-	pt.discovery = discovery
-	pt.connMgr = connMgr
-	pt.coordinator = coordinator
-	pt.downloader = downloader
+	pt := &PeerTransfer{
+		logger:      logger,
+		discovery:   discovery,
+		connMgr:     connMgr,
+		coordinator: coordinator,
+		downloader:  downloader,
+	}
+
+	// Apply options after components are initialized so options can access them
+	for _, option := range options {
+		option(pt)
+	}
 
 	return pt, nil
 }
@@ -81,7 +85,11 @@ func (pt *PeerTransfer) Get(ctx context.Context, hash string) ([]byte, error) {
 	}
 
 	// Get or create request (handles deduplication)
-	req, isOwner := pt.coordinator.GetOrCreateRequest(hash)
+	req, isOwner, err := pt.coordinator.GetOrCreateRequest(hash)
+	if err != nil {
+		return nil, err
+	}
+
 	if !isOwner {
 		// Join existing request
 		return pt.coordinator.WaitForResult(ctx, req)

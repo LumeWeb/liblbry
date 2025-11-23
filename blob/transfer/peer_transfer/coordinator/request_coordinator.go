@@ -14,7 +14,7 @@ import (
 
 // RequestCoordinator defines the interface for coordinating blob requests
 type RequestCoordinator interface {
-	GetOrCreateRequest(hash string) (*blob.BlobRequest, bool)
+	GetOrCreateRequest(hash string) (*blob.BlobRequest, bool, error)
 	RemoveRequest(hash string)
 	WaitForResult(ctx context.Context, req *blob.BlobRequest) ([]byte, error)
 	CompleteWithData(req *blob.BlobRequest, data []byte, raceCancel context.CancelFunc, hash string)
@@ -69,9 +69,9 @@ func (rc *DefaultRequestCoordinator) Start() {
 }
 
 // GetOrCreateRequest retrieves an existing request or creates a new one
-func (rc *DefaultRequestCoordinator) GetOrCreateRequest(hash string) (*blob.BlobRequest, bool) {
+func (rc *DefaultRequestCoordinator) GetOrCreateRequest(hash string) (*blob.BlobRequest, bool, error) {
 	if rc.IsStopped() {
-		return nil, false
+		return nil, false, fmt.Errorf("request coordinator is stopped")
 	}
 
 	rc.backlogMu.Lock()
@@ -82,20 +82,16 @@ func (rc *DefaultRequestCoordinator) GetOrCreateRequest(hash string) (*blob.Blob
 		req = blob.NewBlobRequest()
 		req.SetWaiters(1) // Creator is the first waiter
 		rc.backlog[hash] = req
-		return req, true
+		return req, true, nil
 	}
 
 	// If request exists, increment waiters
 	req.AddWaiter()
-	return req, false
+	return req, false, nil
 }
 
 // RemoveRequest removes a request from the backlog
 func (rc *DefaultRequestCoordinator) RemoveRequest(hash string) {
-	if rc.IsStopped() {
-		return
-	}
-
 	rc.backlogMu.Lock()
 	defer rc.backlogMu.Unlock()
 
@@ -150,10 +146,6 @@ func (rc *DefaultRequestCoordinator) CompleteWithData(req *blob.BlobRequest, dat
 
 // CompleteWithError completes a request with an error
 func (rc *DefaultRequestCoordinator) CompleteWithError(req *blob.BlobRequest, err error) error {
-	if rc.IsStopped() {
-		return err
-	}
-
 	req.CompleteOnce(func() {
 		// Set the result
 		req.SetResult(blob.NewTaskResult(nil, err))
@@ -165,10 +157,6 @@ func (rc *DefaultRequestCoordinator) CompleteWithError(req *blob.BlobRequest, er
 
 // CompleteWithErrorAndCancel completes a request with an error and cancels race attempts
 func (rc *DefaultRequestCoordinator) CompleteWithErrorAndCancel(req *blob.BlobRequest, err error, raceCancel context.CancelFunc, hash string) {
-	if rc.IsStopped() {
-		return
-	}
-
 	req.CompleteOnce(func() {
 		// Cancel any remaining race attempts
 		if raceCancel != nil {

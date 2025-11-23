@@ -210,6 +210,9 @@ func (pm *DefaultPhaseManager) ExecutePhases(ctx context.Context, hash string, h
 	}
 
 	// All phases failed
+	if lastError == nil {
+		return nil, fmt.Errorf("blob not found from any peer source: no peers available")
+	}
 	return nil, fmt.Errorf("blob not found from any peer source: %v", lastError)
 }
 

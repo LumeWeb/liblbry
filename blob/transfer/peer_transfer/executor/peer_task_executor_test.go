@@ -512,9 +512,6 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled_LongRunn
 	// Mock the successful completion that will happen after the context times out
 	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Maybe()
 
-	// Mock the successful completion that will happen after the context times out
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.Anything, hash).Maybe()
-
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req)
 	require.NoError(t, err)
 

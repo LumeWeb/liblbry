@@ -17,6 +17,8 @@ import (
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/downloader"
 	downloaderMocks "go.lumeweb.com/liblbry/blob/transfer/peer_transfer/downloader/mocks"
 	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
+	"go.lumeweb.com/liblbry/protocol"
+	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -82,7 +84,7 @@ func assertTransferSuccess(t *testing.T, err error, result []byte, expectedData 
 // setupCoordinatorExpectations creates common coordinator mock expectations
 // Eliminates repetitive coordinator setup across test functions.
 func setupCoordinatorExpectations(coordinator *coordinatorMocks.MockRequestCoordinator, hash string, request *blob.BlobRequest) {
-	coordinator.EXPECT().GetOrCreateRequest(hash).Return(request, true)
+	coordinator.EXPECT().GetOrCreateRequest(hash).Return(request, true, nil)
 	coordinator.EXPECT().RemoveRequest(hash)
 }
 
@@ -104,11 +106,47 @@ func newPeerTransferForTesting(
 }
 
 func TestNewPeerTransfer(t *testing.T) {
-	// Test that NewPeerTransfer creates a valid instance
-	setup := setupTest(t)
+	t.Run("Valid constructor call", func(t *testing.T) {
+		// Create mock dependencies
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+		mockPeerClientFactory := func() protocol.PeerClient {
+			return protocolMocks.NewMockPeerClient(t)
+		}
 
-	require.NotNil(t, setup.transfer)
-	assert.Equal(t, TransferName, setup.transfer.Name())
+		// Call the constructor
+		pt, err := NewPeerTransfer(mockDHTNode, mockPeerClientFactory)
+
+		// Verify successful creation
+		require.NoError(t, err)
+		require.NotNil(t, pt)
+		assert.Equal(t, TransferName, pt.Name())
+	})
+
+	t.Run("Nil DHTNode", func(t *testing.T) {
+		mockPeerClientFactory := func() protocol.PeerClient {
+			return protocolMocks.NewMockPeerClient(t)
+		}
+
+		// Call constructor with nil DHTNode
+		pt, err := NewPeerTransfer(nil, mockPeerClientFactory)
+
+		// Verify error
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "dhtNode cannot be nil")
+		assert.Nil(t, pt)
+	})
+
+	t.Run("Nil peer client factory", func(t *testing.T) {
+		mockDHTNode := protocolMocks.NewMockDHTNode(t)
+
+		// Call constructor with nil peer client factory
+		pt, err := NewPeerTransfer(mockDHTNode, nil)
+
+		// Verify error
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create connection manager")
+		assert.Nil(t, pt)
+	})
 }
 
 func TestPeerTransfer_Get_Success(t *testing.T) {

@@ -256,7 +256,7 @@ func (_c *MockRequestCoordinator_GetBacklogSize_Call) RunAndReturn(run func() in
 }
 
 // GetOrCreateRequest provides a mock function for the type MockRequestCoordinator
-func (_mock *MockRequestCoordinator) GetOrCreateRequest(hash string) (*blob.BlobRequest, bool) {
+func (_mock *MockRequestCoordinator) GetOrCreateRequest(hash string) (*blob.BlobRequest, bool, error) {
 	ret := _mock.Called(hash)
 
 	if len(ret) == 0 {
@@ -265,7 +265,8 @@ func (_mock *MockRequestCoordinator) GetOrCreateRequest(hash string) (*blob.Blob
 
 	var r0 *blob.BlobRequest
 	var r1 bool
-	if returnFunc, ok := ret.Get(0).(func(string) (*blob.BlobRequest, bool)); ok {
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*blob.BlobRequest, bool, error)); ok {
 		return returnFunc(hash)
 	}
 	if returnFunc, ok := ret.Get(0).(func(string) *blob.BlobRequest); ok {
@@ -280,7 +281,12 @@ func (_mock *MockRequestCoordinator) GetOrCreateRequest(hash string) (*blob.Blob
 	} else {
 		r1 = ret.Get(1).(bool)
 	}
-	return r0, r1
+	if returnFunc, ok := ret.Get(2).(func(string) error); ok {
+		r2 = returnFunc(hash)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
 }
 
 // MockRequestCoordinator_GetOrCreateRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetOrCreateRequest'
@@ -307,12 +313,12 @@ func (_c *MockRequestCoordinator_GetOrCreateRequest_Call) Run(run func(hash stri
 	return _c
 }
 
-func (_c *MockRequestCoordinator_GetOrCreateRequest_Call) Return(blobRequest *blob.BlobRequest, b bool) *MockRequestCoordinator_GetOrCreateRequest_Call {
-	_c.Call.Return(blobRequest, b)
+func (_c *MockRequestCoordinator_GetOrCreateRequest_Call) Return(blobRequest *blob.BlobRequest, b bool, err error) *MockRequestCoordinator_GetOrCreateRequest_Call {
+	_c.Call.Return(blobRequest, b, err)
 	return _c
 }
 
-func (_c *MockRequestCoordinator_GetOrCreateRequest_Call) RunAndReturn(run func(hash string) (*blob.BlobRequest, bool)) *MockRequestCoordinator_GetOrCreateRequest_Call {
+func (_c *MockRequestCoordinator_GetOrCreateRequest_Call) RunAndReturn(run func(hash string) (*blob.BlobRequest, bool, error)) *MockRequestCoordinator_GetOrCreateRequest_Call {
 	_c.Call.Return(run)
 	return _c
 }

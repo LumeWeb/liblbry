@@ -119,10 +119,7 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 			return nil, ctx.Err()
 		case <-req.GetDone():
 			// Request was completed successfully
-			completed, total, err := prc.coordinator.GetRequestState(req)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get request state: %w", err)
-			}
+			completed, total, _ := prc.coordinator.GetRequestState(req)
 			prc.logger.Debug("Request completed successfully in non-final phase",
 				zap.String("hash", hash),
 				zap.Int32("completed", completed),
@@ -133,11 +130,7 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 			return res.GetData(), res.GetErr()
 		case <-time.After(10 * time.Millisecond):
 			// Check if all peers have completed
-			completed, total, err := prc.coordinator.GetRequestState(req)
-			lastError := req.GetLastError()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get request state: %w", err)
-			}
+			completed, total, lastErr := prc.coordinator.GetRequestState(req)
 
 			if completed >= total {
 				// Give a brief moment for async completion to propagate
@@ -152,8 +145,8 @@ func (prc *DefaultPeerRaceCoordinator) waitForRaceCompletion(ctx context.Context
 				default:
 					// All peers attempted but none succeeded
 					// If there was only one peer, return the actual error
-					if total == 1 && lastError != nil {
-						return nil, lastError
+					if total == 1 && lastErr != nil {
+						return nil, lastErr
 					}
 					return nil, fmt.Errorf("all peers in this phase failed")
 				}

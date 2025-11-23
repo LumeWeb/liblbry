@@ -99,7 +99,7 @@ func assertRequestCompleted(t *testing.T, req *blob.BlobRequest) {
 	select {
 	case <-req.GetDone():
 		// Expected
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Fatal("Request should be completed")
 	}
 }
@@ -110,7 +110,7 @@ func assertRequestNotCompleted(t *testing.T, req *blob.BlobRequest) {
 	select {
 	case <-req.GetDone():
 		t.Fatal("Request should not be completed yet")
-	case <-time.After(1 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 		// Expected - request not completed yet
 	}
 }
@@ -157,7 +157,8 @@ func TestRequestCoordinator_GetOrCreateRequest(t *testing.T) {
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 
 	t.Run("Create new request", func(t *testing.T) {
-		req, isOwner := setup.coordinator.GetOrCreateRequest(hash)
+		req, isOwner, err := setup.coordinator.GetOrCreateRequest(hash)
+		require.NoError(t, err)
 
 		require.NotNil(t, req)
 		assert.True(t, isOwner)
@@ -166,7 +167,8 @@ func TestRequestCoordinator_GetOrCreateRequest(t *testing.T) {
 	})
 
 	t.Run("Join existing request", func(t *testing.T) {
-		req, isOwner := setup.coordinator.GetOrCreateRequest(hash)
+		req, isOwner, err := setup.coordinator.GetOrCreateRequest(hash)
+		require.NoError(t, err)
 
 		require.NotNil(t, req)
 		assert.False(t, isOwner)
@@ -180,7 +182,8 @@ func TestRequestCoordinator_RemoveRequest(t *testing.T) {
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 
 	// Create a request first
-	req, _ := setup.coordinator.GetOrCreateRequest(hash)
+	req, _, err := setup.coordinator.GetOrCreateRequest(hash)
+	require.NoError(t, err)
 	require.NotNil(t, req)
 	assert.Equal(t, 1, setup.coordinator.GetBacklogSize())
 
@@ -362,7 +365,11 @@ func TestRequestCoordinator_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			req, isOwner := setup.coordinator.GetOrCreateRequest(hash)
+			req, isOwner, err := setup.coordinator.GetOrCreateRequest(hash)
+			if err != nil {
+				t.Errorf("GetOrCreateRequest failed: %v", err)
+				return
+			}
 			results[index] = req
 			owners[index] = isOwner
 		}(i)

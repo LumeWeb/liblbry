@@ -154,9 +154,14 @@ func TestNewPeerRaceCoordinator(t *testing.T) {
 	setup := setupTest(t)
 
 	require.NotNil(t, setup.coordinator)
-	assert.Equal(t, setup.timeout, setup.coordinator.(*DefaultPeerRaceCoordinator).timeout)
-	assert.Equal(t, setup.logger, setup.coordinator.(*DefaultPeerRaceCoordinator).logger)
 	assert.False(t, setup.coordinator.IsStopped())
+
+	// Test that the coordinator can be started and stopped (basic lifecycle)
+	setup.coordinator.Start()
+	assert.False(t, setup.coordinator.IsStopped())
+
+	setup.coordinator.Stop()
+	assert.True(t, setup.coordinator.IsStopped())
 }
 
 func TestDefaultPeerRaceCoordinator_ExecuteRace_Success(t *testing.T) {

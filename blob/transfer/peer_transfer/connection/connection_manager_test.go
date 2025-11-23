@@ -55,6 +55,57 @@ func TestConnectionManager_StartStop(t *testing.T) {
 	assert.NotNil(t, cm.clientPool)
 }
 
+func TestConnectionManager_StopClosesPooledClients(t *testing.T) {
+	setup := setupTest(t)
+	cm := setup.manager
+
+	// Create multiple mock clients
+	mockClients := make([]*protocolMocks.MockPeerClient, 3)
+	for i := range mockClients {
+		mockClients[i] = protocolMocks.NewMockPeerClient(t)
+		mockClients[i].EXPECT().Reset().Return(nil)
+		mockClients[i].EXPECT().Close().Return(nil)
+	}
+
+	// Add clients to the pool
+	for _, client := range mockClients {
+		cm.returnClientToPool(client)
+	}
+
+	// Stop the manager - should close all pooled clients
+	cm.Stop()
+
+	// Verify all clients were closed (mock expectations verify this)
+	assert.True(t, cm.IsStopped())
+	assert.Nil(t, cm.clientPool)
+}
+
+func TestConnectionManager_StopClosesPooledClientsWithErrors(t *testing.T) {
+	setup := setupTest(t)
+	cm := setup.manager
+
+	// Create mock clients that will fail to close
+	closeErr := errors.New("close failed")
+	mockClients := make([]*protocolMocks.MockPeerClient, 2)
+	for i := range mockClients {
+		mockClients[i] = protocolMocks.NewMockPeerClient(t)
+		mockClients[i].EXPECT().Reset().Return(nil)
+		mockClients[i].EXPECT().Close().Return(closeErr)
+	}
+
+	// Add clients to the pool
+	for _, client := range mockClients {
+		cm.returnClientToPool(client)
+	}
+
+	// Stop the manager - should close all pooled clients and log errors
+	cm.Stop()
+
+	// Verify all clients were closed (mock expectations verify this)
+	assert.True(t, cm.IsStopped())
+	assert.Nil(t, cm.clientPool)
+}
+
 func TestConnectionManager_GetClient(t *testing.T) {
 	setup := setupTest(t)
 	cm := setup.manager
@@ -100,12 +151,34 @@ func TestConnectionManager_ReturnClient(t *testing.T) {
 	})
 
 	t.Run("Return client to stopped manager", func(t *testing.T) {
-		client, err := cm.GetClient()
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Close().Return(nil)
+
+		testSetup := setupTestWithMock(t, mockClient)
+		testCM := testSetup.manager
+
+		client, err := testCM.GetClient()
 		require.NoError(t, err)
 
-		cm.Stop()
-		// Should not panic and should discard client
-		cm.ReturnClient(client)
+		testCM.Stop()
+		// Should close client instead of discarding
+		testCM.ReturnClient(client)
+	})
+
+	t.Run("Return client to stopped manager with close error", func(t *testing.T) {
+		closeErr := errors.New("close failed")
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Close().Return(closeErr)
+
+		testSetup := setupTestWithMock(t, mockClient)
+		testCM := testSetup.manager
+
+		client, err := testCM.GetClient()
+		require.NoError(t, err)
+
+		testCM.Stop()
+		// Should close client and log error
+		testCM.ReturnClient(client)
 	})
 }
 
@@ -187,23 +260,51 @@ func TestConnectionManager_returnClientToPool(t *testing.T) {
 		cm.returnClientToPool(mockClient)
 	})
 
-	t.Run("Reset failure", func(t *testing.T) {
+	t.Run("Reset failure closes client", func(t *testing.T) {
 		setup := setupTest(t)
 		cm := setup.manager
 		resetErr := errors.New("reset failed")
-		mockClient := createMockClientForReset(t, resetErr)
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Reset().Return(resetErr)
+		mockClient.EXPECT().Close().Return(nil)
 
-		// Should not panic and should discard client
+		// Should close client instead of discarding
 		cm.returnClientToPool(mockClient)
 	})
 
-	t.Run("Stopped manager", func(t *testing.T) {
+	t.Run("Reset failure with close error logs error", func(t *testing.T) {
+		setup := setupTest(t)
+		cm := setup.manager
+		resetErr := errors.New("reset failed")
+		closeErr := errors.New("close failed")
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Reset().Return(resetErr)
+		mockClient.EXPECT().Close().Return(closeErr)
+
+		// Should close client and log error
+		cm.returnClientToPool(mockClient)
+	})
+
+	t.Run("Stopped manager closes client", func(t *testing.T) {
 		setup := setupTest(t)
 		cm := setup.manager
 		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Close().Return(nil)
 		cm.Stop()
 
-		// Reset should not be called
+		// Should close client instead of discarding
+		cm.returnClientToPool(mockClient)
+	})
+
+	t.Run("Stopped manager with close error logs error", func(t *testing.T) {
+		setup := setupTest(t)
+		cm := setup.manager
+		closeErr := errors.New("close failed")
+		mockClient := protocolMocks.NewMockPeerClient(t)
+		mockClient.EXPECT().Close().Return(closeErr)
+		cm.Stop()
+
+		// Should close client and log error
 		cm.returnClientToPool(mockClient)
 	})
 }
