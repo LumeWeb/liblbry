@@ -739,7 +739,7 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 	}
 
 	// Create stream acquirer for unified logic
-	streamAcquirer := client.NewStreamAcquirer(s.acquirer, s.storage)
+	streamAcquirer := client.NewStreamAcquirer(s.acquirer, s.storage, s.logger)
 
 	// Convert server options to stream acquirer options
 	acquireOpts := make([]client.AcquireOption, 0, len(opts)+1)

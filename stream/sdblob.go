@@ -326,10 +326,5 @@ func ValidateSDBlob(sdBlobData []byte) error {
 		}
 	}
 
-	// Check that we have at least one blob
-	if len(jsonSDBlob.Blobs) == 0 {
-		return fmt.Errorf("%w: no blobs found", ErrInvalidSDBlob)
-	}
-
 	return nil
 }

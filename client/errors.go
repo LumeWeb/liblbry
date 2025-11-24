@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -51,14 +52,23 @@ func isRetryableError(err error) bool {
 		return false
 	}
 
+	// Check if this is a StreamError - StreamError itself is always retryable
+	// regardless of the wrapped error, as it represents a transient operation failure
+	if _, ok := err.(*StreamError); ok {
+		return true
+	}
+
 	// Don't retry context cancellation
-	if err == ErrContextCancelled {
+	if errors.Is(err, ErrContextCancelled) {
 		return false
 	}
 
 	// Don't retry invalid data errors
-	switch err {
-	case ErrInvalidSDBlob, ErrStreamCorrupted, ErrInvalidHash, ErrDecryptionFailed, ErrStreamNotFound:
+	if errors.Is(err, ErrInvalidSDBlob) ||
+		errors.Is(err, ErrStreamCorrupted) ||
+		errors.Is(err, ErrInvalidHash) ||
+		errors.Is(err, ErrDecryptionFailed) ||
+		errors.Is(err, ErrStreamNotFound) {
 		return false
 	}
 

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
@@ -26,6 +27,7 @@ import (
 	"go.lumeweb.com/liblbry/storage/memory"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
 	"go.lumeweb.com/liblbry/stream"
+	"go.uber.org/zap/zaptest"
 )
 
 // createTestKey creates a test 32-byte encryption key
@@ -125,7 +127,17 @@ func createTestSetupWithOptions(tb interface{}, contentSize int, verificationEna
 		panic("unsupported testing type")
 	}
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	var logger *zap.Logger
+	switch tb := tb.(type) {
+	case *testing.T:
+		logger = zaptest.NewLogger(tb)
+	case *testing.B:
+		logger = zaptest.NewLogger(tb)
+	default:
+		logger = zap.NewNop()
+	}
+
+	streamAcquirer := NewStreamAcquirer(acquirer, store, logger)
 
 	return &testSetup{
 		ctx:              ctx,
@@ -174,7 +186,17 @@ func createTestSetupWithContentOptions(tb interface{}, content []byte, verificat
 		panic("unsupported testing type")
 	}
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	var logger *zap.Logger
+	switch tb := tb.(type) {
+	case *testing.T:
+		logger = zaptest.NewLogger(tb)
+	case *testing.B:
+		logger = zaptest.NewLogger(tb)
+	default:
+		logger = zap.NewNop()
+	}
+
+	streamAcquirer := NewStreamAcquirer(acquirer, store, logger)
 
 	return &testSetup{
 		ctx:              ctx,
@@ -217,6 +239,7 @@ func getStreamWithoutVerificationWithRetry(acquirer StreamAcquirer, ctx context.
 
 // setupMockExpectations sets up common mock expectations for blob acquisition
 func (ts *testSetup) setupMockExpectations() {
+	ts.store.EXPECT().Name().Return("mock-store")
 	if len(ts.sdBlobData) > 0 {
 		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.sdHash).Return(ts.sdBlobData, nil)
 	}
@@ -292,7 +315,7 @@ func TestNewStreamAcquirer(t *testing.T) {
 	acquirer := mocks.NewMockBlobAcquirer(t)
 	store := storageMocks.NewMockBlobStore(t)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	assert.NotNil(t, streamAcquirer)
 }
@@ -346,7 +369,7 @@ func TestStreamAcquirer_GetSDBlob(t *testing.T) {
 	store := memory.NewMemoryStore()
 
 	// Create the stream acquirer
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	// Test GetSDBlob functionality
 	sdBlobResult, data, err := streamAcquirer.GetSDBlob(ctx, sdHash)
@@ -453,7 +476,7 @@ func TestStreamAcquirer_GetSDBlob_MultipleBlobs(t *testing.T) {
 	store := memory.NewMemoryStore()
 
 	// Create the stream acquirer
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	// Test GetSDBlob functionality
 	sdBlobResult, data, err := streamAcquirer.GetSDBlob(ctx, sdHash)
@@ -551,7 +574,7 @@ func TestStreamAcquirer_DecryptedSize_Behavior(t *testing.T) {
 	store := memory.NewMemoryStore()
 
 	// Create the stream acquirer
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	// Get the stream reader
 	streamReader, err := streamAcquirer.GetStream(ctx, sdHash, WithAcquireStreamOptions(WithStreamVerification(true)))
@@ -601,7 +624,7 @@ func TestStreamAcquirer_GetSDBlob_InvalidHash(t *testing.T) {
 	acquirer := mocks.NewMockBlobAcquirer(t)
 	store := storageMocks.NewMockBlobStore(t)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	_, _, err := streamAcquirer.GetSDBlob(ctx, sdHash)
 
@@ -633,10 +656,11 @@ func TestStreamAcquirer_GetStreamResult(t *testing.T) {
 	acquirer.EXPECT().Acquire(ctx, contentBlobHash).Return(contentBlobData, nil)
 
 	store := storageMocks.NewMockBlobStore(t)
+	store.EXPECT().Name().Return("mock-store")
 	store.EXPECT().Has(contentBlobHash).Return(false, nil)
 	store.EXPECT().Put(contentBlobHash, contentBlobData).Return(nil)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	result, err := streamAcquirer.GetStreamResult(ctx, sdHash, WithAcquireRecursive(true))
 
@@ -752,7 +776,7 @@ func TestStreamAcquirerBuilder(t *testing.T) {
 	store := storageMocks.NewMockBlobStore(t)
 
 	// Test builder pattern
-	streamAcquirer, err := NewStreamAcquirerBuilder().
+	streamAcquirer, err := NewStreamAcquirerBuilder(zaptest.NewLogger(t)).
 		WithAcquirer(acquirer).
 		WithStore(store).
 		Build()
@@ -765,7 +789,7 @@ func TestStreamAcquirerBuilder_MissingAcquirer(t *testing.T) {
 	store := storageMocks.NewMockBlobStore(t)
 
 	// Test builder without acquirer should fail
-	_, err := NewStreamAcquirerBuilder().
+	_, err := NewStreamAcquirerBuilder(zap.NewNop()).
 		WithStore(store).
 		Build()
 
@@ -777,7 +801,7 @@ func TestStreamAcquirerFactory(t *testing.T) {
 	acquirer := mocks.NewMockBlobAcquirer(t)
 	store := storageMocks.NewMockBlobStore(t)
 
-	factory := NewStreamAcquirerFactory()
+	factory := NewStreamAcquirerFactory(zaptest.NewLogger(t))
 
 	// Test default acquirer creation
 	acquirer1 := factory.CreateDefaultStreamAcquirer(acquirer, store)
@@ -1098,7 +1122,7 @@ func TestStreamAcquirer_WithRetryBehavior(t *testing.T) {
 	})
 
 	// Create acquirer with custom retry options
-	acquirer := NewStreamAcquirer(mockAcquirer, mockStore)
+	acquirer := NewStreamAcquirer(mockAcquirer, mockStore, zaptest.NewLogger(t))
 
 	// Use custom retry options with 3 attempts and short delay
 	customRetryOptions := []retry.Option{
@@ -1132,7 +1156,7 @@ func TestStreamAcquirer_WithRetryNonRetryableError(t *testing.T) {
 	// Mock acquirer to return invalid SD blob data
 	mockAcquirer.On("Acquire", ctx, sdHash).Return(invalidSDBlobData, nil)
 
-	acquirer := NewStreamAcquirer(mockAcquirer, mockStore)
+	acquirer := NewStreamAcquirer(mockAcquirer, mockStore, zaptest.NewLogger(t))
 
 	// Use default retry options
 	streamReader, err := getStreamWithoutVerificationFromAcquirer(acquirer, ctx, sdHash)
@@ -1152,7 +1176,7 @@ func TestStreamAcquirer_WithRetryMaxAttemptsExhausted(t *testing.T) {
 	// Mock acquirer to always fail with retryable error
 	mockAcquirer.On("Acquire", ctx, sdHash).Return(nil, errors.New("persistent network error"))
 
-	acquirer := NewStreamAcquirer(mockAcquirer, mockStore)
+	acquirer := NewStreamAcquirer(mockAcquirer, mockStore, zaptest.NewLogger(t))
 
 	// Use custom retry options with only 2 attempts
 	customRetryOptions := []retry.Option{
@@ -1212,7 +1236,7 @@ func TestStreamReader_WithRetryOnBlobAcquisition(t *testing.T) {
 	acquirer, err := liblbry.NewBlobAcquirer([]transfer.Transfer{mockTransfer}, store)
 	require.NoError(t, err)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	// Create stream reader with custom retry options
 	customRetryOptions := []retry.Option{
@@ -1280,7 +1304,7 @@ func TestStreamReader_WithRetryOnStorageFailure(t *testing.T) {
 	acquirer, err := liblbry.NewBlobAcquirer([]transfer.Transfer{mockTransfer}, mockStore)
 	require.NoError(t, err)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, mockStore)
+	streamAcquirer := NewStreamAcquirer(acquirer, mockStore, zaptest.NewLogger(t))
 
 	// Create stream reader with custom retry options
 	customRetryOptions := []retry.Option{
@@ -1345,7 +1369,7 @@ func createVerifiedTestSetup(t *testing.T, contentSize int) *testSetup {
 	store.EXPECT().Has(blobHashHex).Return(false, nil)
 	store.EXPECT().Put(blobHashHex, encryptedContent).Return(nil).Maybe() // May be called multiple times (main + prefetcher)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	return &testSetup{
 		ctx:              ctx,
@@ -1400,7 +1424,7 @@ func TestStreamAcquirer_Verification_Enabled_InvalidSDBlobHash(t *testing.T) {
 	// Set up mocks - SD blob acquisition should succeed but verification will fail
 	acquirer.EXPECT().Acquire(ctx, sdHash).Return(sdBlobData, nil)
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
 	// GetStream should fail due to SD blob hash verification
 	reader, err := streamAcquirer.GetStream(ctx, sdHash, WithAcquireVerification(true))
@@ -1438,7 +1462,7 @@ func setupVerificationFailureMocks(t *testing.T, ctx context.Context, sdBlobHash
 	acquirer.EXPECT().Acquire(ctx, contentHash).Return(contentData, nil)
 	store.EXPECT().Put(contentHash, contentData).Return(nil).Maybe()
 
-	streamAcquirer := NewStreamAcquirer(acquirer, store)
+	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 	return acquirer, store, streamAcquirer
 }
 

@@ -18,9 +18,6 @@ func TestDefaultRetryOptions(t *testing.T) {
 
 	// Verify default options are set
 	require.NotEmpty(t, options)
-
-	// Test that default options are not empty
-	require.NotEmpty(t, options)
 }
 
 func TestWithRetry_Success(t *testing.T) {
