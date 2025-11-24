@@ -1,0 +1,136 @@
+package client
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/avast/retry-go/v4"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	"go.lumeweb.com/liblbry/protocol"
+)
+
+// Error types for StreamClient operations
+var (
+	ErrStreamNotFound   = liblbryerrors.Err("stream not found")
+	ErrInvalidSDBlob    = liblbryerrors.Err("invalid SD blob")
+	ErrBlobAcquisition  = liblbryerrors.Err("failed to acquire blob")
+	ErrStreamCorrupted  = liblbryerrors.Err("stream data is corrupted")
+	ErrInvalidHash      = liblbryerrors.Err("invalid blob hash")
+	ErrDecryptionFailed = liblbryerrors.Err("blob decryption failed")
+	ErrContextCancelled = liblbryerrors.Err("operation cancelled by context")
+	ErrRetryExhausted   = liblbryerrors.Err("retry attempts exhausted")
+)
+
+// Stream operation types for error reporting
+const (
+	OperationStorageHasCheck = "storage_has_check"
+	OperationStorageGet      = "storage_get"
+	OperationNetworkAcquire  = "network_acquire"
+	OperationPrefetchAcquire = "prefetch_acquire"
+	OperationValidation      = "validation"
+	OperationAcquireSDBlob   = "acquire_sd_blob"
+	OperationParseSDBlob     = "parse_sd_blob"
+	OperationValidateSDBlob  = "validate_sd_blob"
+)
+
+// DefaultRetryOptions returns sensible default retry options using retry-go
+func DefaultRetryOptions() []retry.Option {
+	return []retry.Option{
+		retry.Attempts(3),
+		retry.Delay(100 * time.Millisecond),
+		retry.MaxDelay(5 * time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.RetryIf(isRetryableError),
+		retry.LastErrorOnly(true),
+	}
+}
+
+// isRetryableError determines if an error should be retried
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Don't retry context cancellation
+	if err == ErrContextCancelled {
+		return false
+	}
+
+	// Don't retry invalid data errors
+	switch err {
+	case ErrInvalidSDBlob, ErrStreamCorrupted, ErrInvalidHash, ErrDecryptionFailed, ErrStreamNotFound:
+		return false
+	}
+
+	// Retry network and temporary errors
+	// For now, retry most errors except specific ones handled above
+	return true
+}
+
+// RetryableOperation represents an operation that can be retried
+type RetryableOperation func() error
+
+// WithRetry executes an operation with retry logic using retry-go library
+func WithRetry(options []retry.Option, operation RetryableOperation) error {
+	if options == nil {
+		options = DefaultRetryOptions()
+	}
+	return retry.Do(retry.RetryableFunc(operation), options...)
+}
+
+// StreamError wraps errors with additional context
+type StreamError struct {
+	Err       error
+	Operation string
+	SDBlob    string
+	BlobHash  string
+	Attempt   int
+	Timestamp time.Time
+}
+
+func (e *StreamError) Error() string {
+	if e.BlobHash != "" {
+		return fmt.Sprintf("stream error during %s for blob %s in stream %s: %v",
+			e.Operation, e.BlobHash, e.SDBlob, e.Err)
+	}
+	return fmt.Sprintf("stream error during %s for stream %s: %v",
+		e.Operation, e.SDBlob, e.Err)
+}
+
+func (e *StreamError) Unwrap() error {
+	return e.Err
+}
+
+// NewStreamError creates a new StreamError
+func NewStreamError(operation, sdBlob, blobHash string, err error, attempt int) *StreamError {
+	return &StreamError{
+		Err:       err,
+		Operation: operation,
+		SDBlob:    sdBlob,
+		BlobHash:  blobHash,
+		Attempt:   attempt,
+		Timestamp: time.Now(),
+	}
+}
+
+// IsStreamError checks if error is a StreamError
+func IsStreamError(err error) bool {
+	_, ok := err.(*StreamError)
+	return ok
+}
+
+// GetStreamError extracts StreamError from wrapped error
+func GetStreamError(err error) (*StreamError, bool) {
+	if streamErr, ok := err.(*StreamError); ok {
+		return streamErr, true
+	}
+	return nil, false
+}
+
+// ValidateBlobHash validates blob hash format using the robust protocol implementation
+func ValidateBlobHash(hash string) error {
+	if !protocol.ValidateBlobHash(hash) {
+		return ErrInvalidHash
+	}
+	return nil
+}

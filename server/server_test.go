@@ -1179,6 +1179,8 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
 	// Then, acquire the content blob - use Anything for context to be more flexible
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
+	// Store the acquired content blob
+	testMocks.storage.EXPECT().Put(contentBlobHash, contentBlobData).Return(nil)
 
 	// Test successful recursive SD blob acquisition
 	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
@@ -1269,7 +1271,7 @@ func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
 	// Test invalid JSON handling
 	result, err := server.AcquireSDBlob(ctx, sdBlobHash)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to parse SD blob")
+	assert.Contains(t, err.Error(), "invalid SD blob")
 	assert.Contains(t, err.Error(), sdBlobHash)
 	assert.Nil(t, result)
 }

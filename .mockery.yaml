@@ -26,3 +26,4 @@ packages:
   go.lumeweb.com/liblbry/blob/transfer/peer_transfer/downloader:
   go.lumeweb.com/liblbry/storage:
   go.lumeweb.com/liblbry/server:
+  go.lumeweb.com/liblbry/client:
