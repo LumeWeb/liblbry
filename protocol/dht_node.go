@@ -192,8 +192,10 @@ func (w *managedDHTNode) Shutdown() {
 	// Cancel context to signal goroutines to stop
 	cancelFunc()
 
-	// Shutdown the DHT
-	dhtInstance.Shutdown()
+	// Shutdown the DHT if it exists
+	if dhtInstance != nil {
+		dhtInstance.Shutdown()
+	}
 
 	// Stop the watchdog to clean up its goroutines and resources
 	// Only stop the watchdog if this node owns it (created it internally)
