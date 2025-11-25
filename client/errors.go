@@ -8,12 +8,12 @@ import (
 	"github.com/avast/retry-go/v4"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/protocol"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 // Error types for StreamClient operations
 var (
 	ErrStreamNotFound   = liblbryerrors.Err("stream not found")
-	ErrInvalidSDBlob    = liblbryerrors.Err("invalid SD blob")
 	ErrBlobAcquisition  = liblbryerrors.Err("failed to acquire blob")
 	ErrStreamCorrupted  = liblbryerrors.Err("stream data is corrupted")
 	ErrInvalidHash      = liblbryerrors.Err("invalid blob hash")
@@ -53,10 +53,10 @@ func isRetryableError(err error) bool {
 		return false
 	}
 
-	// Check if this is a StreamError - StreamError itself is always retryable
-	// regardless of the wrapped error, as it represents a transient operation failure
-	if _, ok := err.(*StreamError); ok {
-		return true
+	// Check if this is a StreamError - unwrap it to check the underlying error
+	var streamErr *StreamError
+	if errors.As(err, &streamErr) {
+		return isRetryableError(streamErr.Unwrap())
 	}
 
 	// Don't retry context cancellation
@@ -65,7 +65,7 @@ func isRetryableError(err error) bool {
 	}
 
 	// Don't retry invalid data errors
-	if errors.Is(err, ErrInvalidSDBlob) ||
+	if errors.Is(err, stream.ErrInvalidSDBlob) ||
 		errors.Is(err, ErrStreamCorrupted) ||
 		errors.Is(err, ErrInvalidHash) ||
 		errors.Is(err, ErrDecryptionFailed) ||

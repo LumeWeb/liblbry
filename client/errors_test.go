@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
+	"go.lumeweb.com/liblbry/stream"
 )
 
 func TestDefaultRetryOptions(t *testing.T) {
@@ -50,7 +51,7 @@ func TestWithRetry_RetryableError(t *testing.T) {
 
 func TestWithRetry_NonRetryableError(t *testing.T) {
 	calls := 0
-	nonRetryableErr := ErrInvalidSDBlob
+	nonRetryableErr := stream.ErrInvalidSDBlob
 	operation := func() error {
 		calls++
 		return nonRetryableErr
@@ -59,7 +60,7 @@ func TestWithRetry_NonRetryableError(t *testing.T) {
 	err := WithRetry(nil, operation)
 	assert.Error(t, err)
 	assert.Equal(t, 1, calls) // Should not retry
-	assert.True(t, errors.Is(err, ErrInvalidSDBlob))
+	assert.True(t, errors.Is(err, stream.ErrInvalidSDBlob))
 }
 
 func TestWithRetry_MaxAttemptsExhausted(t *testing.T) {
@@ -84,7 +85,7 @@ func TestWithRetry_CustomOptions(t *testing.T) {
 		retry.Attempts(2),
 		retry.Delay(10 * time.Millisecond),
 		retry.RetryIf(func(err error) bool {
-			return !errors.Is(err, ErrInvalidSDBlob)
+			return !errors.Is(err, stream.ErrInvalidSDBlob)
 		}),
 		retry.LastErrorOnly(true),
 	}
@@ -138,14 +139,14 @@ func TestIsRetryableError(t *testing.T) {
 	}{
 		{"nil error", nil, false},
 		{"context cancelled", ErrContextCancelled, false},
-		{"invalid SD blob", ErrInvalidSDBlob, false},
+		{"invalid SD blob", stream.ErrInvalidSDBlob, false},
 		{"stream corrupted", ErrStreamCorrupted, false},
 		{"invalid hash", ErrInvalidHash, false},
 		{"decryption failed", ErrDecryptionFailed, false},
 		{"network error", errors.New("network timeout"), true},
 		{"temporary error", errors.New("temporary failure"), true},
 		{"wrapped retryable error", NewStreamError("test", "sdhash", "blobhash", errors.New("network error"), 1), true},
-		{"wrapped non-retryable error", NewStreamError("test", "sdhash", "blobhash", ErrInvalidSDBlob, 1), true}, // StreamError itself is retryable
+		{"wrapped non-retryable error", NewStreamError("test", "sdhash", "blobhash", stream.ErrInvalidSDBlob, 1), false}, // Should not retry non-retryable wrapped error
 	}
 
 	for _, tc := range testCases {

@@ -803,11 +803,11 @@ func TestStreamAcquirerFactory(t *testing.T) {
 
 	factory := NewStreamAcquirerFactory(zaptest.NewLogger(t))
 
-	// Test default acquirer creation
-	acquirer1 := factory.CreateDefaultStreamAcquirer(acquirer, store)
+	// Test acquirer creation
+	acquirer1 := factory.CreateStreamAcquirer(acquirer, store)
 	assert.NotNil(t, acquirer1)
 
-	// Test custom acquirer creation
+	// Test another acquirer creation
 	acquirer2 := factory.CreateStreamAcquirer(acquirer, store)
 	assert.NotNil(t, acquirer2)
 }
@@ -1129,7 +1129,7 @@ func TestStreamAcquirer_WithRetryBehavior(t *testing.T) {
 		retry.Attempts(3),
 		retry.Delay(10 * time.Millisecond),
 		retry.RetryIf(func(err error) bool {
-			return !errors.Is(err, ErrInvalidSDBlob)
+			return !errors.Is(err, stream.ErrInvalidSDBlob)
 		}),
 	}
 
@@ -1368,6 +1368,7 @@ func createVerifiedTestSetup(t *testing.T, contentSize int) *testSetup {
 	acquirer.EXPECT().Acquire(ctx, blobHashHex).Return(encryptedContent, nil)
 	store.EXPECT().Has(blobHashHex).Return(false, nil)
 	store.EXPECT().Put(blobHashHex, encryptedContent).Return(nil).Maybe() // May be called multiple times (main + prefetcher)
+	store.EXPECT().Name().Return("mock-store").Maybe()
 
 	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 

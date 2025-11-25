@@ -9,7 +9,6 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/avast/retry-go/v4"
 	liblbry "go.lumeweb.com/liblbry"
@@ -106,9 +105,6 @@ type StreamConfig struct {
 	// PrefetchEnabled enables prefetching next blob while reading current one
 	PrefetchEnabled bool
 
-	// MaxConcurrency determines maximum concurrent blob downloads
-	MaxConcurrency int
-
 	// VerificationEnabled enables hash verification of SD blobs and content blobs during streaming
 	VerificationEnabled bool
 }
@@ -125,10 +121,10 @@ type StreamChunk struct {
 // DefaultStreamConfig returns a default configuration for stream acquisition
 func DefaultStreamConfig() *StreamConfig {
 	return &StreamConfig{
-		Recursive:           false,
-		CacheSize:           3, // Keep current + next + previous blobs in memory
-		PrefetchEnabled:     true,
-		MaxConcurrency:      2,
+		Recursive:       false,
+		CacheSize:       3, // Keep current + next + previous blobs in memory
+		PrefetchEnabled: true,
+
 		VerificationEnabled: true, // Enable hash verification by default
 	}
 }
@@ -168,13 +164,6 @@ func WithStreamCacheSize(size int) StreamOption {
 func WithStreamPrefetch(enabled bool) StreamOption {
 	return func(config *StreamConfig) {
 		config.PrefetchEnabled = enabled
-	}
-}
-
-// WithStreamMaxConcurrency sets maximum concurrent downloads
-func WithStreamMaxConcurrency(max int) StreamOption {
-	return func(config *StreamConfig) {
-		config.MaxConcurrency = max
 	}
 }
 
@@ -386,7 +375,7 @@ func (r *streamingReader) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	r.readMutex.RLock()
+	r.readMutex.Lock()
 	// Calculate how much we can read from current blob
 	remainingInBlob := int64(len(r.currentData)) - r.blobOffset
 	remainingInStream := r.totalSize - r.currentPos
@@ -409,7 +398,7 @@ func (r *streamingReader) Read(p []byte) (int, error) {
 
 	// Check if we need to move to next blob
 	needNextBlob := r.blobOffset >= int64(len(r.currentData))
-	r.readMutex.RUnlock()
+	r.readMutex.Unlock()
 
 	// Report progress (outside lock to avoid holding it during callback)
 	if r.progressCallback != nil {
@@ -582,10 +571,16 @@ func (r *streamingReader) SDBlob() *stream.SDBlob {
 
 // Progress returns current read progress (0.0 to 1.0)
 func (r *streamingReader) Progress() float64 {
-	if r.totalSize == 0 {
+	if r.sdBlob == nil || len(r.sdBlob.BlobInfos) == 0 {
 		return 1.0
 	}
-	return float64(atomic.LoadInt64(&r.bytesRead)) / float64(r.totalSize)
+
+	// Calculate progress based on completed blob indices for accuracy
+	// since bytesRead tracks decrypted bytes while totalSize is encrypted bytes
+	r.readMutex.RLock()
+	currentBlob := r.currentBlob
+	r.readMutex.RUnlock()
+	return float64(currentBlob) / float64(len(r.sdBlob.BlobInfos))
 }
 
 // Close implements io.Closer
@@ -791,10 +786,6 @@ func (r *streamingReader) ensureCurrentBlob() error {
 	if r.store != nil {
 		go func() {
 			// Non-blocking storage to avoid slowing down reads
-			_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			// TODO: Pass context to Put when BlobStore interface supports it
 			if err := r.store.Put(blobHash, data); err != nil {
 				// Log error but don't fail the operation
 				r.logger.Error("failed to store blob in storage",
@@ -1098,9 +1089,6 @@ func NewStreamAcquirer(blobAcquirer liblbry.BlobAcquirer, store storage.BlobStor
 type StreamAcquirerFactory interface {
 	// CreateStreamAcquirer creates a new StreamAcquirer with the given dependencies
 	CreateStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) StreamAcquirer
-
-	// CreateDefaultStreamAcquirer creates a StreamAcquirer with default configuration
-	CreateDefaultStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) StreamAcquirer
 }
 
 // DefaultStreamAcquirerFactory implements StreamAcquirerFactory
@@ -1120,11 +1108,6 @@ func NewStreamAcquirerFactory(logger *zap.Logger) StreamAcquirerFactory {
 
 // CreateStreamAcquirer creates a new StreamAcquirer with the given dependencies and options
 func (f *DefaultStreamAcquirerFactory) CreateStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) StreamAcquirer {
-	return NewStreamAcquirer(acquirer, store, f.logger)
-}
-
-// CreateDefaultStreamAcquirer creates a StreamAcquirer with default configuration
-func (f *DefaultStreamAcquirerFactory) CreateDefaultStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) StreamAcquirer {
 	return NewStreamAcquirer(acquirer, store, f.logger)
 }
 
@@ -1241,6 +1224,13 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 		zap.Int("dataSize", len(sdBlobData)),
 	)
 
+	// Verify SD blob hash if verification is enabled (before parsing for fail-fast)
+	if config.VerificationEnabled {
+		if err := verifyBlobHash(sdBlobData, sdHash); err != nil {
+			return nil, fmt.Errorf("SD blob hash verification failed for %s: %w", sdHash, err)
+		}
+	}
+
 	// Validate SD blob data
 	if err := stream.ValidateSDBlob(sdBlobData); err != nil {
 		return nil, fmt.Errorf("invalid SD blob %s: %w", sdHash, err)
@@ -1269,13 +1259,6 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 		zap.String("streamHash", hex.EncodeToString(sdBlob.StreamHash)),
 		zap.Int("blobCount", len(sdBlob.BlobInfos)),
 	)
-
-	// Verify SD blob hash if verification is enabled
-	if config.VerificationEnabled {
-		if err := verifyBlobHash(sdBlobData, sdHash); err != nil {
-			return nil, fmt.Errorf("SD blob hash verification failed for %s: %w", sdHash, err)
-		}
-	}
 
 	// Create streaming reader directly
 	reader, err := newStreamReader(ctx, sdHash, &sdBlob, sa.blobAcquirer, sa.store, sa.logger, streamOpts...)
@@ -1436,12 +1419,32 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 		zap.Bool("verificationEnabled", config.VerificationEnabled),
 	)
 
-	// First acquire the SD blob
+	// First acquire the SD blob with retry
 	sa.logger.Info("Acquiring SD blob for stream result",
 		zap.String("sdHash", sdHash),
 	)
 
-	sdBlobData, err := sa.blobAcquirer.Acquire(ctx, sdHash)
+	var sdBlobData []byte
+	var attemptCount int
+	retryOptions := append(DefaultRetryOptions(),
+		retry.OnRetry(func(n uint, err error) {
+			attemptCount = int(n) + 1 // n is 0-based, so add 1 for human-readable attempt number
+			sa.logger.Debug("Retrying SD blob acquisition",
+				zap.String("sdHash", sdHash),
+				zap.Int("attempt", attemptCount),
+				zap.Error(err),
+			)
+		}),
+	)
+	err := WithRetry(retryOptions, func() error {
+		acquiredData, acquireErr := sa.blobAcquirer.Acquire(ctx, sdHash)
+		if acquireErr != nil {
+			attemptCount++ // Increment for the current attempt
+			return NewStreamError(OperationAcquireSDBlob, sdHash, "", acquireErr, attemptCount)
+		}
+		sdBlobData = acquiredData
+		return nil
+	})
 	if err != nil {
 		sa.logger.Error("Failed to acquire SD blob for stream result",
 			zap.String("sdHash", sdHash),
@@ -1504,12 +1507,10 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 	contentHashes := make([]string, 0, len(sdBlob.BlobInfos))
 	chunkSizes := make([]int, 0, len(sdBlob.BlobInfos))
 
-	if config.Recursive {
-		sa.logger.Info("Fetching content blobs recursively",
-			zap.String("sdHash", sdHash),
-			zap.Int("totalBlobs", len(sdBlob.BlobInfos)),
-		)
-	}
+	sa.logger.Info("Fetching content blobs recursively",
+		zap.String("sdHash", sdHash),
+		zap.Int("totalBlobs", len(sdBlob.BlobInfos)),
+	)
 
 	// Get all content blobs (excluding the terminating null blob)
 	for i, blobInfo := range sdBlob.BlobInfos {
@@ -1574,7 +1575,15 @@ func (sa *DefaultStreamAcquirer) GetSDBlob(ctx context.Context, sdHash string) (
 		zap.String("sdHash", sdHash),
 	)
 
-	sdBlobData, err := sa.blobAcquirer.Acquire(ctx, sdHash)
+	var sdBlobData []byte
+	err := WithRetry(DefaultRetryOptions(), func() error {
+		acquiredData, acquireErr := sa.blobAcquirer.Acquire(ctx, sdHash)
+		if acquireErr != nil {
+			return NewStreamError(OperationAcquireSDBlob, sdHash, "", acquireErr, 1)
+		}
+		sdBlobData = acquiredData
+		return nil
+	})
 	if err != nil {
 		sa.logger.Error("Failed to acquire SD blob metadata",
 			zap.String("sdHash", sdHash),
