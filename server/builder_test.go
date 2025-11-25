@@ -1224,3 +1224,93 @@ func TestServerBuilder_ChainedMethodsWithDefaultAcquirer(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, server)
 }
+
+// TestServerBuilder_WithReflectorStore tests that a custom store can be passed to the reflector
+func TestServerBuilder_WithReflectorStore(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Create a custom store for the reflector
+	customStore := storageMocks.NewMockBlobStore(t)
+
+	server, err := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithAccessControl(testMocks.accessControl).
+		WithReflector(lbryTesting.GetFreePort(t)).
+		WithReflectorStore(customStore).
+		WithLogger(testMocks.logger).
+		Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server was built with the custom store
+	defaultServer := server.(*DefaultServer)
+	require.NotNil(t, defaultServer.config)
+
+	reflectorConfig, exists := defaultServer.config[ProtocolReflector]
+	require.True(t, exists, "Reflector config should exist")
+
+	config, ok := reflectorConfig.(*ReflectorConfig)
+	require.True(t, ok, "Reflector config should be of correct type")
+	require.Equal(t, customStore, config.Store, "Reflector should use custom store")
+}
+
+// TestServerBuilder_WithReflectorDefaultStore tests that the default store is used when no custom store is provided
+func TestServerBuilder_WithReflectorDefaultStore(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	server, err := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithAccessControl(testMocks.accessControl).
+		WithReflector(lbryTesting.GetFreePort(t)).
+		WithLogger(testMocks.logger).
+		Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server)
+
+	// Verify the server was built with default store (nil in config)
+	defaultServer := server.(*DefaultServer)
+	require.NotNil(t, defaultServer.config)
+
+	reflectorConfig, exists := defaultServer.config[ProtocolReflector]
+	require.True(t, exists, "Reflector config should exist")
+
+	config, ok := reflectorConfig.(*ReflectorConfig)
+	require.True(t, ok, "Reflector config should be of correct type")
+	require.Nil(t, config.Store, "Reflector should use default store when no custom store provided")
+}
+
+// TestServerBuilder_WithReflectorStoreOrder tests that WithReflectorStore works regardless of call order
+func TestServerBuilder_WithReflectorStoreOrder(t *testing.T) {
+	testMocks := setupBuilderMocks(t)
+
+	// Create a custom store for the reflector
+	customStore := storageMocks.NewMockBlobStore(t)
+
+	// Test WithReflectorStore called before WithReflector
+	server1, err := NewServerBuilder().
+		WithStorage(testMocks.storage).
+		WithDefaultAcquirer().
+		WithAccessControl(testMocks.accessControl).
+		WithReflectorStore(customStore).
+		WithReflector(lbryTesting.GetFreePort(t)).
+		WithLogger(testMocks.logger).
+		Build()
+
+	require.NoError(t, err)
+	assert.NotNil(t, server1)
+
+	// Verify the server was built with the custom store
+	defaultServer1 := server1.(*DefaultServer)
+	require.NotNil(t, defaultServer1.config)
+
+	reflectorConfig1, exists := defaultServer1.config[ProtocolReflector]
+	require.True(t, exists, "Reflector config should exist")
+
+	config1, ok := reflectorConfig1.(*ReflectorConfig)
+	require.True(t, ok, "Reflector config should be of correct type")
+	require.Equal(t, customStore, config1.Store, "Reflector should use custom store")
+}
