@@ -1,8 +1,10 @@
 package testing
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"testing"
 
 	"github.com/gammazero/workerpool"
 	"github.com/stretchr/testify/assert"
@@ -23,11 +25,11 @@ import (
 // Storage implementations should satisfy this interface to work with the test helpers.
 type StoreOperations interface {
 	// Has checks if a blob exists in the store
-	Has(hash string) (bool, error)
+	Has(ctx context.Context, hash string) (bool, error)
 	// Get retrieves a blob from the store
-	Get(hash string) ([]byte, error)
+	Get(ctx context.Context, hash string) ([]byte, error)
 	// Put stores a blob in the store
-	Put(hash string, data []byte) error
+	Put(ctx context.Context, hash string, data []byte) error
 }
 
 // RunConcurrentTasks executes multiple tasks concurrently using a worker pool and
@@ -48,7 +50,7 @@ type StoreOperations interface {
 //	    }
 //	}
 //	RunConcurrentTasks(t, 5, tasks)
-func RunConcurrentTasks(t assert.TestingT, maxWorkers int, tasks []func() error) {
+func RunConcurrentTasks(t testing.TB, maxWorkers int, tasks []func() error) {
 	if maxWorkers <= 0 {
 		maxWorkers = 1
 	}
@@ -94,11 +96,11 @@ func RunConcurrentTasks(t assert.TestingT, maxWorkers int, tasks []func() error)
 //	store := NewMemoryStore()
 //	store.Put("testhash", []byte("data"))
 //	TestConcurrentHas(t, store, "testhash", true, 100, 10)
-func TestConcurrentHas(t assert.TestingT, store StoreOperations, hash string, expectedExists bool, tasks int, maxWorkers int) {
+func TestConcurrentHas(t testing.TB, store StoreOperations, hash string, expectedExists bool, tasks int, maxWorkers int) {
 	concurrentTasks := make([]func() error, tasks)
 	for i := 0; i < tasks; i++ {
 		concurrentTasks[i] = func() error {
-			exists, err := store.Has(hash)
+			exists, err := store.Has(t.Context(), hash)
 			if err != nil {
 				return fmt.Errorf("Has error: %v", err)
 			}
@@ -131,11 +133,11 @@ func TestConcurrentHas(t assert.TestingT, store StoreOperations, hash string, ex
 //	store := NewMemoryStore()
 //	store.Put("testhash", []byte("data"))
 //	TestConcurrentGet(t, store, "testhash", []byte("data"), 100, 10)
-func TestConcurrentGet(t assert.TestingT, store StoreOperations, hash string, expectedData []byte, tasks int, maxWorkers int) {
+func TestConcurrentGet(t testing.TB, store StoreOperations, hash string, expectedData []byte, tasks int, maxWorkers int) {
 	concurrentTasks := make([]func() error, tasks)
 	for i := 0; i < tasks; i++ {
 		concurrentTasks[i] = func() error {
-			data, err := store.Get(hash)
+			data, err := store.Get(t.Context(), hash)
 			if err != nil {
 				return fmt.Errorf("Get error: %v", err)
 			}
@@ -170,7 +172,7 @@ func TestConcurrentGet(t assert.TestingT, store StoreOperations, hash string, ex
 //	hashGen := func(i int) string { return fmt.Sprintf("hash%d", i) }
 //	dataGen := func(i int) []byte { return []byte(fmt.Sprintf("data%d", i)) }
 //	TestConcurrentPut(t, store, hashGen, dataGen, 100, 10)
-func TestConcurrentPut(t assert.TestingT, store StoreOperations, hashGen func(int) string, dataGen func(int) []byte, tasks int, maxWorkers int) {
+func TestConcurrentPut(t testing.TB, store StoreOperations, hashGen func(int) string, dataGen func(int) []byte, tasks int, maxWorkers int) {
 	concurrentTasks := make([]func() error, tasks)
 	for i := 0; i < tasks; i++ {
 		id := i // Capture loop variable
@@ -178,11 +180,11 @@ func TestConcurrentPut(t assert.TestingT, store StoreOperations, hashGen func(in
 			hash := hashGen(id)
 			data := dataGen(id)
 
-			if err := store.Put(hash, data); err != nil {
+			if err := store.Put(t.Context(), hash, data); err != nil {
 				return fmt.Errorf("Put error: %v", err)
 			}
 
-			storedData, err := store.Get(hash)
+			storedData, err := store.Get(t.Context(), hash)
 			if err != nil {
 				return fmt.Errorf("Get after Put error: %v", err)
 			}
@@ -206,12 +208,12 @@ func TestConcurrentPut(t assert.TestingT, store StoreOperations, hashGen func(in
 //   - expectedExists: Expected result of Has operation
 //   - tasks: Number of concurrent Has operations to perform
 //   - maxWorkers: Maximum number of concurrent workers
-func TestConcurrentHasMultiple(t assert.TestingT, storeFactory func() StoreOperations, hash string, expectedExists bool, tasks int, maxWorkers int) {
+func TestConcurrentHasMultiple(t testing.TB, storeFactory func() StoreOperations, hash string, expectedExists bool, tasks int, maxWorkers int) {
 	concurrentTasks := make([]func() error, tasks)
 	for i := 0; i < tasks; i++ {
 		concurrentTasks[i] = func() error {
 			store := storeFactory()
-			exists, err := store.Has(hash)
+			exists, err := store.Has(t.Context(), hash)
 			if err != nil {
 				return fmt.Errorf("Has error: %v", err)
 			}
@@ -253,7 +255,7 @@ func TestConcurrentHasMultiple(t assert.TestingT, storeFactory func() StoreOpera
 //	dataGen := func(i int) []byte { return []byte(fmt.Sprintf("data%d", i)) }
 //	TestConcurrentAccess(t, store, "testhash", []byte("data"), hashGen, dataGen, 100, 10)
 func TestConcurrentAccess(
-	t assert.TestingT,
+	t testing.TB,
 	store StoreOperations,
 	hash string,
 	expectedData []byte,
@@ -263,7 +265,7 @@ func TestConcurrentAccess(
 	maxWorkers int,
 ) {
 	// Put initial data
-	err := store.Put(hash, expectedData)
+	err := store.Put(t.Context(), hash, expectedData)
 	assert.NoError(t, err)
 
 	// Test concurrent operations

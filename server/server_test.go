@@ -176,7 +176,7 @@ func TestDefaultServer_Start_WithDHT(t *testing.T) {
 
 	// Setup mock expectations for List method (called during DHT blob announcement)
 	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
 	// Create a mock DHT node
 	mockDHTNode := protocolMocks.NewMockDHTNode(t)
@@ -208,7 +208,7 @@ func TestDefaultServer_Start_AllProtocols(t *testing.T) {
 
 	// Setup mock expectations for List method (called during DHT blob announcement)
 	// When storage is empty, List(0, batchSize) returns empty slice and loop breaks
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
 	// Create a mock DHT node
 	mockDHTNode := protocolMocks.NewMockDHTNode(t)
@@ -570,10 +570,10 @@ func TestDefaultServer_AddBlob_Success(t *testing.T) {
 	blobData := []byte(TestBlobData)
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+	testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(nil)
 
 	// Test successful blob addition
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.NoError(t, err)
 }
 
@@ -588,7 +588,7 @@ func TestDefaultServer_AddBlob_EmptyHash(t *testing.T) {
 	blobData := []byte(TestBlobData)
 
 	// Test with empty hash
-	err := server.AddBlob("", blobData)
+	err := server.AddBlob(t.Context(), "", blobData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 }
@@ -604,7 +604,7 @@ func TestDefaultServer_AddBlob_EmptyData(t *testing.T) {
 	blobHash := TestBlobHash
 
 	// Test with empty data
-	err := server.AddBlob(blobHash, []byte{})
+	err := server.AddBlob(t.Context(), blobHash, []byte{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "blob data cannot be empty")
 }
@@ -622,10 +622,10 @@ func TestDefaultServer_AddBlob_StorageFailure(t *testing.T) {
 	storageError := errors.New("storage error")
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(storageError)
+	testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(storageError)
 
 	// Test storage failure
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to store blob")
 	assert.Contains(t, err.Error(), blobHash)
@@ -645,11 +645,11 @@ func TestDefaultServer_AddBlob_WithNotifier(t *testing.T) {
 	blobData := []byte(TestBlobData)
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+	testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(nil)
 	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_ADDED, TestNotificationHash).Return(nil)
 
 	// Test blob addition with notification
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.NoError(t, err)
 }
 
@@ -672,7 +672,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 			hash: TestBlobHash,
 			data: []byte(TestBlobData),
 			setupMocks: func(m *testMocks, s *DefaultServer) {
-				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(nil)
+				m.storage.EXPECT().PutSD(mock.Anything, TestBlobHash, []byte(TestBlobData)).Return(nil)
 			},
 			expectErr:   false,
 			description: "Successfully stores SD blob",
@@ -705,7 +705,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 			data: []byte(TestBlobData),
 			setupMocks: func(m *testMocks, s *DefaultServer) {
 				storageError := errors.New("storage error")
-				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(storageError)
+				m.storage.EXPECT().PutSD(mock.Anything, TestBlobHash, []byte(TestBlobData)).Return(storageError)
 			},
 			expectErr:      true,
 			expectedErrMsg: "failed to store SD blob",
@@ -718,7 +718,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 			setupMocks: func(m *testMocks, s *DefaultServer) {
 				mockNotifier := protocolMocks.NewMockNotifier(t)
 				s.notifier = mockNotifier
-				m.storage.EXPECT().PutSD(TestBlobHash, []byte(TestBlobData)).Return(nil)
+				m.storage.EXPECT().PutSD(mock.Anything, TestBlobHash, []byte(TestBlobData)).Return(nil)
 				mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_ADDED, TestNotificationHash).Return(nil)
 			},
 			expectErr:   false,
@@ -737,7 +737,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 			// Setup test-specific mocks
 			tc.setupMocks(testMocks, server)
 
-			err := server.AddSDBlob(tc.hash, tc.data)
+			err := server.AddSDBlob(t.Context(), tc.hash, tc.data)
 
 			if tc.expectErr {
 				assert.Error(t, err)
@@ -762,11 +762,11 @@ func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
 	numGoroutines := 10
 
 	// Pre-register mock expectations to avoid concurrent registration fragility
-	testMocks.storage.EXPECT().PutSD(blobHash, blobData).Times(numGoroutines).Return(nil)
+	testMocks.storage.EXPECT().PutSD(mock.Anything, blobHash, blobData).Times(numGoroutines).Return(nil)
 
 	// Test concurrent AddSDBlob operations using helper
 	runConcurrentTest(t, numGoroutines, func(index int) error {
-		return server.AddSDBlob(blobHash, blobData)
+		return server.AddSDBlob(t.Context(), blobHash, blobData)
 	})
 }
 
@@ -781,10 +781,10 @@ func TestDefaultServer_RemoveBlob_Success(t *testing.T) {
 	blobHash := TestBlobHash
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+	testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(nil)
 
 	// Test successful blob removal
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.NoError(t, err)
 }
 
@@ -797,7 +797,7 @@ func TestDefaultServer_RemoveBlob_EmptyHash(t *testing.T) {
 	server := setupServer(t, testMocks, map[string]any{})
 
 	// Test with empty hash
-	err := server.RemoveBlob("")
+	err := server.RemoveBlob(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 }
@@ -814,10 +814,10 @@ func TestDefaultServer_RemoveBlob_StorageFailure(t *testing.T) {
 	storageError := errors.New("storage error")
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Delete(blobHash).Return(storageError)
+	testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(storageError)
 
 	// Test storage failure
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete blob")
 	assert.Contains(t, err.Error(), blobHash)
@@ -836,11 +836,11 @@ func TestDefaultServer_RemoveBlob_WithNotifier(t *testing.T) {
 	blobHash := TestBlobHash
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+	testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(nil)
 	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_REMOVED, TestNotificationHash).Return(nil)
 
 	// Test blob removal with notification
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.NoError(t, err)
 }
 
@@ -867,14 +867,14 @@ func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		blobHash := generateTestBlobHash(i)
 		blobData := generateSimpleTestBlobData(i)
-		testMocks.storage.EXPECT().Put(blobHash, blobData).Return(nil)
+		testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(nil)
 	}
 
 	// Test concurrent AddBlob operations using helper
 	runConcurrentTest(t, numGoroutines, func(index int) error {
 		blobHash := generateTestBlobHash(index)
 		blobData := generateSimpleTestBlobData(index)
-		return server.AddBlob(blobHash, blobData)
+		return server.AddBlob(t.Context(), blobHash, blobData)
 	})
 }
 
@@ -891,13 +891,13 @@ func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
 	// Pre-register mock expectations for all goroutines
 	for i := 0; i < numGoroutines; i++ {
 		blobHash := generateTestBlobHash(i)
-		testMocks.storage.EXPECT().Delete(blobHash).Return(nil)
+		testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(nil)
 	}
 
 	// Test concurrent RemoveBlob operations using helper
 	runConcurrentTest(t, numGoroutines, func(index int) error {
 		blobHash := generateTestBlobHash(index)
-		return server.RemoveBlob(blobHash)
+		return server.RemoveBlob(t.Context(), blobHash)
 	})
 }
 
@@ -915,26 +915,26 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 	for i := 0; i < numOperations; i++ {
 		addBlobHash := generateNamedTestBlobHash("add_hash", i)
 		addBlobData := generateTestBlobData("add data", i)
-		testMocks.storage.EXPECT().Put(addBlobHash, addBlobData).Return(nil)
+		testMocks.storage.EXPECT().Put(mock.Anything, addBlobHash, addBlobData).Return(nil)
 	}
 
 	// Pre-register mock expectations for all remove operations
 	for i := 0; i < numOperations; i++ {
 		removeBlobHash := generateNamedTestBlobHash("remove_hash", i)
-		testMocks.storage.EXPECT().Delete(removeBlobHash).Return(nil)
+		testMocks.storage.EXPECT().Delete(mock.Anything, removeBlobHash).Return(nil)
 	}
 
 	// Test concurrent Add operations using helper
 	runConcurrentTest(t, numOperations, func(index int) error {
 		blobHash := generateNamedTestBlobHash("add_hash", index)
 		blobData := generateTestBlobData("add data", index)
-		return server.AddBlob(blobHash, blobData)
+		return server.AddBlob(t.Context(), blobHash, blobData)
 	})
 
 	// Test concurrent Remove operations using helper
 	runConcurrentTest(t, numOperations, func(index int) error {
 		blobHash := generateNamedTestBlobHash("remove_hash", index)
-		return server.RemoveBlob(blobHash)
+		return server.RemoveBlob(t.Context(), blobHash)
 	})
 }
 
@@ -961,8 +961,8 @@ func TestDefaultServer_announceBlobsToDHT_UsesLBRYHash(t *testing.T) {
 
 	// Set up mock expectations for storage List calls
 	// Note: offset increments by batchSize, not by actual number of blobs processed
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return(testBlobHashes, nil)
-	testMocks.storage.EXPECT().List(DefaultDHTAnnouncementBatchSize, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return(testBlobHashes, nil)
+	testMocks.storage.EXPECT().List(mock.Anything, DefaultDHTAnnouncementBatchSize, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil)
 
 	// Set up mock expectations for DHT announcer - expect LBRY hashes, not multihashes
 	for _, hash := range testBlobHashes {
@@ -1176,13 +1176,13 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	// First, acquire the SD blob
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, sdBlobHash).Return(sdBlobData, nil)
 	// Check if content blob exists in storage - it doesn't
-	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
+	testMocks.storage.EXPECT().Has(mock.Anything, contentBlobHash).Return(false, nil)
 	// Mock the store Name() method call
 	testMocks.storage.EXPECT().Name().Return("mock-store")
 	// Then, acquire the content blob - use Anything for context to be more flexible
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
 	// Store the acquired content blob
-	testMocks.storage.EXPECT().Put(contentBlobHash, contentBlobData).Return(nil)
+	testMocks.storage.EXPECT().Put(mock.Anything, contentBlobHash, contentBlobData).Return(nil)
 
 	// Test successful recursive SD blob acquisition
 	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
@@ -1309,9 +1309,9 @@ func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
 	// Setup mock expectations - SD blob acquisition, then storage hit for content blob
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
 	// Content blob exists in storage
-	testMocks.storage.EXPECT().Has(contentBlobHash).Return(true, nil)
+	testMocks.storage.EXPECT().Has(mock.Anything, contentBlobHash).Return(true, nil)
 	// Retrieve from storage (acquirer should NOT be called for content blob)
-	testMocks.storage.EXPECT().Get(contentBlobHash).Return(contentBlobData, nil)
+	testMocks.storage.EXPECT().Get(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
 
 	// Test successful recursive SD blob acquisition with storage hit
 	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
@@ -1363,7 +1363,7 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 	// Setup mock expectations - SD blob acquisition succeeds, but content blob acquisition fails
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
 	// Content blob doesn't exist in storage
-	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
+	testMocks.storage.EXPECT().Has(mock.Anything, contentBlobHash).Return(false, nil)
 	// Content blob acquisition fails
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(nil, acquirerError)
 
@@ -1388,10 +1388,10 @@ func TestDefaultServer_GetBlob_Success(t *testing.T) {
 	expectedData := []byte(TestBlobData)
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Get(blobHash).Return(expectedData, nil)
+	testMocks.storage.EXPECT().Get(mock.Anything, blobHash).Return(expectedData, nil)
 
 	// Test successful blob retrieval
-	result, err := server.GetBlob(blobHash)
+	result, err := server.GetBlob(t.Context(), blobHash)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedData, result)
 }
@@ -1405,7 +1405,7 @@ func TestDefaultServer_GetBlob_EmptyHash(t *testing.T) {
 	server := setupServer(t, testMocks, map[string]any{})
 
 	// Test with empty hash
-	result, err := server.GetBlob("")
+	result, err := server.GetBlob(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 	assert.Nil(t, result)
@@ -1423,10 +1423,10 @@ func TestDefaultServer_GetBlob_StorageFailure(t *testing.T) {
 	storageError := errors.New("storage error")
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Get(blobHash).Return(nil, storageError)
+	testMocks.storage.EXPECT().Get(mock.Anything, blobHash).Return(nil, storageError)
 
 	// Test storage failure
-	result, err := server.GetBlob(blobHash)
+	result, err := server.GetBlob(t.Context(), blobHash)
 	assert.Error(t, err)
 	assert.Equal(t, storageError, err)
 	assert.Nil(t, result)
@@ -1444,10 +1444,10 @@ func TestDefaultServer_GetSDBlob_Success(t *testing.T) {
 	expectedData := []byte(TestBlobData)
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Get(sdBlobHash).Return(expectedData, nil)
+	testMocks.storage.EXPECT().Get(mock.Anything, sdBlobHash).Return(expectedData, nil)
 
 	// Test successful SD blob retrieval
-	result, err := server.GetSDBlob(sdBlobHash)
+	result, err := server.GetSDBlob(t.Context(), sdBlobHash)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedData, result)
 }
@@ -1461,7 +1461,7 @@ func TestDefaultServer_GetSDBlob_EmptyHash(t *testing.T) {
 	server := setupServer(t, testMocks, map[string]any{})
 
 	// Test with empty hash
-	result, err := server.GetSDBlob("")
+	result, err := server.GetSDBlob(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 	assert.Nil(t, result)
@@ -1479,10 +1479,10 @@ func TestDefaultServer_GetSDBlob_StorageFailure(t *testing.T) {
 	storageError := errors.New("storage error")
 
 	// Setup mock expectations
-	testMocks.storage.EXPECT().Get(sdBlobHash).Return(nil, storageError)
+	testMocks.storage.EXPECT().Get(mock.Anything, sdBlobHash).Return(nil, storageError)
 
 	// Test storage failure
-	result, err := server.GetSDBlob(sdBlobHash)
+	result, err := server.GetSDBlob(t.Context(), sdBlobHash)
 	assert.Error(t, err)
 	assert.Equal(t, storageError, err)
 	assert.Nil(t, result)

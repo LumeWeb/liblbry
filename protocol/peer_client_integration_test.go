@@ -116,7 +116,7 @@ func setupPeerTestClient(t *testing.T, addr string, logger *zap.Logger, timeout 
 // createAndStoreTestBlob creates a blob and stores it in the memory store
 func createAndStoreTestBlob(t *testing.T, store *memory.MemoryStore, testData []byte) (blob.Blob, string) {
 	testBlob, blobHash, _, _ := createPeerTestBlob(t, testData)
-	err := store.Put(blobHash, testBlob)
+	err := store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 	return testBlob, blobHash
 }
@@ -187,7 +187,7 @@ func TestPeerBlobOperations(t *testing.T) {
 	retrievedData, err := client.GetBlob(ctx, blobHash)
 	require.NoError(t, err)
 	// Verify the retrieved data matches what we stored
-	storedData, err := store.Get(blobHash)
+	storedData, err := store.Get(t.Context(), blobHash)
 	require.NoError(t, err)
 	assert.Equal(t, storedData, retrievedData)
 
@@ -222,7 +222,7 @@ func TestPeerStreamOperations(t *testing.T) {
 
 	// Add the blobs to the server's store so it can serve them
 	for _, blobItem := range resultStream {
-		err = store.Put(blobItem.HashHex(), blobItem)
+		err = store.Put(t.Context(), blobItem.HashHex(), blobItem)
 		require.NoError(t, err)
 	}
 
@@ -587,7 +587,7 @@ func TestPeerEmptyBlobHandling(t *testing.T) {
 	testData := make([]byte, 1)
 	testData[0] = 0x00
 	testBlob, blobHash, key, iv := createPeerTestBlob(t, testData)
-	err := store.Put(blobHash, testBlob)
+	err := store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 
 	client := setupPeerTestClient(t, addr, logger)

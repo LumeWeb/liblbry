@@ -216,7 +216,7 @@ func TestReflectorClientConnectAndClose(t *testing.T) {
 	// Add blob to store to test upload
 	testData := []byte("test blob data")
 	testBlob, blobHash, _, _ := createReflectorTestBlob(t, testData)
-	err := store.Put(blobHash, testBlob)
+	err := store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 }
 
@@ -237,7 +237,7 @@ func TestReflectorClientSendBlob_DuplicateHandling(t *testing.T) {
 	require.NoError(t, err)
 
 	// Store blob to test duplicate handling
-	err = store.Put(blobHash, testBlob)
+	err = store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 
 	// Second upload should return ErrBlobExists
@@ -282,7 +282,7 @@ func TestReflectorClientSendSDBlob_DuplicateHandling_StoreWithoutNeededBlobCheck
 	require.NoError(t, err)
 
 	// Store SD blob to test duplicate handling
-	err = sdStore.Put(sdBlobHash, sdTestBlob)
+	err = sdStore.Put(t.Context(), sdBlobHash, sdTestBlob)
 	require.NoError(t, err)
 
 	// Second SD blob upload should succeed (not return error) because MemoryStore
@@ -401,7 +401,7 @@ func TestReflectorClientConcurrentClients(t *testing.T) {
 	// Create ONE blob that all clients will try to upload
 	testData := []byte("This is test blob data for concurrent access")
 	testBlob, blobHash, _, _ := createReflectorTestBlob(t, testData)
-	err := store.Put(blobHash, testBlob)
+	err := store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 
 	// Create tasks for concurrent execution
@@ -464,14 +464,14 @@ func TestReflectorClientLargeBlobHandling(t *testing.T) {
 	require.NoError(t, err)
 
 	// NOW put the blob in the store to test duplicate handling
-	err = store.Put(blobHash, largeBlob)
+	err = store.Put(t.Context(), blobHash, largeBlob)
 	require.NoError(t, err)
 
 	// Create a fresh client and server for testing duplicate upload
 	store2, logger2, _, addr2 := setupReflectorIntegrationTest(t)
 
 	// Put the same blob in the new store
-	err = store2.Put(blobHash, largeBlob)
+	err = store2.Put(t.Context(), blobHash, largeBlob)
 	require.NoError(t, err)
 
 	client2 := setupReflectorTestClient(t, addr2, logger2)
@@ -533,7 +533,7 @@ func TestReflectorClientNetworkFailureRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now put the blob in the store to test duplicate handling after recovery
-	err = store.Put(blobHash, testBlob)
+	err = store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 
 	// Simulate network failure by closing connection
@@ -592,7 +592,7 @@ func TestReflectorClientPartialBlobTransfer(t *testing.T) {
 	// Create test data
 	testData := []byte("This is a test blob for partial transfer")
 	testBlob, blobHash, _, _ := createReflectorTestBlob(t, testData)
-	err := store.Put(blobHash, testBlob)
+	err := store.Put(t.Context(), blobHash, testBlob)
 	require.NoError(t, err)
 
 	// Set up a custom dial function that returns our stall connection

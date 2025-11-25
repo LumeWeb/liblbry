@@ -63,11 +63,11 @@ const (
 // BlobManager defines the interface for blob management operations
 type BlobManager interface {
 	// AddBlob stores a blob and notifies about the addition
-	AddBlob(hash string, data []byte) error
+	AddBlob(ctx context.Context, hash string, data []byte) error
 	// AddSDBlob stores an SD blob and notifies about the addition
-	AddSDBlob(hash string, data []byte) error
+	AddSDBlob(ctx context.Context, hash string, data []byte) error
 	// RemoveBlob deletes a blob and notifies about the removal
-	RemoveBlob(hash string) error
+	RemoveBlob(ctx context.Context, hash string) error
 
 	// AcquireBlob retrieves a blob using available transfer methods
 	AcquireBlob(ctx context.Context, hash string) ([]byte, error)
@@ -75,9 +75,9 @@ type BlobManager interface {
 	AcquireSDBlob(ctx context.Context, hash string, opts ...AcquireSDOption) (*stream.StreamResult, error)
 
 	// GetBlob retrieves a blob directly from the underlying store
-	GetBlob(hash string) ([]byte, error)
+	GetBlob(ctx context.Context, hash string) ([]byte, error)
 	// GetSDBlob retrieves an SD blob directly from the underlying store
-	GetSDBlob(hash string) ([]byte, error)
+	GetSDBlob(ctx context.Context, hash string) ([]byte, error)
 }
 
 // AcquireSDConfig holds configuration for SD blob acquisition
@@ -493,7 +493,7 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 
 	for {
 		// Get a batch of blob hashes using pagination
-		blobHashes, err := s.storage.List(offset, batchSize)
+		blobHashes, err := s.storage.List(s.ctx, offset, batchSize)
 		if err != nil {
 			if liblbryerrors.IsEndOfListError(err) {
 				// Reached end of list, break the loop
@@ -569,14 +569,14 @@ func validateBlobInput(hash string, data []byte) error {
 }
 
 // AddBlob stores a blob and notifies about the addition
-func (s *DefaultServer) AddBlob(hash string, data []byte) error {
+func (s *DefaultServer) AddBlob(ctx context.Context, hash string, data []byte) error {
 	// Validate input
 	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
 	// Store the blob
-	err := s.storage.Put(hash, data)
+	err := s.storage.Put(ctx, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store blob",
 			zap.String("hash", hash),
@@ -593,14 +593,14 @@ func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 }
 
 // AddSDBlob stores an SD blob and notifies about the addition
-func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
+func (s *DefaultServer) AddSDBlob(ctx context.Context, hash string, data []byte) error {
 	// Validate input
 	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
 	// Store the SD blob
-	err := s.storage.PutSD(hash, data)
+	err := s.storage.PutSD(ctx, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store SD blob",
 			zap.String("hash", hash),
@@ -617,14 +617,14 @@ func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
 }
 
 // RemoveBlob deletes a blob and notifies about the removal
-func (s *DefaultServer) RemoveBlob(hash string) error {
+func (s *DefaultServer) RemoveBlob(ctx context.Context, hash string) error {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return err
 	}
 
 	// Delete the blob from storage
-	err := s.storage.Delete(hash)
+	err := s.storage.Delete(ctx, hash)
 	if err != nil {
 		s.logger.Error("Failed to delete blob",
 			zap.String("hash", hash),
@@ -772,23 +772,23 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 }
 
 // GetBlob retrieves a blob directly from the underlying store
-func (s *DefaultServer) GetBlob(hash string) ([]byte, error) {
+func (s *DefaultServer) GetBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return nil, err
 	}
 
-	return s.storage.Get(hash)
+	return s.storage.Get(ctx, hash)
 }
 
 // GetSDBlob retrieves an SD blob directly from the underlying store
-func (s *DefaultServer) GetSDBlob(hash string) ([]byte, error) {
+func (s *DefaultServer) GetSDBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return nil, err
 	}
 
-	return s.storage.Get(hash)
+	return s.storage.Get(ctx, hash)
 }
 
 // startTCPProtocol starts a generic TCP protocol handler

@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -72,19 +73,19 @@ func testInvalidHashes(t *testing.T, store *DiskStore) {
 		t.Run(fmt.Sprintf("InvalidHash_%d_%s", i, tc.desc), func(t *testing.T) {
 			hash := tc.hash
 			// Test Put with invalid hash
-			err := store.Put(hash, []byte("test"))
+			err := store.Put(t.Context(), hash, []byte("test"))
 			require.Error(t, err, "Expected error for invalid hash: %s", hash)
 
 			// Test PutSD with invalid hash
-			err = store.PutSD(hash, []byte("test"))
+			err = store.PutSD(t.Context(), hash, []byte("test"))
 			require.Error(t, err, "Expected error for invalid hash: %s", hash)
 
 			// Test Get with invalid hash
-			_, err = store.Get(hash)
+			_, err = store.Get(t.Context(), hash)
 			require.Error(t, err, "Expected error for invalid hash: %s", hash)
 
 			// Test Has with invalid hash - should return false, nil (not an error)
-			exists, err := store.Has(hash)
+			exists, err := store.Has(t.Context(), hash)
 			require.NoError(t, err, "Has should not return an error for invalid hash: %s", hash)
 			require.False(t, exists, "Has should return false for invalid hash: %s", hash)
 		})
@@ -109,11 +110,11 @@ func testPathTraversal(t *testing.T, store *DiskStore) {
 	for _, attempt := range traversalAttempts {
 		t.Run(attempt.name, func(t *testing.T) {
 			// Test Put with path traversal attempt
-			err := store.Put(attempt.hash, []byte("test"))
+			err := store.Put(t.Context(), attempt.hash, []byte("test"))
 			require.Error(t, err, "Expected error for path traversal attempt: %s", attempt.name)
 
 			// Test PutSD with path traversal attempt
-			err = store.PutSD(attempt.hash, []byte("test"))
+			err = store.PutSD(t.Context(), attempt.hash, []byte("test"))
 			require.Error(t, err, "Expected error for path traversal attempt: %s", attempt.name)
 		})
 	}
@@ -277,7 +278,7 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test Put
-			err := store.Put(tc.hash, tc.data)
+			err := store.Put(t.Context(), tc.hash, tc.data)
 			if tc.expectErr {
 				require.Error(t, err, "Expected error but got none")
 				return
@@ -285,7 +286,7 @@ func TestDiskStore_PutAndGet(t *testing.T) {
 			require.NoError(t, err, "Unexpected error")
 
 			// Test Get
-			retrievedData, err := store.Get(tc.hash)
+			retrievedData, err := store.Get(t.Context(), tc.hash)
 			require.NoError(t, err, "Get failed")
 
 			if string(retrievedData) != string(tc.data) {
@@ -333,7 +334,7 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test PutSD
-			err := store.PutSD(tc.hash, tc.data)
+			err := store.PutSD(t.Context(), tc.hash, tc.data)
 			if tc.expectErr {
 				require.Error(t, err, "Expected error but got none")
 				return
@@ -341,7 +342,7 @@ func TestDiskStore_PutSDAndGet(t *testing.T) {
 			require.NoError(t, err, "Unexpected error")
 
 			// Test Get for SD blob
-			retrievedData, err := store.Get(tc.hash)
+			retrievedData, err := store.Get(t.Context(), tc.hash)
 			require.NoError(t, err, "Get failed for SD blob")
 
 			if string(retrievedData) != string(tc.data) {
@@ -357,13 +358,13 @@ func TestDiskStore_Has(t *testing.T) {
 	// Put a test blob first
 	testHash := "beb16f4ce7f9a4da1fb83a45c057ea4c2929c82603b9e20dd74487bd7bbb130d2d681ffe6fe1458a6cba2066ef9ef07e"
 	testData := []byte("test data for Has method")
-	err := store.Put(testHash, testData)
+	err := store.Put(t.Context(), testHash, testData)
 	require.NoError(t, err, "Failed to put test blob")
 
 	// Put a test SD blob
 	testSDHash := "dfe481fab5bead9258379952fcc0cee2d729a7e4e8e3e2e03a955d3453dbc7bf3d028ceb6ea94517522ca7f8561b01c3"
 	testSDData := []byte("test sd data for Has method")
-	err = store.PutSD(testSDHash, testSDData)
+	err = store.PutSD(t.Context(), testSDHash, testSDData)
 	require.NoError(t, err, "Failed to put test SD blob")
 
 	testCases := []struct {
@@ -395,7 +396,7 @@ func TestDiskStore_Has(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			exists, err := store.Has(tc.hash)
+			exists, err := store.Has(t.Context(), tc.hash)
 			require.NoError(t, err, "Has method failed")
 
 			if exists != tc.expected {
@@ -424,7 +425,7 @@ func TestDiskStore_DirectoryStructure(t *testing.T) {
 	data := []byte("test data")
 
 	// Test regular blob directory structure
-	err := store.Put(regularHash, data)
+	err := store.Put(t.Context(), regularHash, data)
 	require.NoError(t, err, "Put failed")
 
 	expectedRegularPath := filepath.Join(store.path, regularHash[:2], regularHash)
@@ -433,7 +434,7 @@ func TestDiskStore_DirectoryStructure(t *testing.T) {
 	}
 
 	// Test SD blob directory structure
-	err = store.PutSD(sdHash, data)
+	err = store.PutSD(t.Context(), sdHash, data)
 	require.NoError(t, err, "PutSD failed")
 
 	expectedSDPath := filepath.Join(store.path, "sd", sdHash[:2], sdHash)
@@ -445,14 +446,14 @@ func TestDiskStore_DirectoryStructure(t *testing.T) {
 func TestDiskStore_GetNonExistentBlob(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	_, err := store.Get("6e58057919edc5f4830ae6520d965979d25126f6dd0508c3c08742d936131813fe2876b589aafda8a5bf38130e5665e5")
+	_, err := store.Get(t.Context(), "6e58057919edc5f4830ae6520d965979d25126f6dd0508c3c08742d936131813fe2876b589aafda8a5bf38130e5665e5")
 	require.Error(t, err, "Expected error when getting non-existent blob, but got none")
 }
 
 func TestDiskStore_HasNonExistentBlob(t *testing.T) {
 	store, _ := setupTestStore(t)
 
-	exists, err := store.Has("dae0fe98c8c3a773b6e68f1081350cbbc0fb6de799d13520148e1c6fe8dbc461cc6b6bbc1be51600cd71db5a50a91f1a")
+	exists, err := store.Has(t.Context(), "dae0fe98c8c3a773b6e68f1081350cbbc0fb6de799d13520148e1c6fe8dbc461cc6b6bbc1be51600cd71db5a50a91f1a")
 	require.NoError(t, err, "Has failed")
 
 	if exists {
@@ -474,6 +475,71 @@ func generateLargeData(size int) []byte {
 func TestDiskStore_Interface(t *testing.T) {
 	store, _ := setupTestStore(t)
 	var _ storage.BlobStore = store
+}
+
+// Test context cancellation support
+func TestDiskStore_ContextCancellation(t *testing.T) {
+	store, _ := setupTestStore(t)
+
+	// Test Has with cancelled context
+	t.Run("Has_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		_, err := store.Has(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	// Test Get with cancelled context
+	t.Run("Get_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		_, err := store.Get(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	// Test Put with cancelled context
+	t.Run("Put_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		err := store.Put(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data"))
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	// Test PutSD with cancelled context
+	t.Run("PutSD_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		err := store.PutSD(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data"))
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	// Test List with cancelled context
+	t.Run("List_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		_, err := store.List(ctx, 0, 10)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	// Test Delete with cancelled context
+	t.Run("Delete_CancelledContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		err := store.Delete(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
 }
 
 // Test that the StoreFactory interface is properly implemented
@@ -504,7 +570,7 @@ func TestDiskStore_SymlinkAttack(t *testing.T) {
 	defer os.RemoveAll(symlinkTarget)
 
 	// Test that Put properly rejects symlinks in directory path
-	err := store.Put(validHash, []byte("test data"))
+	err := store.Put(t.Context(), validHash, []byte("test data"))
 	require.Error(t, err, "Expected error when trying to write to path with symlink directory")
 
 	// Test symlink in SD blob path
@@ -528,7 +594,7 @@ func TestDiskStore_SymlinkAttack(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test that PutSD properly rejects symlinks in directory path
-	err = store.PutSD(sdValidHash, []byte("test data"))
+	err = store.PutSD(t.Context(), sdValidHash, []byte("test data"))
 	require.Error(t, err, "Expected error when trying to write to SD path with symlink directory")
 }
 
@@ -577,17 +643,17 @@ func TestDiskStore_List(t *testing.T) {
 	store, _ := setupTestStore(t)
 
 	// Test with empty store
-	hashes, err := store.List(0, 10)
+	hashes, err := store.List(t.Context(), 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, hashes)
 
 	for _, blob := range testBlobs {
-		err := store.Put(blob.hash, blob.data)
+		err := store.Put(t.Context(), blob.hash, blob.data)
 		require.NoError(t, err)
 	}
 
 	// Test listing all blobs
-	hashes, err = store.List(0, 10)
+	hashes, err = store.List(t.Context(), 0, 10)
 	require.NoError(t, err)
 	require.Len(t, hashes, 4)
 
@@ -604,29 +670,29 @@ func TestDiskStore_List(t *testing.T) {
 	}
 
 	// Test pagination - first page
-	hashes, err = store.List(0, 2)
+	hashes, err = store.List(t.Context(), 0, 2)
 	require.NoError(t, err)
 	require.Len(t, hashes, 2)
 
 	// Test pagination - second page
-	hashes, err = store.List(2, 2)
+	hashes, err = store.List(t.Context(), 2, 2)
 	require.NoError(t, err)
 	require.Len(t, hashes, 2)
 
 	// Test with offset beyond available data
-	hashes, err = store.List(10, 5)
+	hashes, err = store.List(t.Context(), 10, 5)
 	require.Error(t, err)
 	assert.True(t, liblbryerrors.IsEndOfListError(err))
 	assert.Nil(t, hashes)
 
 	// Test error conditions
-	_, err = store.List(-1, 5)
+	_, err = store.List(t.Context(), -1, 5)
 	require.Error(t, err)
 
-	_, err = store.List(0, 0)
+	_, err = store.List(t.Context(), 0, 0)
 	require.Error(t, err)
 
-	_, err = store.List(0, -5)
+	_, err = store.List(t.Context(), 0, -5)
 	require.Error(t, err)
 
 	// Test with SD blobs
@@ -639,18 +705,18 @@ func TestDiskStore_List(t *testing.T) {
 	}
 
 	for _, blob := range sdBlobs {
-		err := store.PutSD(blob.hash, blob.data)
+		err := store.PutSD(t.Context(), blob.hash, blob.data)
 		require.NoError(t, err)
 	}
 
 	// Test listing all blobs (regular + SD)
-	hashes, err = store.List(0, 20)
+	hashes, err = store.List(t.Context(), 0, 20)
 	require.NoError(t, err)
 	require.Len(t, hashes, 6) // 4 regular + 2 SD
 
 	// Test that we can retrieve all the blobs we listed
 	for _, hash := range hashes {
-		_, err := store.Get(hash)
+		_, err := store.Get(t.Context(), hash)
 		require.NoError(t, err, "Should be able to retrieve blob with hash %s", hash)
 	}
 
@@ -659,13 +725,13 @@ func TestDiskStore_List(t *testing.T) {
 		store, _ := setupTestStore(t)
 
 		hash := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
-		err := store.Put(hash, []byte("regular data"))
+		err := store.Put(t.Context(), hash, []byte("regular data"))
 		require.NoError(t, err)
 
-		err = store.PutSD(hash, []byte("sd data"))
+		err = store.PutSD(t.Context(), hash, []byte("sd data"))
 		require.NoError(t, err)
 
-		hashes, err := store.List(0, 10)
+		hashes, err := store.List(t.Context(), 0, 10)
 		require.NoError(t, err)
 
 		// Count occurrences of the hash
@@ -731,20 +797,20 @@ func TestDiskStore_Delete(t *testing.T) {
 		hash := "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59"
 		data := []byte("test data 1")
 
-		err := store.Put(hash, data)
+		err := store.Put(t.Context(), hash, data)
 		require.NoError(t, err)
 
 		// Verify blob exists
-		exists, err := store.Has(hash)
+		exists, err := store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Delete the blob
-		err = store.Delete(hash)
+		err = store.Delete(t.Context(), hash)
 		require.NoError(t, err)
 
 		// Verify blob is deleted
-		exists, err = store.Has(hash)
+		exists, err = store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -755,20 +821,20 @@ func TestDiskStore_Delete(t *testing.T) {
 		hash := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		data := []byte("test data 2")
 
-		err := store.PutSD(hash, data)
+		err := store.PutSD(t.Context(), hash, data)
 		require.NoError(t, err)
 
 		// Verify blob exists
-		exists, err := store.Has(hash)
+		exists, err := store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Delete the blob
-		err = store.Delete(hash)
+		err = store.Delete(t.Context(), hash)
 		require.NoError(t, err)
 
 		// Verify blob is deleted
-		exists, err = store.Has(hash)
+		exists, err = store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -780,23 +846,23 @@ func TestDiskStore_Delete(t *testing.T) {
 		regularData := []byte("regular data")
 		sdData := []byte("sd data")
 
-		err := store.Put(hash, regularData)
+		err := store.Put(t.Context(), hash, regularData)
 		require.NoError(t, err)
 
-		err = store.PutSD(hash, sdData)
+		err = store.PutSD(t.Context(), hash, sdData)
 		require.NoError(t, err)
 
 		// Verify blob exists
-		exists, err := store.Has(hash)
+		exists, err := store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Delete the blob
-		err = store.Delete(hash)
+		err = store.Delete(t.Context(), hash)
 		require.NoError(t, err)
 
 		// Verify blob is deleted
-		exists, err = store.Has(hash)
+		exists, err = store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -807,11 +873,11 @@ func TestDiskStore_Delete(t *testing.T) {
 		hash := "09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57"
 
 		// Delete non-existent blob (should be no-op)
-		err := store.Delete(hash)
+		err := store.Delete(t.Context(), hash)
 		require.NoError(t, err)
 
 		// Verify blob still doesn't exist
-		exists, err := store.Has(hash)
+		exists, err := store.Has(t.Context(), hash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -833,7 +899,7 @@ func TestDiskStore_Delete(t *testing.T) {
 
 		for _, tc := range invalidHashes {
 			t.Run(tc.desc, func(t *testing.T) {
-				err := store.Delete(tc.hash)
+				err := store.Delete(t.Context(), tc.hash)
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "invalid hash")
 			})
@@ -845,7 +911,7 @@ func TestDiskStore_Delete(t *testing.T) {
 		store, _ := setupTestStore(t)
 
 		// Delete from empty store (should be no-op)
-		err := store.Delete("adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
+		err := store.Delete(t.Context(), "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
 		require.NoError(t, err)
 	})
 
@@ -858,48 +924,48 @@ func TestDiskStore_Delete(t *testing.T) {
 		blob2 := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		blob3 := "212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1"
 
-		err := store.Put(blob1, []byte("data1"))
+		err := store.Put(t.Context(), blob1, []byte("data1"))
 		require.NoError(t, err)
 
-		err = store.PutSD(blob2, []byte("data2"))
+		err = store.PutSD(t.Context(), blob2, []byte("data2"))
 		require.NoError(t, err)
 
-		err = store.Put(blob3, []byte("data3"))
+		err = store.Put(t.Context(), blob3, []byte("data3"))
 		require.NoError(t, err)
 
 		// Verify all blobs exist
-		exists, err := store.Has(blob1)
+		exists, err := store.Has(t.Context(), blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(blob2)
+		exists, err = store.Has(t.Context(), blob2)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(blob3)
+		exists, err = store.Has(t.Context(), blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Delete blobs sequentially
-		err = store.Delete(blob1)
+		err = store.Delete(t.Context(), blob1)
 		require.NoError(t, err)
 
-		err = store.Delete(blob2)
+		err = store.Delete(t.Context(), blob2)
 		require.NoError(t, err)
 
-		err = store.Delete(blob3)
+		err = store.Delete(t.Context(), blob3)
 		require.NoError(t, err)
 
 		// Verify all blobs are deleted
-		exists, err = store.Has(blob1)
+		exists, err = store.Has(t.Context(), blob1)
 		require.NoError(t, err)
 		assert.False(t, exists)
 
-		exists, err = store.Has(blob2)
+		exists, err = store.Has(t.Context(), blob2)
 		require.NoError(t, err)
 		assert.False(t, exists)
 
-		exists, err = store.Has(blob3)
+		exists, err = store.Has(t.Context(), blob3)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -910,7 +976,7 @@ func TestDiskStore_Delete(t *testing.T) {
 		hash := "09d3cceaaebe1c051c2d80b9e9a7391af3ee95dcbb861ed811ef4d4e914bdf7b8bfd310ee0065e0c2f6fc4f31abf1a57"
 		data := []byte("test data")
 
-		err := store.Put(hash, data)
+		err := store.Put(t.Context(), hash, data)
 		require.NoError(t, err)
 
 		// Verify file exists before deletion
@@ -919,7 +985,7 @@ func TestDiskStore_Delete(t *testing.T) {
 		require.NoError(t, err, "File should exist before deletion")
 
 		// Delete the blob
-		err = store.Delete(hash)
+		err = store.Delete(t.Context(), hash)
 		require.NoError(t, err)
 
 		// Verify file is actually deleted
@@ -936,43 +1002,43 @@ func TestDiskStore_Delete(t *testing.T) {
 		blob2 := "89a232a9036e84b6b1608d39466563ae2b51b25d04e67a9a7abc00cf0474d48d454ac204e4109f2b198a8debb5fb8fe8"
 		blob3 := "212798e26cf95ae045fbdc11ebcc6fd5efdba65aa274758d10fe3f68021514fe6c3b2b28a320bf162eb06b4cf0fddbe1"
 
-		err := store.Put(blob1, []byte("data1"))
+		err := store.Put(t.Context(), blob1, []byte("data1"))
 		require.NoError(t, err)
 
-		err = store.PutSD(blob2, []byte("data2"))
+		err = store.PutSD(t.Context(), blob2, []byte("data2"))
 		require.NoError(t, err)
 
-		err = store.Put(blob3, []byte("data3"))
+		err = store.Put(t.Context(), blob3, []byte("data3"))
 		require.NoError(t, err)
 
 		// Verify all blobs exist
-		exists, err := store.Has(blob1)
+		exists, err := store.Has(t.Context(), blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(blob2)
+		exists, err = store.Has(t.Context(), blob2)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(blob3)
+		exists, err = store.Has(t.Context(), blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Delete one blob
-		err = store.Delete(blob2)
+		err = store.Delete(t.Context(), blob2)
 		require.NoError(t, err)
 
 		// Verify other blobs still exist
-		exists, err = store.Has(blob1)
+		exists, err = store.Has(t.Context(), blob1)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = store.Has(blob3)
+		exists, err = store.Has(t.Context(), blob3)
 		require.NoError(t, err)
 		assert.True(t, exists)
 
 		// Verify deleted blob doesn't exist
-		exists, err = store.Has(blob2)
+		exists, err = store.Has(t.Context(), blob2)
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
@@ -988,10 +1054,10 @@ func TestDiskStore_Delete(t *testing.T) {
 		sdData := []byte("sd data")
 
 		// Store blobs
-		err := store.Put(regularHash, regularData)
+		err := store.Put(t.Context(), regularHash, regularData)
 		require.NoError(t, err)
 
-		err = store.PutSD(sdHash, sdData)
+		err = store.PutSD(t.Context(), sdHash, sdData)
 		require.NoError(t, err)
 
 		// Verify directories exist
@@ -1005,18 +1071,18 @@ func TestDiskStore_Delete(t *testing.T) {
 		require.NoError(t, err, "SD blob directory should exist")
 
 		// Delete blobs
-		err = store.Delete(regularHash)
+		err = store.Delete(t.Context(), regularHash)
 		require.NoError(t, err)
 
-		err = store.Delete(sdHash)
+		err = store.Delete(t.Context(), sdHash)
 		require.NoError(t, err)
 
 		// Verify blobs are deleted
-		exists, err := store.Has(regularHash)
+		exists, err := store.Has(t.Context(), regularHash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 
-		exists, err = store.Has(sdHash)
+		exists, err = store.Has(t.Context(), sdHash)
 		require.NoError(t, err)
 		assert.False(t, exists)
 

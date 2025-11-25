@@ -315,16 +315,14 @@ type PeerClientAdapter struct {
 // which is not supported by PeerClient
 var ErrPutNotSupported = errors.New("Put operation not supported by PeerClient")
 
-func (a *PeerClientAdapter) Has(hash string) (bool, error) {
-	ctx := context.Background()
+func (a *PeerClientAdapter) Has(ctx context.Context, hash string) (bool, error) {
 	return a.client.HasBlob(ctx, hash)
 }
 
-func (a *PeerClientAdapter) Get(hash string) ([]byte, error) {
-	ctx := context.Background()
+func (a *PeerClientAdapter) Get(ctx context.Context, hash string) ([]byte, error) {
 	return a.client.GetBlob(ctx, hash)
 }
 
-func (a *PeerClientAdapter) Put(_ string, _ []byte) error {
+func (a *PeerClientAdapter) Put(_ context.Context, _ string, _ []byte) error {
 	return ErrPutNotSupported
 }

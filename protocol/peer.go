@@ -12,6 +12,7 @@ package protocol
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,14 @@ import (
 // PeerServer defines the interface for handling peer connections
 type PeerServer interface {
 	ConnectionHandler
+}
+
+// wrapPeerContext creates a new context with peer source and IP address information
+func wrapPeerContext(ctx context.Context, conn net.Conn) context.Context {
+	ip := GetConnectionIP(conn)
+	ctx = context.WithValue(ctx, SourceContextKey, SourcePeer)
+	ctx = context.WithValue(ctx, IPAddressContextKey, ip)
+	return ctx
 }
 
 // getPeerIP extracts the peer IP address from a connection
@@ -157,12 +166,19 @@ func WithPeerNotifier(notifier Notifier) ServerOption {
 func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	// Wrap context with peer source and IP address information
+	ctx := wrapPeerContext(context.Background(), conn)
+
 	reader := bufio.NewReader(conn)
 	for {
 		// Set read deadline before reading message
 		err := conn.SetReadDeadline(time.Now().Add(p.connectionTimeout))
 		if err != nil {
-			p.logger.Error("Error setting read deadline", zap.Error(err))
+			ip, _ := GetIPAddressFromContext(ctx)
+			p.logger.Error("Error setting read deadline",
+				zap.Error(err),
+				zap.String("source", string(SourcePeer)),
+				zap.String("ip", ip))
 			return
 		}
 
@@ -198,10 +214,14 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		// Get peer IP for access control
 		peerIP := getPeerIP(conn)
 
+		// Create context for this request with timeout, preserving source and IP info
+		ctx, cancel := context.WithTimeout(ctx, p.connectionTimeout)
+
 		// Handle request
-		response, blobData, err := p.handleRequest(request, peerIP)
+		response, blobData, err := p.handleRequest(ctx, request, peerIP)
 		if err != nil {
 			p.sendError(conn, err.Error())
+			cancel()
 			continue
 		}
 
@@ -209,6 +229,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		err = conn.SetWriteDeadline(time.Now().Add(p.connectionTimeout))
 		if err != nil {
 			p.logger.Error("Error setting write deadline", zap.Error(err))
+			cancel()
 			return
 		}
 
@@ -217,6 +238,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 			if !strings.Contains(err.Error(), "connection reset by peer") && !strings.Contains(err.Error(), "broken pipe") {
 				p.logger.Error("Error sending response", zap.Error(err))
 			}
+			cancel()
 			return
 		}
 
@@ -224,8 +246,12 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		err = conn.SetWriteDeadline(time.Time{})
 		if err != nil {
 			p.logger.Error("Error clearing write deadline", zap.Error(err))
+			cancel()
 			return
 		}
+
+		// Cancel the context for this iteration
+		cancel()
 	}
 }
 
@@ -296,14 +322,14 @@ func (p *DefaultPeerServer) parseRequest(data []byte) (CompositeRequest, error) 
 }
 
 // handleRequest processes a parsed request and returns a response
-func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP string) (CompositeResponse, []byte, error) {
+func (p *DefaultPeerServer) handleRequest(ctx context.Context, request CompositeRequest, peerIP string) (CompositeResponse, []byte, error) {
 	response := CompositeResponse{
 		AvailableBlobs: []string{}, // Always initialize as empty slice
 	}
 
 	// Handle blob data request (highest priority)
 	if request.RequestedBlob != "" {
-		incomingBlob, blobData, err := p.handleBlobDataRequest(request.RequestedBlob, peerIP)
+		incomingBlob, blobData, err := p.handleBlobDataRequest(ctx, request.RequestedBlob, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
@@ -313,7 +339,7 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP strin
 
 	// Handle payment rate request
 	if request.BlobDataPaymentRate != nil {
-		paymentRateResponse, err := p.handleBlobPaymentRateRequest(request.RequestedBlobs, *request.BlobDataPaymentRate, peerIP)
+		paymentRateResponse, err := p.handleBlobPaymentRateRequest(ctx, request.RequestedBlobs, *request.BlobDataPaymentRate, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
@@ -321,12 +347,12 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP strin
 		response.BlobDataPaymentRate = paymentRateResponse
 
 		// Also handle availability if requested_blobs is present
-		return p.handleBlobAvailabilityInResponse(request.RequestedBlobs, response, peerIP)
+		return p.handleBlobAvailabilityInResponse(ctx, request.RequestedBlobs, response, peerIP)
 	}
 
 	// Handle blob availability request
 	if len(request.RequestedBlobs) > 0 {
-		availableBlobs, err := p.handleBlobAvailabilityRequest(request.RequestedBlobs, peerIP)
+		availableBlobs, err := p.handleBlobAvailabilityRequest(ctx, request.RequestedBlobs, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
@@ -339,7 +365,7 @@ func (p *DefaultPeerServer) handleRequest(request CompositeRequest, peerIP strin
 }
 
 // handleBlobAvailabilityRequest processes a blob availability check request
-func (p *DefaultPeerServer) handleBlobAvailabilityRequest(blobHashes []string, peerIP string) ([]string, error) {
+func (p *DefaultPeerServer) handleBlobAvailabilityRequest(ctx context.Context, blobHashes []string, peerIP string) ([]string, error) {
 	availableBlobs := make([]string, 0)
 
 	// Process each blob hash - handle both nil and empty slice cases
@@ -367,7 +393,7 @@ func (p *DefaultPeerServer) handleBlobAvailabilityRequest(blobHashes []string, p
 		}
 
 		// Check if blob exists
-		available, err := p.store.Has(hash)
+		available, err := p.store.Has(ctx, hash)
 		if err != nil {
 			continue
 		}
@@ -389,7 +415,7 @@ func (p *DefaultPeerServer) isProtected(hash string) bool {
 }
 
 // handleBlobDataRequest processes a blob data request
-func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string) (*IncomingBlob, []byte, error) {
+func (p *DefaultPeerServer) handleBlobDataRequest(ctx context.Context, blobHash string, peerIP string) (*IncomingBlob, []byte, error) {
 	// Validate hash length
 	if len(blobHash) != blob.BlobHashHexLength {
 		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrInvalidHashLen.Error()), nil, nil
@@ -411,7 +437,7 @@ func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string
 	}
 
 	// Get blob data
-	data, err := p.store.Get(blobHash)
+	data, err := p.store.Get(ctx, blobHash)
 	if err != nil {
 		// Log detailed error server-side
 		p.logger.Error("Failed to retrieve blob", zap.String("blobHash", blobHash), zap.Error(err))
@@ -439,7 +465,7 @@ func (p *DefaultPeerServer) handleBlobDataRequest(blobHash string, peerIP string
 }
 
 // handleBlobPaymentRateRequest processes a payment rate negotiation request
-func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, paymentRate float64, peerIP string) (string, error) {
+func (p *DefaultPeerServer) handleBlobPaymentRateRequest(ctx context.Context, blobHashes []string, paymentRate float64, peerIP string) (string, error) {
 	// Check if payment rate is negative
 	if paymentRate < 0 {
 		return PaymentRateTooLow, nil
@@ -473,7 +499,7 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(blobHashes []string, pa
 	}
 
 	// Check if blob exists
-	available, err := p.store.Has(blobHash)
+	available, err := p.store.Has(ctx, blobHash)
 	if err != nil || !available {
 		return PaymentRateTooLow, nil
 	}
@@ -547,9 +573,9 @@ func (p *DefaultPeerServer) createIncomingBlobError(blobHash string, errorMsg st
 }
 
 // handleBlobAvailabilityInResponse handles blob availability checking and updates response
-func (p *DefaultPeerServer) handleBlobAvailabilityInResponse(blobHashes []string, response CompositeResponse, peerIP string) (CompositeResponse, []byte, error) {
+func (p *DefaultPeerServer) handleBlobAvailabilityInResponse(ctx context.Context, blobHashes []string, response CompositeResponse, peerIP string) (CompositeResponse, []byte, error) {
 	if len(blobHashes) > 0 {
-		availableBlobs, err := p.handleBlobAvailabilityRequest(blobHashes, peerIP)
+		availableBlobs, err := p.handleBlobAvailabilityRequest(ctx, blobHashes, peerIP)
 		if err != nil {
 			return response, nil, err
 		}

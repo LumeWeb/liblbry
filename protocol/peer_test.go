@@ -102,17 +102,17 @@ func setupMockStore(t *testing.T, withBlobs bool) *storagemocks.MockBlobStore {
 	if withBlobs {
 		for k, v := range blobs {
 			// Set up mock behavior for Has method - use Maybe() to make it flexible
-			mockStore.On("Has", k).Maybe().Return(true, nil)
+			mockStore.On("Has", mock.Anything, k).Maybe().Return(true, nil)
 			// Set up mock behavior for Get method - use Maybe() to make it flexible
-			mockStore.On("Get", k).Maybe().Return(v, nil)
+			mockStore.On("Get", mock.Anything, k).Maybe().Return(v, nil)
 		}
 
 		// For non-existent blobs, Has should return false
-		mockStore.On("Has", mock.AnythingOfType("string")).Maybe().Return(false, nil)
-		mockStore.On("Get", mock.AnythingOfType("string")).Maybe().Return([]byte(nil), nil)
+		mockStore.On("Has", mock.Anything, mock.AnythingOfType("string")).Maybe().Return(false, nil)
+		mockStore.On("Get", mock.Anything, mock.AnythingOfType("string")).Maybe().Return([]byte(nil), nil)
 	} else {
-		mockStore.On("Has", mock.AnythingOfType("string")).Maybe().Return(false, nil)
-		mockStore.On("Get", mock.AnythingOfType("string")).Maybe().Return([]byte(nil), nil)
+		mockStore.On("Has", mock.Anything, mock.AnythingOfType("string")).Maybe().Return(false, nil)
+		mockStore.On("Get", mock.Anything, mock.AnythingOfType("string")).Maybe().Return([]byte(nil), nil)
 	}
 
 	// Set up mock behavior for Name method - use Maybe() to make it flexible
@@ -161,7 +161,7 @@ func handleRequestAndCompareWithIP(t *testing.T, server PeerServer, requestJSON,
 		return
 	}
 
-	response, blobData, err := server.(*DefaultPeerServer).handleRequest(req, peerIP)
+	response, blobData, err := server.(*DefaultPeerServer).handleRequest(t.Context(), req, peerIP)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 		return
@@ -206,7 +206,7 @@ func unmarshalExpectedResponse(t *testing.T, expectedJSON []byte) CompositeRespo
 // Helper function to handle request with error handling
 func handleTestRequest(t *testing.T, server PeerServer, request CompositeRequest) (CompositeResponse, []byte) {
 	t.Helper()
-	response, blobData, err := server.(*DefaultPeerServer).handleRequest(request, testLocalIP)
+	response, blobData, err := server.(*DefaultPeerServer).handleRequest(t.Context(), request, testLocalIP)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

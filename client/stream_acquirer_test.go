@@ -199,8 +199,8 @@ func (ts *testSetup) setupMockExpectations() {
 	}
 	if len(ts.encryptedContent) > 0 {
 		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.contentHash).Return(ts.encryptedContent, nil).Maybe()
-		ts.store.EXPECT().Has(ts.contentHash).Return(false, nil)
-		ts.store.EXPECT().Put(ts.contentHash, ts.encryptedContent).Return(nil)
+		ts.store.EXPECT().Has(mock.Anything, ts.contentHash).Return(false, nil)
+		ts.store.EXPECT().Put(mock.Anything, ts.contentHash, ts.encryptedContent).Return(nil)
 	}
 }
 
@@ -211,8 +211,8 @@ func (ts *testSetup) setupMockExpectationsForBenchmark() {
 	}
 	if len(ts.encryptedContent) > 0 {
 		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.contentHash).Return(ts.encryptedContent, nil)
-		ts.store.EXPECT().Has(ts.contentHash).Return(false, nil)
-		ts.store.EXPECT().Put(ts.contentHash, ts.encryptedContent).Return(nil).Maybe()
+		ts.store.EXPECT().Has(mock.Anything, ts.contentHash).Return(false, nil)
+		ts.store.EXPECT().Put(mock.Anything, ts.contentHash, ts.encryptedContent).Return(nil).Maybe()
 	}
 }
 
@@ -592,8 +592,8 @@ func TestStreamAcquirer_GetStreamResult(t *testing.T) {
 
 	store := storageMocks.NewMockBlobStore(t)
 	store.EXPECT().Name().Return("mock-store")
-	store.EXPECT().Has(contentBlobHash).Return(false, nil)
-	store.EXPECT().Put(contentBlobHash, contentBlobData).Return(nil)
+	store.EXPECT().Has(mock.Anything, contentBlobHash).Return(false, nil)
+	store.EXPECT().Put(mock.Anything, contentBlobHash, contentBlobData).Return(nil)
 
 	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 
@@ -1163,7 +1163,7 @@ func TestStreamReader_WithRetryOnBlobAcquisition(t *testing.T) {
 	require.NoError(t, err)
 
 	// Pre-populate memory store with SD blob
-	err = store.PutSD(sdHash, sdBlobData)
+	err = store.PutSD(context.Background(), sdHash, sdBlobData)
 	require.NoError(t, err)
 
 	// Create mock transfer that fails initially then succeeds
@@ -1317,8 +1317,8 @@ func createVerifiedTestSetup(t *testing.T, contentSize int) *testSetup {
 	// Set up mock expectations with correct hashes
 	acquirer.EXPECT().Acquire(ctx, sdHash).Return(sdBlobData, nil)
 	acquirer.EXPECT().Acquire(ctx, blobHashHex).Return(encryptedContent, nil)
-	store.EXPECT().Has(blobHashHex).Return(false, nil)
-	store.EXPECT().Put(blobHashHex, encryptedContent).Return(nil).Maybe() // May be called multiple times (main + prefetcher)
+	store.EXPECT().Has(mock.Anything, blobHashHex).Return(false, nil)
+	store.EXPECT().Put(mock.Anything, blobHashHex, encryptedContent).Return(nil).Maybe() // May be called multiple times (main + prefetcher)
 	store.EXPECT().Name().Return("mock-store").Maybe()
 
 	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
@@ -1410,9 +1410,9 @@ func setupVerificationFailureMocks(t *testing.T, ctx context.Context, sdBlobHash
 	// Set up mocks - SD blob is correct and hashes to sdHash, but verification should fail
 	acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
 	// Content blob acquisition should be called since blob hash doesn't exist in storage
-	store.EXPECT().Has(contentHash).Return(false, nil)
+	store.EXPECT().Has(mock.Anything, contentHash).Return(false, nil)
 	acquirer.EXPECT().Acquire(ctx, contentHash).Return(contentData, nil)
-	store.EXPECT().Put(contentHash, contentData).Return(nil).Maybe()
+	store.EXPECT().Put(mock.Anything, contentHash, contentData).Return(nil).Maybe()
 
 	streamAcquirer := NewStreamAcquirer(acquirer, store, zaptest.NewLogger(t))
 	return acquirer, store, streamAcquirer
