@@ -115,9 +115,41 @@ func (b *ServerBuilder) WithPeer(port ...int) *ServerBuilder {
 
 // WithReflector adds a Reflector protocol handler on the specified port
 func (b *ServerBuilder) WithReflector(port ...int) *ServerBuilder {
+	// Check if there's an existing config with a custom store to preserve it
+	var existingStore storage.BlobStore
+	if existingConfig, exists := b.config[ProtocolReflector]; exists {
+		if reflectorConfig, ok := existingConfig.(*ReflectorConfig); ok {
+			existingStore = reflectorConfig.Store
+		}
+	}
+
 	return b.withProtocolConfig(ProtocolReflector, DefaultReflectorPort, port, func(p int) any {
-		return &ReflectorConfig{Port: p}
+		config := &ReflectorConfig{Port: p}
+		// Preserve existing custom store if any
+		config.Store = existingStore
+		return config
 	})
+}
+
+// WithReflectorStore sets a custom store for the Reflector protocol handler
+func (b *ServerBuilder) WithReflectorStore(store storage.BlobStore) *ServerBuilder {
+	// Get existing config or create new one
+	var config *ReflectorConfig
+	if existingConfig, exists := b.config[ProtocolReflector]; exists {
+		if reflectorConfig, ok := existingConfig.(*ReflectorConfig); ok {
+			config = reflectorConfig
+		}
+	}
+
+	// If no existing config, create with default port
+	if config == nil {
+		config = &ReflectorConfig{Port: DefaultReflectorPort}
+	}
+
+	// Set the custom store
+	config.Store = store
+	b.config[ProtocolReflector] = config
+	return b
 }
 
 // WithDHT adds a DHT protocol handler on the specified port

@@ -118,7 +118,8 @@ type PeerConfig struct {
 
 // ReflectorConfig contains configuration for Reflector protocol
 type ReflectorConfig struct {
-	Port int
+	Port  int
+	Store storage.BlobStore // Optional, overrides default store
 }
 
 // DHTConfig contains configuration for DHT protocol
@@ -293,8 +294,14 @@ func (s *DefaultServer) startPeer(config *PeerConfig) error {
 
 // startReflector starts the Reflector protocol handler
 func (s *DefaultServer) startReflector(config *ReflectorConfig) error {
+	// Use custom store if provided, otherwise use default server storage
+	store := config.Store
+	if store == nil {
+		store = s.storage
+	}
+
 	return s.startTCPProtocol(ProtocolReflector, config.Port, func() protocol.ConnectionHandler {
-		return protocol.NewReflectorServer(s.storage,
+		return protocol.NewReflectorServer(store,
 			protocol.WithReflectorAccessControl(s.accessControl),
 			protocol.WithReflectorLogger(s.logger.Named("reflector")),
 			protocol.WithReflectorNotifier(s.notifier),
