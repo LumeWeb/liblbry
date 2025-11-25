@@ -38,65 +38,6 @@ func (_m *MockStreamAcquirerFactory) EXPECT() *MockStreamAcquirerFactory_Expecte
 	return &MockStreamAcquirerFactory_Expecter{mock: &_m.Mock}
 }
 
-// CreateDefaultStreamAcquirer provides a mock function for the type MockStreamAcquirerFactory
-func (_mock *MockStreamAcquirerFactory) CreateDefaultStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) client.StreamAcquirer {
-	ret := _mock.Called(acquirer, store)
-
-	if len(ret) == 0 {
-		panic("no return value specified for CreateDefaultStreamAcquirer")
-	}
-
-	var r0 client.StreamAcquirer
-	if returnFunc, ok := ret.Get(0).(func(liblbry.BlobAcquirer, storage.BlobStore) client.StreamAcquirer); ok {
-		r0 = returnFunc(acquirer, store)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.StreamAcquirer)
-		}
-	}
-	return r0
-}
-
-// MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateDefaultStreamAcquirer'
-type MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call struct {
-	*mock.Call
-}
-
-// CreateDefaultStreamAcquirer is a helper method to define mock.On call
-//   - acquirer liblbry.BlobAcquirer
-//   - store storage.BlobStore
-func (_e *MockStreamAcquirerFactory_Expecter) CreateDefaultStreamAcquirer(acquirer interface{}, store interface{}) *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call {
-	return &MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call{Call: _e.mock.On("CreateDefaultStreamAcquirer", acquirer, store)}
-}
-
-func (_c *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call) Run(run func(acquirer liblbry.BlobAcquirer, store storage.BlobStore)) *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 liblbry.BlobAcquirer
-		if args[0] != nil {
-			arg0 = args[0].(liblbry.BlobAcquirer)
-		}
-		var arg1 storage.BlobStore
-		if args[1] != nil {
-			arg1 = args[1].(storage.BlobStore)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call) Return(streamAcquirer client.StreamAcquirer) *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call {
-	_c.Call.Return(streamAcquirer)
-	return _c
-}
-
-func (_c *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call) RunAndReturn(run func(acquirer liblbry.BlobAcquirer, store storage.BlobStore) client.StreamAcquirer) *MockStreamAcquirerFactory_CreateDefaultStreamAcquirer_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // CreateStreamAcquirer provides a mock function for the type MockStreamAcquirerFactory
 func (_mock *MockStreamAcquirerFactory) CreateStreamAcquirer(acquirer liblbry.BlobAcquirer, store storage.BlobStore) client.StreamAcquirer {
 	ret := _mock.Called(acquirer, store)

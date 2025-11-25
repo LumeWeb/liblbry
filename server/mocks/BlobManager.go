@@ -308,6 +308,130 @@ func (_c *MockBlobManager_AddSDBlob_Call) RunAndReturn(run func(hash string, dat
 	return _c
 }
 
+// GetBlob provides a mock function for the type MockBlobManager
+func (_mock *MockBlobManager) GetBlob(hash string) ([]byte, error) {
+	ret := _mock.Called(hash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBlob")
+	}
+
+	var r0 []byte
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) ([]byte, error)); ok {
+		return returnFunc(hash)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) []byte); ok {
+		r0 = returnFunc(hash)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(hash)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlobManager_GetBlob_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBlob'
+type MockBlobManager_GetBlob_Call struct {
+	*mock.Call
+}
+
+// GetBlob is a helper method to define mock.On call
+//   - hash string
+func (_e *MockBlobManager_Expecter) GetBlob(hash interface{}) *MockBlobManager_GetBlob_Call {
+	return &MockBlobManager_GetBlob_Call{Call: _e.mock.On("GetBlob", hash)}
+}
+
+func (_c *MockBlobManager_GetBlob_Call) Run(run func(hash string)) *MockBlobManager_GetBlob_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlobManager_GetBlob_Call) Return(bytes []byte, err error) *MockBlobManager_GetBlob_Call {
+	_c.Call.Return(bytes, err)
+	return _c
+}
+
+func (_c *MockBlobManager_GetBlob_Call) RunAndReturn(run func(hash string) ([]byte, error)) *MockBlobManager_GetBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetSDBlob provides a mock function for the type MockBlobManager
+func (_mock *MockBlobManager) GetSDBlob(hash string) ([]byte, error) {
+	ret := _mock.Called(hash)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSDBlob")
+	}
+
+	var r0 []byte
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) ([]byte, error)); ok {
+		return returnFunc(hash)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) []byte); ok {
+		r0 = returnFunc(hash)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(hash)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBlobManager_GetSDBlob_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSDBlob'
+type MockBlobManager_GetSDBlob_Call struct {
+	*mock.Call
+}
+
+// GetSDBlob is a helper method to define mock.On call
+//   - hash string
+func (_e *MockBlobManager_Expecter) GetSDBlob(hash interface{}) *MockBlobManager_GetSDBlob_Call {
+	return &MockBlobManager_GetSDBlob_Call{Call: _e.mock.On("GetSDBlob", hash)}
+}
+
+func (_c *MockBlobManager_GetSDBlob_Call) Run(run func(hash string)) *MockBlobManager_GetSDBlob_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBlobManager_GetSDBlob_Call) Return(bytes []byte, err error) *MockBlobManager_GetSDBlob_Call {
+	_c.Call.Return(bytes, err)
+	return _c
+}
+
+func (_c *MockBlobManager_GetSDBlob_Call) RunAndReturn(run func(hash string) ([]byte, error)) *MockBlobManager_GetSDBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // RemoveBlob provides a mock function for the type MockBlobManager
 func (_mock *MockBlobManager) RemoveBlob(hash string) error {
 	ret := _mock.Called(hash)
