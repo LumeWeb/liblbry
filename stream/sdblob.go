@@ -21,10 +21,16 @@ import (
 	"strings"
 
 	"go.lumeweb.com/liblbry/blob"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
 
 // Adapted from https://github.com/lbryio/lbry.go
 const StreamTypeLBRYFile = "lbryfile"
+
+// Errors
+var (
+	ErrInvalidSDBlob = liblbryerrors.Err("invalid SD blob")
+)
 
 // BlobInfo contains information about a content blob
 type BlobInfo struct {
@@ -281,4 +287,44 @@ func (s *SDBlob) computeStreamHash() []byte {
 		hex.EncodeToString([]byte(s.SuggestedFileName)),
 		s.BlobInfos,
 	)
+}
+
+// ValidateSDBlob validates SD blob structure and content
+func ValidateSDBlob(sdBlobData []byte) error {
+	if len(sdBlobData) == 0 {
+		return ErrInvalidSDBlob
+	}
+
+	// Parse JSON to validate structure
+	var jsonSDBlob JSONSDBlob
+	if err := json.Unmarshal(sdBlobData, &jsonSDBlob); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidSDBlob, err)
+	}
+
+	// Validate required fields
+	if jsonSDBlob.StreamType == "" {
+		return fmt.Errorf("%w: missing stream_type", ErrInvalidSDBlob)
+	}
+
+	if len(jsonSDBlob.Blobs) == 0 {
+		return fmt.Errorf("%w: no blobs found", ErrInvalidSDBlob)
+	}
+
+	// Validate each blob info
+	for i, blobInfo := range jsonSDBlob.Blobs {
+		// Zero-length blobs (terminating blobs) are allowed to have missing hashes
+		if blobInfo.Length > 0 {
+			if len(blobInfo.BlobHash) == 0 {
+				return fmt.Errorf("%w: blob %d missing hash", ErrInvalidSDBlob, i)
+			}
+			if !ValidateHash(hex.EncodeToString(blobInfo.BlobHash)) {
+				return fmt.Errorf("%w: blob %d has invalid hash", ErrInvalidSDBlob, i)
+			}
+		}
+		if blobInfo.Length < 0 {
+			return fmt.Errorf("%w: blob %d has invalid length", ErrInvalidSDBlob, i)
+		}
+	}
+
+	return nil
 }

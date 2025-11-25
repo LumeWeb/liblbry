@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/liblbry/blob"
+	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 )
 
 // TestBlobInfoMarshalJSON tests BlobInfo MarshalJSON with hex encoding
@@ -430,5 +432,112 @@ func TestSdBlob_NullStreamHash(t *testing.T) {
 	b.updateStreamHash()
 	if !bytes.Equal(b.StreamHash, expected) {
 		t.Errorf("null stream has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.StreamHash))
+	}
+}
+
+// Helper function to create test SD blob data
+func createTestSDBlobData(t *testing.T, blobInfos []BlobInfo) []byte {
+	streamName := "test_file"
+	key, _ := hex.DecodeString("30313233343536373031323334353637")
+	suggestedFileName := "test_file"
+	streamHash, _ := hex.DecodeString("4fcd4064713bf639362248d3ac0c0ee527a93a08ce4991954d6e11b0317e79b6beedb6833e18e7ae8b0f14ddf258e386")
+
+	sd := SDBlob{
+		StreamName:        streamName,
+		BlobInfos:         blobInfos,
+		StreamType:        StreamTypeLBRYFile,
+		Key:               key,
+		SuggestedFileName: suggestedFileName,
+		StreamHash:        streamHash,
+	}
+
+	sdBlobData, err := json.Marshal(sd)
+	require.NoError(t, err)
+	return sdBlobData
+}
+
+// Helper function to create test blob info
+func createTestBlobInfo(t *testing.T, length int, blobNum int, hashKey string, ivHex string) BlobInfo {
+	var blobHash []byte
+	if hashKey != "" {
+		blobHash, _ = hex.DecodeString(lbryTesting.LBRYTestHashes[hashKey])
+	}
+	iv, _ := hex.DecodeString(ivHex)
+
+	return BlobInfo{
+		Length:   length,
+		BlobNum:  blobNum,
+		BlobHash: blobHash,
+		IV:       iv,
+	}
+}
+
+func TestValidateSDBlob_TerminatingBlobScenarios(t *testing.T) {
+	testCases := []struct {
+		name        string
+		blobInfos   []BlobInfo
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid with terminating zero-length blob",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 2097152, 1, lbryTesting.LBRYHashKey2, "30303030303030303030303030303032"),
+				createTestBlobInfo(t, 0, 2, "", "30303030303030303030303030303033"), // Terminating blob
+			},
+			expectError: false,
+		},
+		{
+			name: "valid without terminating zero-length blob",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 2097152, 1, lbryTesting.LBRYHashKey2, "30303030303030303030303030303032"),
+				// No terminating zero-length blob - this is actually valid
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid non-terminating blob missing hash",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, "", "30303030303030303030303030303031"), // Missing hash
+				createTestBlobInfo(t, 0, 1, "", "30303030303030303030303030303032"),       // Terminating blob
+			},
+			expectError: true,
+			errorMsg:    "missing hash",
+		},
+		{
+			name: "valid single blob with terminating blob",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 1048576, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 0, 1, "", "30303030303030303030303030303032"), // Terminating blob
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid negative length blob",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, -1, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 0, 1, "", "30303030303030303030303030303032"), // Terminating blob
+			},
+			expectError: true,
+			errorMsg:    "invalid length",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sdBlobData := createTestSDBlobData(t, tc.blobInfos)
+			err := ValidateSDBlob(sdBlobData)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected validation error for: "+tc.name)
+				if tc.errorMsg != "" {
+					assert.Contains(t, err.Error(), tc.errorMsg, "Error message should contain: "+tc.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no validation error for: "+tc.name)
+			}
+		})
 	}
 }
