@@ -1177,6 +1177,8 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, sdBlobHash).Return(sdBlobData, nil)
 	// Check if content blob exists in storage - it doesn't
 	testMocks.storage.EXPECT().Has(contentBlobHash).Return(false, nil)
+	// Mock the store Name() method call
+	testMocks.storage.EXPECT().Name().Return("mock-store")
 	// Then, acquire the content blob - use Anything for context to be more flexible
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
 	// Store the acquired content blob
@@ -1371,6 +1373,118 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 	assert.Contains(t, err.Error(), "failed to acquire content blob")
 	assert.Contains(t, err.Error(), contentBlobHash)
 	assert.Contains(t, err.Error(), "index 0")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_GetBlob_Success tests successful blob retrieval from storage
+// Validates that blobs can be successfully retrieved directly from the underlying store
+func TestDefaultServer_GetBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	expectedData := []byte(TestBlobData)
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Get(blobHash).Return(expectedData, nil)
+
+	// Test successful blob retrieval
+	result, err := server.GetBlob(blobHash)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedData, result)
+}
+
+// TestDefaultServer_GetBlob_EmptyHash tests error handling for empty hash
+// Validates that blob retrieval properly rejects empty hash values
+func TestDefaultServer_GetBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	// Test with empty hash
+	result, err := server.GetBlob("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_GetBlob_StorageFailure tests error handling when storage.Get fails
+// Validates that blob retrieval properly propagates storage errors
+func TestDefaultServer_GetBlob_StorageFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	blobHash := TestBlobHash
+	storageError := errors.New("storage error")
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Get(blobHash).Return(nil, storageError)
+
+	// Test storage failure
+	result, err := server.GetBlob(blobHash)
+	assert.Error(t, err)
+	assert.Equal(t, storageError, err)
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_GetSDBlob_Success tests successful SD blob retrieval from storage
+// Validates that SD blobs can be successfully retrieved directly from the underlying store
+func TestDefaultServer_GetSDBlob_Success(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	expectedData := []byte(TestBlobData)
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Get(sdBlobHash).Return(expectedData, nil)
+
+	// Test successful SD blob retrieval
+	result, err := server.GetSDBlob(sdBlobHash)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedData, result)
+}
+
+// TestDefaultServer_GetSDBlob_EmptyHash tests error handling for empty hash
+// Validates that SD blob retrieval properly rejects empty hash values
+func TestDefaultServer_GetSDBlob_EmptyHash(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	// Test with empty hash
+	result, err := server.GetSDBlob("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hash cannot be empty")
+	assert.Nil(t, result)
+}
+
+// TestDefaultServer_GetSDBlob_StorageFailure tests error handling when storage.Get fails
+// Validates that SD blob retrieval properly propagates storage errors
+func TestDefaultServer_GetSDBlob_StorageFailure(t *testing.T) {
+	t.Parallel()
+
+	testMocks := setupMocks(t)
+	server := setupServer(t, testMocks, map[string]any{})
+
+	sdBlobHash := TestBlobHash
+	storageError := errors.New("storage error")
+
+	// Setup mock expectations
+	testMocks.storage.EXPECT().Get(sdBlobHash).Return(nil, storageError)
+
+	// Test storage failure
+	result, err := server.GetSDBlob(sdBlobHash)
+	assert.Error(t, err)
+	assert.Equal(t, storageError, err)
 	assert.Nil(t, result)
 }
 

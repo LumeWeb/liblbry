@@ -73,6 +73,11 @@ type BlobManager interface {
 	AcquireBlob(ctx context.Context, hash string) ([]byte, error)
 	// AcquireSDBlob retrieves an SD blob and optionally its content blobs
 	AcquireSDBlob(ctx context.Context, hash string, opts ...AcquireSDOption) (*stream.StreamResult, error)
+
+	// GetBlob retrieves a blob directly from the underlying store
+	GetBlob(hash string) ([]byte, error)
+	// GetSDBlob retrieves an SD blob directly from the underlying store
+	GetSDBlob(hash string) ([]byte, error)
 }
 
 // AcquireSDConfig holds configuration for SD blob acquisition
@@ -757,6 +762,26 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 
 	// Use unified stream acquisition logic
 	return streamAcquirer.GetStreamResult(ctx, hash, acquireOpts...)
+}
+
+// GetBlob retrieves a blob directly from the underlying store
+func (s *DefaultServer) GetBlob(hash string) ([]byte, error) {
+	// Validate hash
+	if err := validateHash(hash); err != nil {
+		return nil, err
+	}
+
+	return s.storage.Get(hash)
+}
+
+// GetSDBlob retrieves an SD blob directly from the underlying store
+func (s *DefaultServer) GetSDBlob(hash string) ([]byte, error) {
+	// Validate hash
+	if err := validateHash(hash); err != nil {
+		return nil, err
+	}
+
+	return s.storage.Get(hash)
 }
 
 // startTCPProtocol starts a generic TCP protocol handler
