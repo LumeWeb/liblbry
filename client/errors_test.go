@@ -28,7 +28,7 @@ func TestWithRetry_Success(t *testing.T) {
 		return nil // Success on first call
 	}
 
-	err := WithRetry(nil, operation)
+	err := WithRetry(context.Background(), nil, operation)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, calls)
 }
@@ -44,7 +44,7 @@ func TestWithRetry_RetryableError(t *testing.T) {
 		return nil // Success on third call
 	}
 
-	err := WithRetry(nil, operation)
+	err := WithRetry(context.Background(), nil, operation)
 	assert.NoError(t, err)
 	assert.Equal(t, 3, calls)
 }
@@ -57,7 +57,7 @@ func TestWithRetry_NonRetryableError(t *testing.T) {
 		return nonRetryableErr
 	}
 
-	err := WithRetry(nil, operation)
+	err := WithRetry(context.Background(), nil, operation)
 	assert.Error(t, err)
 	assert.Equal(t, 1, calls) // Should not retry
 	assert.True(t, errors.Is(err, stream.ErrInvalidSDBlob))
@@ -71,7 +71,7 @@ func TestWithRetry_MaxAttemptsExhausted(t *testing.T) {
 		return retryableErr
 	}
 
-	err := WithRetry(nil, operation)
+	err := WithRetry(context.Background(), nil, operation)
 	assert.Error(t, err)
 	assert.Equal(t, 3, calls) // Default max attempts
 }
@@ -99,7 +99,7 @@ func TestWithRetry_CustomOptions(t *testing.T) {
 	}
 
 	start := time.Now()
-	err := WithRetry(customOptions, operation)
+	err := WithRetry(context.Background(), customOptions, operation)
 	duration := time.Since(start)
 
 	assert.Error(t, err) // Should fail after 2 attempts
@@ -126,7 +126,7 @@ func TestWithRetry_ContextCancellation(t *testing.T) {
 		return retryableErr
 	}
 
-	err := WithRetry(customOptions, operation)
+	err := WithRetry(ctx, customOptions, operation)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled))
 }

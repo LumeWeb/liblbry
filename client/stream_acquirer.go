@@ -9,6 +9,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/avast/retry-go/v4"
 	liblbry "go.lumeweb.com/liblbry"
@@ -90,22 +91,25 @@ type StreamAcquirer interface {
 
 // StreamConfig holds configuration for stream acquisition
 type StreamConfig struct {
-	// Recursive determines whether to fetch all content blobs or just SD blob
+	// Recursive determines whether to fetch all content blobs or just SD blob.
 	Recursive bool
 
-	// Progress callback for reporting download progress
+	// Progress callback for reporting download progress (0.0 to 1.0).
 	Progress func(progress float64)
 
-	// ChunkHandler for custom chunk processing during streaming
+	// ChunkHandler for custom chunk processing during streaming.
+	// Called for each chunk as it's processed.
 	ChunkHandler func(chunk StreamChunk) error
 
-	// CacheSize determines how many blobs to keep in memory during streaming
+	// CacheSize determines how many blobs to keep in memory during streaming.
+	// Minimum value is 1. Default is 3 (current + next + previous).
 	CacheSize int
 
-	// PrefetchEnabled enables prefetching next blob while reading current one
+	// PrefetchEnabled enables prefetching the next blob while reading the current one.
 	PrefetchEnabled bool
 
-	// VerificationEnabled enables hash verification of SD blobs and content blobs during streaming
+	// VerificationEnabled enables hash verification of SD blobs and content blobs during streaming.
+	// Enabled by default for security.
 	VerificationEnabled bool
 }
 
@@ -221,6 +225,12 @@ func WithAcquireVerification(enabled bool) AcquireOption {
 	}
 }
 
+// cachedBlob represents a cached blob with LRU tracking
+type cachedBlob struct {
+	data       []byte
+	lastAccess time.Time
+}
+
 // streamingReader implements StreamReader with on-demand blob acquisition
 type streamingReader struct {
 	ctx      context.Context
@@ -236,7 +246,7 @@ type streamingReader struct {
 	streamHash string
 
 	// Blob cache for efficient access
-	blobCache  map[int][]byte
+	blobCache  map[int]*cachedBlob
 	cacheMutex sync.RWMutex
 	cacheSize  int
 
@@ -251,6 +261,9 @@ type streamingReader struct {
 	prefetchWG     sync.WaitGroup
 	prefetchCtx    context.Context
 	prefetchCancel context.CancelFunc
+
+	// Storage operations
+	storageWG sync.WaitGroup // Track background storage operations
 
 	// Progress tracking
 	progressCallback func(float64)
@@ -315,7 +328,7 @@ func newStreamReader(
 		config:           config,
 		totalSize:        totalSize,
 		streamHash:       hex.EncodeToString(sdBlob.StreamHash),
-		blobCache:        make(map[int][]byte),
+		blobCache:        make(map[int]*cachedBlob),
 		cacheSize:        config.CacheSize,
 		prefetchChan:     make(chan int, 1),
 		prefetchCtx:      prefetchCtx,
@@ -533,8 +546,8 @@ func (r *streamingReader) DecryptedSize() int64 {
 
 	// Calculate size from decrypted blobs we have in cache
 	for i := 0; i < len(r.sdBlob.BlobInfos)-1; i++ { // Skip terminating blob
-		if decryptedData, exists := r.blobCache[i]; exists {
-			totalDecryptedSize += int64(len(decryptedData))
+		if cachedBlob, exists := r.blobCache[i]; exists {
+			totalDecryptedSize += int64(len(cachedBlob.data))
 			knownBlobs++
 		}
 	}
@@ -547,6 +560,7 @@ func (r *streamingReader) DecryptedSize() int64 {
 
 	// If we have some blobs decrypted, we can estimate the total
 	// by assuming similar compression ratio for remaining blobs
+	// WARNING: This estimate may be inaccurate for streams with variable blob sizes.
 	if knownBlobs > 0 {
 		avgDecryptedSize := float64(totalDecryptedSize) / float64(knownBlobs)
 		remainingBlobs := totalContentBlobs - knownBlobs
@@ -603,13 +617,16 @@ func (r *streamingReader) Close() error {
 	// Wait for prefetcher to finish
 	r.prefetchWG.Wait()
 
+	// Wait for background storage operations to finish
+	r.storageWG.Wait()
+
 	// Clear cache
 	// WARNING: This clears the decrypted blob cache, which means DecryptedSize() will return -1
 	// after Close() is called. This is intentional to free memory but users should
 	// be aware that calling DecryptedSize() after Close() will not work.
 	r.cacheMutex.Lock()
 	cacheSize := len(r.blobCache)
-	r.blobCache = make(map[int][]byte)
+	r.blobCache = make(map[int]*cachedBlob)
 	r.cacheMutex.Unlock()
 
 	r.logger.Info("Stream reader closed successfully",
@@ -642,8 +659,19 @@ func (r *streamingReader) ensureCurrentBlob() error {
 
 	// Check cache first
 	r.cacheMutex.RLock()
-	if data, exists := r.blobCache[currentBlob]; exists {
+	if cachedBlob, exists := r.blobCache[currentBlob]; exists {
+		data := cachedBlob.data
 		r.cacheMutex.RUnlock()
+
+		// Update last access time asynchronously to avoid lock contention
+		go func() {
+			r.cacheMutex.Lock()
+			if updatedBlob, stillExists := r.blobCache[currentBlob]; stillExists {
+				updatedBlob.lastAccess = time.Now()
+			}
+			r.cacheMutex.Unlock()
+		}()
+
 		r.readMutex.Lock()
 		if r.currentBlob == currentBlob {
 			r.currentData = data
@@ -686,7 +714,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 			zap.Int("blobIndex", currentBlob),
 		)
 
-		err := WithRetry(r.retryOptions, func() error {
+		err := WithRetry(r.ctx, r.retryOptions, func() error {
 			has, err := r.store.Has(blobHash)
 			if err != nil {
 				return NewStreamError(OperationStorageHasCheck, r.sdHash, blobHash, err, 1)
@@ -751,7 +779,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 	)
 
 	var data []byte
-	err := WithRetry(r.retryOptions, func() error {
+	err := WithRetry(r.ctx, r.retryOptions, func() error {
 		acquiredData, acquireErr := r.acquirer.Acquire(r.ctx, blobHash)
 		if acquireErr != nil {
 			return NewStreamError(OperationNetworkAcquire, r.sdHash, blobHash, acquireErr, 1)
@@ -784,7 +812,9 @@ func (r *streamingReader) ensureCurrentBlob() error {
 
 	// Store in storage if available (best effort)
 	if r.store != nil {
+		r.storageWG.Add(1)
 		go func() {
+			defer r.storageWG.Done()
 			// Non-blocking storage to avoid slowing down reads
 			if err := r.store.Put(blobHash, data); err != nil {
 				// Log error but don't fail the operation
@@ -848,18 +878,26 @@ func (r *streamingReader) setBlobData(blobIndex int, data []byte) error {
 	r.cacheMutex.Lock()
 
 	// Add decrypted data to cache
-	r.blobCache[blobIndex] = decryptedData
+	r.blobCache[blobIndex] = &cachedBlob{
+		data:       decryptedData,
+		lastAccess: time.Now(),
+	}
 
-	// Manage cache size - remove oldest entries if needed
+	// Manage cache size - remove least recently used entries if needed
 	if len(r.blobCache) > r.cacheSize {
-		// Simple FIFO-like: remove entries with smallest index
-		var minIndex int = blobIndex
-		for idx := range r.blobCache {
-			if idx < minIndex {
-				minIndex = idx
+		// LRU: remove entry with oldest lastAccess time
+		var oldestIndex int
+		var oldestTime time.Time
+		first := true
+
+		for idx, cached := range r.blobCache {
+			if first || cached.lastAccess.Before(oldestTime) {
+				oldestIndex = idx
+				oldestTime = cached.lastAccess
+				first = false
 			}
 		}
-		delete(r.blobCache, minIndex)
+		delete(r.blobCache, oldestIndex)
 	}
 	r.cacheMutex.Unlock()
 
@@ -912,15 +950,16 @@ func (r *streamingReader) startPrefetcher() {
 
 				// Check if already cached
 				r.cacheMutex.RLock()
-				if _, exists := r.blobCache[blobIndex]; exists {
-					r.cacheMutex.RUnlock()
+				_, exists := r.blobCache[blobIndex]
+				r.cacheMutex.RUnlock()
+
+				if exists {
 					r.logger.Debug("Blob already in cache, skipping prefetch",
 						zap.String("sdHash", r.sdHash),
 						zap.Int("blobIndex", blobIndex),
 					)
 					continue
 				}
-				r.cacheMutex.RUnlock()
 
 				// Prefetch the blob
 				blobInfo := r.sdBlob.BlobInfos[blobIndex]
@@ -995,7 +1034,7 @@ func (r *streamingReader) startPrefetcher() {
 				)
 
 				var data []byte
-				err := WithRetry(r.retryOptions, func() error {
+				err := WithRetry(r.ctx, r.retryOptions, func() error {
 					acquiredData, acquireErr := r.acquirer.Acquire(r.prefetchCtx, blobHash)
 					if acquireErr != nil {
 						return NewStreamError(OperationPrefetchAcquire, r.sdHash, blobHash, acquireErr, 1)
@@ -1029,20 +1068,18 @@ func (r *streamingReader) startPrefetcher() {
 
 				// Store in storage
 				if r.store != nil {
-					if err := r.store.Put(blobHash, data); err != nil {
-						r.logger.Debug("Prefetch: failed to store blob in storage",
-							zap.String("sdHash", r.sdHash),
-							zap.String("blobHash", blobHash),
-							zap.String("store", r.store.Name()),
-							zap.Error(err),
-						)
-					} else {
-						r.logger.Debug("Prefetch: successfully stored blob in storage",
-							zap.String("sdHash", r.sdHash),
-							zap.String("blobHash", blobHash),
-							zap.String("store", r.store.Name()),
-						)
-					}
+					r.storageWG.Add(1)
+					go func(hash string, d []byte) {
+						defer r.storageWG.Done()
+						if err := r.store.Put(hash, d); err != nil {
+							r.logger.Debug("Prefetch: failed to store blob in storage",
+								zap.String("sdHash", r.sdHash),
+								zap.String("blobHash", hash),
+								zap.String("store", r.store.Name()),
+								zap.Error(err),
+							)
+						}
+					}(blobHash, data)
 				}
 
 				r.logger.Debug("Prefetch: successfully processed blob",
@@ -1190,11 +1227,7 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 		return nil, fmt.Errorf("invalid SD hash: %w", err)
 	}
 
-	// Initialize retry options
 	retryOptions := config.RetryOptions
-	if retryOptions == nil {
-		retryOptions = DefaultRetryOptions()
-	}
 
 	// First acquire the SD blob with retry
 	sa.logger.Info("Acquiring SD blob",
@@ -1202,7 +1235,7 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 	)
 
 	var sdBlobData []byte
-	err := WithRetry(retryOptions, func() error {
+	err := WithRetry(ctx, retryOptions, func() error {
 		acquiredData, acquireErr := sa.blobAcquirer.Acquire(ctx, sdHash)
 		if acquireErr != nil {
 			return NewStreamError(OperationAcquireSDBlob, sdHash, "", acquireErr, 1)
@@ -1436,7 +1469,7 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 			)
 		}),
 	)
-	err := WithRetry(retryOptions, func() error {
+	err := WithRetry(ctx, retryOptions, func() error {
 		acquiredData, acquireErr := sa.blobAcquirer.Acquire(ctx, sdHash)
 		if acquireErr != nil {
 			attemptCount++ // Increment for the current attempt
@@ -1576,7 +1609,7 @@ func (sa *DefaultStreamAcquirer) GetSDBlob(ctx context.Context, sdHash string) (
 	)
 
 	var sdBlobData []byte
-	err := WithRetry(DefaultRetryOptions(), func() error {
+	err := WithRetry(ctx, DefaultRetryOptions(), func() error {
 		acquiredData, acquireErr := sa.blobAcquirer.Acquire(ctx, sdHash)
 		if acquireErr != nil {
 			return NewStreamError(OperationAcquireSDBlob, sdHash, "", acquireErr, 1)

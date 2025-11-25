@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -19,7 +20,6 @@ var (
 	ErrInvalidHash      = liblbryerrors.Err("invalid blob hash")
 	ErrDecryptionFailed = liblbryerrors.Err("blob decryption failed")
 	ErrContextCancelled = liblbryerrors.Err("operation cancelled by context")
-	ErrRetryExhausted   = liblbryerrors.Err("retry attempts exhausted")
 )
 
 // Stream operation types for error reporting
@@ -82,10 +82,11 @@ func isRetryableError(err error) bool {
 type RetryableOperation func() error
 
 // WithRetry executes an operation with retry logic using retry-go library
-func WithRetry(options []retry.Option, operation RetryableOperation) error {
+func WithRetry(ctx context.Context, options []retry.Option, operation RetryableOperation) error {
 	if options == nil {
 		options = DefaultRetryOptions()
 	}
+	options = append(options, retry.Context(ctx))
 	return retry.Do(retry.RetryableFunc(operation), options...)
 }
 
@@ -110,6 +111,11 @@ func (e *StreamError) Error() string {
 
 func (e *StreamError) Unwrap() error {
 	return e.Err
+}
+
+// GetTimestamp returns when the error occurred
+func (e *StreamError) GetTimestamp() time.Time {
+	return e.Timestamp
 }
 
 // NewStreamError creates a new StreamError
