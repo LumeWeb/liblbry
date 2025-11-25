@@ -75,9 +75,9 @@ type BlobManager interface {
 	AcquireSDBlob(ctx context.Context, hash string, opts ...AcquireSDOption) (*stream.StreamResult, error)
 
 	// GetBlob retrieves a blob directly from the underlying store
-	GetBlob(hash string) ([]byte, error)
+	GetBlob(ctx context.Context, hash string) ([]byte, error)
 	// GetSDBlob retrieves an SD blob directly from the underlying store
-	GetSDBlob(hash string) ([]byte, error)
+	GetSDBlob(ctx context.Context, hash string) ([]byte, error)
 }
 
 // AcquireSDConfig holds configuration for SD blob acquisition
@@ -493,7 +493,7 @@ func (s *DefaultServer) announceBlobsToDHT(workerCount int, batchSize int) {
 
 	for {
 		// Get a batch of blob hashes using pagination
-		blobHashes, err := s.storage.List(offset, batchSize)
+		blobHashes, err := s.storage.List(s.ctx, offset, batchSize)
 		if err != nil {
 			if liblbryerrors.IsEndOfListError(err) {
 				// Reached end of list, break the loop
@@ -576,7 +576,7 @@ func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 	}
 
 	// Store the blob
-	err := s.storage.Put(hash, data)
+	err := s.storage.Put(nil, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store blob",
 			zap.String("hash", hash),
@@ -600,7 +600,7 @@ func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
 	}
 
 	// Store the SD blob
-	err := s.storage.PutSD(hash, data)
+	err := s.storage.PutSD(nil, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store SD blob",
 			zap.String("hash", hash),
@@ -624,7 +624,7 @@ func (s *DefaultServer) RemoveBlob(hash string) error {
 	}
 
 	// Delete the blob from storage
-	err := s.storage.Delete(hash)
+	err := s.storage.Delete(nil, hash)
 	if err != nil {
 		s.logger.Error("Failed to delete blob",
 			zap.String("hash", hash),
@@ -772,23 +772,23 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 }
 
 // GetBlob retrieves a blob directly from the underlying store
-func (s *DefaultServer) GetBlob(hash string) ([]byte, error) {
+func (s *DefaultServer) GetBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return nil, err
 	}
 
-	return s.storage.Get(hash)
+	return s.storage.Get(ctx, hash)
 }
 
 // GetSDBlob retrieves an SD blob directly from the underlying store
-func (s *DefaultServer) GetSDBlob(hash string) ([]byte, error) {
+func (s *DefaultServer) GetSDBlob(ctx context.Context, hash string) ([]byte, error) {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return nil, err
 	}
 
-	return s.storage.Get(hash)
+	return s.storage.Get(ctx, hash)
 }
 
 // startTCPProtocol starts a generic TCP protocol handler

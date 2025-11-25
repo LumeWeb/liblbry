@@ -20,7 +20,9 @@
 package disk
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -74,18 +76,63 @@ func validateHashWithError(hash string, operation string) error {
 	return nil
 }
 
+// writeWithContext writes data to a file while respecting context cancellation.
+//
+// For small data, it writes directly. For larger data, it writes in chunks
+// to allow context cancellation during the write operation.
+func writeWithContext(ctx context.Context, file *os.File, data []byte) error {
+	// For small data, write directly
+	if len(data) <= 4096 {
+		if _, err := file.Write(data); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// For larger data, write in chunks to allow context cancellation
+	const chunkSize = 4096
+	for i := 0; i < len(data); i += chunkSize {
+		// Check context before each chunk
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		if _, err := file.Write(data[i:end]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // atomicWrite handles the atomic write pattern used in Put/PutSD.
 //
 // It writes data to a temporary file first and then renames it to the final path,
 // ensuring that the file is either completely written or not written at all.
 // The operation parameter is used for logging purposes.
-func atomicWrite(path string, data []byte, logger *zap.Logger, operation string) error {
+// Respects context cancellation during file operations.
+func atomicWrite(ctx context.Context, path string, data []byte, logger *zap.Logger, operation string) error {
+	// Check context before starting operation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(path)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logErrorIfLogger(logger, "failed to create directory for "+operation+" operation", err, zap.String("dir", dir))
 		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Check context before creating temp file
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Create temporary file in the same directory as the final file
@@ -105,16 +152,26 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 		}
 	}()
 
-	// Write data to temporary file
-	if _, err := tmp.Write(data); err != nil {
+	// Write data to temporary file with context cancellation support
+	if err := writeWithContext(ctx, tmp, data); err != nil {
 		logErrorIfLogger(logger, "failed to write temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
 		return fmt.Errorf("failed to write temporary file: %w", err)
+	}
+
+	// Check context before sync
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Sync file to disk
 	if err := tmp.Sync(); err != nil {
 		logErrorIfLogger(logger, "failed to sync temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
 		return fmt.Errorf("failed to sync temporary file: %w", err)
+	}
+
+	// Check context before close
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Close file before rename (required on Windows)
@@ -127,6 +184,11 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 	if err := os.Chmod(tmpPath, 0600); err != nil {
 		logErrorIfLogger(logger, "failed to set permissions on temporary file for "+operation+" operation", err, zap.String("tmpPath", tmpPath))
 		return fmt.Errorf("failed to set file permissions: %w", err)
+	}
+
+	// Check context before rename
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Rename temporary file to final path
@@ -147,12 +209,72 @@ func atomicWrite(path string, data []byte, logger *zap.Logger, operation string)
 	return nil
 }
 
+// readWithContext reads a file while respecting context cancellation.
+//
+// For small files, it reads directly. For larger files, it reads in chunks
+// to allow context cancellation during the read operation.
+func readWithContext(ctx context.Context, path string) ([]byte, error) {
+	// Get file info to determine size
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// For small files, read directly
+	if info.Size() <= 4096 {
+		return os.ReadFile(path)
+	}
+
+	// For larger files, open and read in chunks
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	// Check context after opening file
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Read in chunks to allow context cancellation
+	const chunkSize = 4096
+	var data []byte
+	buffer := make([]byte, chunkSize)
+
+	for {
+		// Check context before each read
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		n, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		if n == 0 {
+			break
+		}
+
+		data = append(data, buffer[:n]...)
+	}
+
+	return data, nil
+}
+
 // checkBlobPaths checks both regular and SD blob paths, returns data if found.
 //
 // It first attempts to find a regular blob, and if not found, tries to find an SD blob.
 // Returns the data, any error encountered, and a boolean indicating if the blob was found.
 // The operation parameter is used for logging purposes.
-func checkBlobPaths(basePath, hash string, logger *zap.Logger, operation string) ([]byte, error, bool) {
+// Respects context cancellation during file operations.
+func checkBlobPaths(ctx context.Context, basePath, hash string, logger *zap.Logger, operation string) ([]byte, error, bool) {
+	// Check context before starting operation
+	if err := ctx.Err(); err != nil {
+		return nil, err, false
+	}
+
 	// Try to get regular blob with safe path construction
 	blobPath, err := safeJoin(basePath, hash)
 	if err != nil {
@@ -160,13 +282,23 @@ func checkBlobPaths(basePath, hash string, logger *zap.Logger, operation string)
 		return nil, err, false
 	}
 
-	data, err := os.ReadFile(blobPath)
+	// Check context before reading file
+	if err := ctx.Err(); err != nil {
+		return nil, err, false
+	}
+
+	data, err := readWithContext(ctx, blobPath)
 	if err == nil {
 		logDebugIfLogger(logger, "retrieved regular blob", zap.String("hash", hash), zap.String("path", blobPath))
 		return data, nil, true
 	}
 	if !os.IsNotExist(err) {
 		logErrorIfLogger(logger, "failed to read regular blob", err, zap.String("hash", hash), zap.String("path", blobPath))
+		return nil, err, false
+	}
+
+	// Check context before trying SD blob
+	if err := ctx.Err(); err != nil {
 		return nil, err, false
 	}
 
@@ -177,7 +309,12 @@ func checkBlobPaths(basePath, hash string, logger *zap.Logger, operation string)
 		return nil, err, false
 	}
 
-	data, err = os.ReadFile(sdBlobPath)
+	// Check context before reading SD file
+	if err := ctx.Err(); err != nil {
+		return nil, err, false
+	}
+
+	data, err = readWithContext(ctx, sdBlobPath)
 	if err == nil {
 		logDebugIfLogger(logger, "retrieved SD blob", zap.String("hash", hash), zap.String("path", sdBlobPath))
 		return data, nil, true
@@ -381,17 +518,32 @@ func (f *DiskStoreFactory) GetLogger() *zap.Logger {
 // Returns:
 //   - bool: True if the blob exists, false otherwise
 //   - error: Any error encountered during the check operation
-func (d *DiskStore) Has(hash string) (bool, error) {
+func (d *DiskStore) Has(ctx context.Context, hash string) (bool, error) {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	// Validate hash format
 	if !validateHash(hash) {
 		logDebugIfLogger(d.logger, "invalid hash format for Has operation", zap.String("hash", hash))
 		return false, nil
 	}
 
+	// Check context before checking regular blob
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	// Check regular blob with safe path construction
 	blobPath, err := safeJoin(d.path, hash)
 	if err != nil {
 		logErrorIfLogger(d.logger, "unsafe path detected for Has operation", err, zap.String("hash", hash))
+		return false, err
+	}
+
+	// Check context before stat operation
+	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 
@@ -403,10 +555,20 @@ func (d *DiskStore) Has(hash string) (bool, error) {
 		return false, err
 	}
 
+	// Check context before checking SD blob
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	// Check SD blob with safe path construction
 	sdBlobPath, err := safeJoinSD(d.path, hash)
 	if err != nil {
 		logErrorIfLogger(d.logger, "unsafe path detected for Has operation (SD blob)", err, zap.String("hash", hash))
+		return false, err
+	}
+
+	// Check context before SD stat operation
+	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 
@@ -433,14 +595,19 @@ func (d *DiskStore) Has(hash string) (bool, error) {
 // Returns:
 //   - []byte: The blob data
 //   - error: Any error encountered during retrieval, or an error if the hash format is invalid
-func (d *DiskStore) Get(hash string) ([]byte, error) {
+func (d *DiskStore) Get(ctx context.Context, hash string) ([]byte, error) {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Validate hash format
 	if err := validateHashWithError(hash, "Get"); err != nil {
 		logDebugIfLogger(d.logger, "invalid hash format for Get operation", zap.String("hash", hash))
 		return nil, err
 	}
 
-	data, err, found := checkBlobPaths(d.path, hash, d.logger, "Get")
+	data, err, found := checkBlobPaths(ctx, d.path, hash, d.logger, "Get")
 	if found {
 		return data, err
 	}
@@ -460,10 +627,20 @@ func (d *DiskStore) Get(hash string) ([]byte, error) {
 //
 // Returns:
 //   - error: Any error encountered during storage, or an error if the hash format is invalid
-func (d *DiskStore) Put(hash string, data []byte) error {
+func (d *DiskStore) Put(ctx context.Context, hash string, data []byte) error {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Validate hash format
 	if err := validateHashWithError(hash, "Put"); err != nil {
 		logDebugIfLogger(d.logger, "invalid hash format for Put operation", zap.String("hash", hash))
+		return err
+	}
+
+	// Check context before path creation
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -474,7 +651,7 @@ func (d *DiskStore) Put(hash string, data []byte) error {
 		return err
 	}
 
-	if err := atomicWrite(blobPath, data, d.logger, "Put"); err != nil {
+	if err := atomicWrite(ctx, blobPath, data, d.logger, "Put"); err != nil {
 		return err
 	}
 
@@ -495,10 +672,20 @@ func (d *DiskStore) Put(hash string, data []byte) error {
 //
 // Returns:
 //   - error: Any error encountered during storage, or an error if the hash format is invalid
-func (d *DiskStore) PutSD(hash string, data []byte) error {
+func (d *DiskStore) PutSD(ctx context.Context, hash string, data []byte) error {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Validate hash format
 	if err := validateHashWithError(hash, "PutSD"); err != nil {
 		logDebugIfLogger(d.logger, "invalid hash format for PutSD operation", zap.String("hash", hash))
+		return err
+	}
+
+	// Check context before path creation
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -509,7 +696,7 @@ func (d *DiskStore) PutSD(hash string, data []byte) error {
 		return err
 	}
 
-	if err := atomicWrite(sdBlobPath, data, d.logger, "PutSD"); err != nil {
+	if err := atomicWrite(ctx, sdBlobPath, data, d.logger, "PutSD"); err != nil {
 		return err
 	}
 
@@ -529,7 +716,12 @@ func (d *DiskStore) Name() string {
 }
 
 // List returns a list of blob hashes with pagination support
-func (d *DiskStore) List(offset, limit int) ([]string, error) {
+func (d *DiskStore) List(ctx context.Context, offset, limit int) ([]string, error) {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if offset < 0 {
 		return nil, liblbryerrors.ErrInvalidOffset
 	}
@@ -538,7 +730,7 @@ func (d *DiskStore) List(offset, limit int) ([]string, error) {
 	}
 
 	// Collect all blob hashes from the disk store
-	allHashes, err := d.collectBlobHashes()
+	allHashes, err := d.collectBlobHashes(ctx)
 	if err != nil {
 		return nil, liblbryerrors.Err("failed to collect blob hashes: %w", err)
 	}
@@ -557,13 +749,35 @@ func (d *DiskStore) List(offset, limit int) ([]string, error) {
 	return allHashes[start:end], nil
 }
 
+// walkWithContext is a context-aware version of filepath.Walk.
+//
+// It checks for context cancellation before processing each path entry
+// and returns context.Canceled if the context is cancelled during traversal.
+func walkWithContext(ctx context.Context, root string, walkFn filepath.WalkFunc) error {
+	// Check context before starting
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		// Check context before processing each path
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Call the original walk function
+		return walkFn(path, info, err)
+	})
+}
+
 // collectBlobHashes walks the disk store directory structure and collects all blob hashes
-func (d *DiskStore) collectBlobHashes() ([]string, error) {
+// Respects context cancellation during directory traversal.
+func (d *DiskStore) collectBlobHashes(ctx context.Context) ([]string, error) {
 	// Use a map to track unique hashes for deduplication
 	hashSet := make(map[string]struct{})
 
-	// Walk the directory structure to find all blobs
-	err := filepath.Walk(d.path, func(path string, info os.FileInfo, err error) error {
+	// Walk the directory structure to find all blobs with context cancellation support
+	err := walkWithContext(ctx, d.path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -602,10 +816,20 @@ func (d *DiskStore) collectBlobHashes() ([]string, error) {
 // If the blob exists in both regular and SD blob stores, it removes both.
 // If the blob is not found, it returns nil (no-op).
 // Only returns an error for invalid hash format or other unknown errors.
-func (d *DiskStore) Delete(hash string) error {
+func (d *DiskStore) Delete(ctx context.Context, hash string) error {
+	// Check context before validation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Validate hash format
 	if err := validateHashWithError(hash, "Delete"); err != nil {
 		logDebugIfLogger(d.logger, "invalid hash format for Delete operation", zap.String("hash", hash))
+		return err
+	}
+
+	// Check context before deleting regular blob
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
@@ -616,15 +840,30 @@ func (d *DiskStore) Delete(hash string) error {
 		return err
 	}
 
+	// Check context before remove operation
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if err := os.Remove(blobPath); err != nil && !os.IsNotExist(err) {
 		logErrorIfLogger(d.logger, "failed to delete regular blob", err, zap.String("hash", hash), zap.String("path", blobPath))
 		return fmt.Errorf("failed to delete regular blob: %w", err)
+	}
+
+	// Check context before deleting SD blob
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Try to delete SD blob
 	sdBlobPath, err := safeJoinSD(d.path, hash)
 	if err != nil {
 		logErrorIfLogger(d.logger, "unsafe path detected for Delete operation (SD blob)", err, zap.String("hash", hash))
+		return err
+	}
+
+	// Check context before SD remove operation
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 

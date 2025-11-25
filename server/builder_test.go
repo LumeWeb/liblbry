@@ -406,7 +406,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -440,7 +440,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -462,7 +462,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -486,7 +486,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Transfer options should be stored even without default acquirer
 		builder := NewServerBuilder().
@@ -551,7 +551,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Test that invalid options don't break the build process
 		builder := NewServerBuilder().
@@ -583,7 +583,7 @@ func TestWithTransferOptions(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Test that nil options are handled gracefully (ignored and logged)
 		builder := NewServerBuilder().
@@ -668,7 +668,7 @@ func TestTransferOptionsIntegration(t *testing.T) {
 		testMocks := setupBuilderMocks(t)
 
 		// Set up mock expectations for List method calls during DHT blob announcement
-		testMocks.storage.EXPECT().List(mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+		testMocks.storage.EXPECT().List(mock.Anything, mock.AnythingOfType("int"), mock.AnythingOfType("int")).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 		// Test creating a custom transfer option
 		customOption, err := peer_transfer.NewPeerTransferOptionAdapter(
@@ -847,7 +847,7 @@ func TestServerBuilder_WithExistingDHT(t *testing.T) {
 	// Setup mock expectations
 	mockDHTNode.EXPECT().Start().Return(nil)
 	mockDHTNode.EXPECT().Shutdown().Return()
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Maybe()
 
 	// Create server with existing DHT
 	server, err := NewServerBuilder().
@@ -1020,7 +1020,7 @@ func TestServerBuilder_Build_AcquirerFactoryIntegration(t *testing.T) {
 	}
 
 	// Mock the storage.List call that happens during DHT blob announcement
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, nil).Times(1)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1067,7 +1067,7 @@ func TestServerBuilder_Build_DefaultAcquirerIntegration(t *testing.T) {
 	mockDHTNode.EXPECT().Shutdown().Return()
 
 	// Add mock expectation for storage.List() called during DHT blob announcement
-	testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
+	testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
 
 	builder := NewServerBuilder().
 		WithStorage(testMocks.storage).
@@ -1122,7 +1122,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 		mockDHTNode.EXPECT().Shutdown().Return()
 
 		// Add mock expectation for storage.List() called during DHT blob announcement
-		testMocks.storage.EXPECT().List(0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
+		testMocks.storage.EXPECT().List(mock.Anything, 0, DefaultDHTAnnouncementBatchSize).Return([]string{}, liblbryerrors.ErrEndOfList).Times(1)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).
@@ -1155,7 +1155,7 @@ func TestServerBuilder_Build_DefaultAcquirerDHTUsage(t *testing.T) {
 
 	t.Run("Without DHT node", func(t *testing.T) {
 		// Ensure storage.List is not called when no DHT node is configured
-		testMocks.storage.EXPECT().List(mock.Anything, mock.Anything).Times(0)
+		testMocks.storage.EXPECT().List(mock.Anything, mock.Anything, mock.Anything).Times(0)
 
 		builder := NewServerBuilder().
 			WithStorage(testMocks.storage).

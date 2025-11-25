@@ -122,14 +122,14 @@ func setupReflectorMockStore(t *testing.T, withBlobs bool) *storageMocks.MockBlo
 	if withBlobs {
 		for k, v := range reflectorTestBlobs {
 			// Set up mock behavior for Has method
-			mockStore.On("Has", k).Return(true, nil)
+			mockStore.On("Has", mock.Anything, k).Return(true, nil)
 			// Set up mock behavior for Get method
 			mockStore.On("Get", k).Return(v, nil)
 		}
 	}
 
 	// For non-existent blobs, Has should return false
-	mockStore.On("Has", mock.AnythingOfType("string")).Return(false, nil)
+	mockStore.On("Has", mock.Anything, mock.AnythingOfType("string")).Return(false, nil)
 	mockStore.On("Get", mock.AnythingOfType("string")).Return([]byte(nil), errors.New("blob not found"))
 
 	// Set up mock behavior for Name method
@@ -326,9 +326,9 @@ func TestShouldAcceptBlob_NewBlob(t *testing.T) {
 	server := NewReflectorServer(store)
 
 	// Mock store methods
-	store.On("Has", validBlobHash1).Return(false, nil)
+	store.EXPECT().Has(mock.Anything, validBlobHash1).Return(false, nil)
 
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new blob")
@@ -341,9 +341,9 @@ func TestShouldAcceptBlob_ExistingRegularBlob_WithNeededBlobChecker(t *testing.T
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - regular blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing regular blob")
@@ -359,9 +359,9 @@ func TestShouldAcceptBlob_ExistingRegularBlob_WithoutNeededBlobChecker(t *testin
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - regular blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing regular blob")
@@ -377,12 +377,12 @@ func TestShouldAcceptBlob_ExistingRegularBlob_NeededBlobCheckerError(t *testing.
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - regular blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
 	// For regular blobs (isSdBlob=false), MissingBlobsForKnownStream should NOT be called
 	// Remove the expectation that it gets called since it's only called for SD blobs
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	// For regular blobs, shouldAcceptBlob should return false without error
 	// because the blob already exists and we don't want to re-upload it
@@ -402,13 +402,13 @@ func TestShouldAcceptBlob_ExistingSDBlob_WithNeededBlobChecker(t *testing.T) {
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - SD blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
 	// Mock NeededBlobChecker methods
 	neededBlobs := []string{"blob1", "blob2"}
-	mockStore.On("MissingBlobsForKnownStream", validBlobHash1).Return(neededBlobs, nil)
+	mockStore.EXPECT().MissingBlobsForKnownStream(validBlobHash1).Return(neededBlobs, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, true, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, true, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false for existing SD blob")
@@ -424,9 +424,9 @@ func TestShouldAcceptBlob_ExistingSDBlob_WithoutNeededBlobChecker(t *testing.T) 
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - SD blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, true, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, true, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for existing SD blob")
@@ -442,13 +442,13 @@ func TestShouldAcceptBlob_ExistingSDBlob_NeededBlobCheckerError(t *testing.T) {
 	server := NewReflectorServer(mockStore)
 
 	// Mock store methods - SD blob already exists
-	mockStore.On("Has", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Has(mock.Anything, validBlobHash1).Return(true, nil)
 
 	// Mock NeededBlobChecker methods with error
 	expectedError := errors.New("needed blob checker error")
 	mockStore.EXPECT().MissingBlobsForKnownStream(validBlobHash1).Return(nil, expectedError)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, true, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, true, testLocalIP)
 
 	assert.Error(t, err, "Expected shouldAcceptBlob to fail with error")
 	assert.False(t, shouldSend, "Expected shouldSend to remain false when MissingBlobsForKnownStream errors")
@@ -466,9 +466,9 @@ func TestShouldAcceptBlob_WithBlocklister_WantsTrue(t *testing.T) {
 	server := NewReflectorServer(mockStore)
 
 	// Mock Blocklister methods - wants returns true
-	mockStore.On("Wants", validBlobHash1).Return(true, nil)
+	mockStore.EXPECT().Wants(validBlobHash1).Return(true, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true when Wants returns true")
@@ -484,9 +484,9 @@ func TestShouldAcceptBlob_WithBlocklister_WantsFalse(t *testing.T) {
 	server := NewReflectorServer(mockStore)
 
 	// Mock Blocklister methods - wants returns false
-	mockStore.On("Wants", validBlobHash1).Return(false, nil)
+	mockStore.EXPECT().Wants(validBlobHash1).Return(false, nil)
 
-	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	shouldSend, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.False(t, shouldSend, "Expected shouldSend to be false when Wants returns false")
@@ -503,9 +503,9 @@ func TestShouldAcceptBlob_WithBlocklister_Error(t *testing.T) {
 
 	// Mock Blocklister methods - wants returns error
 	expectedError := errors.New("blocklister error")
-	mockStore.On("Wants", validBlobHash1).Return(false, expectedError)
+	mockStore.EXPECT().Wants(validBlobHash1).Return(false, expectedError)
 
-	_, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(validBlobHash1, false, testLocalIP)
+	_, returnedBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), validBlobHash1, false, testLocalIP)
 
 	assert.Error(t, err, "Expected shouldAcceptBlob to fail with error")
 	// Check if the wrapped error matches
@@ -673,10 +673,10 @@ func TestReceiveBlob_Success(t *testing.T) {
 	blobHash := server.(*DefaultReflectorServer).calculateBlobHash(blobData)
 
 	// Mock store methods
-	store.On("Has", blobHash).Return(false, nil)
+	store.EXPECT().Has(mock.Anything, blobHash).Return(false, nil)
 
 	// Test shouldAcceptBlob first
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(blobHash, false, "127.0.0.1")
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), blobHash, false, "127.0.0.1")
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new blob")
 	assert.Empty(t, neededBlobs, "Expected no needed blobs for regular blob")
@@ -713,10 +713,10 @@ func TestReceiveBlob_SDBlob(t *testing.T) {
 	sdHash := server.(*DefaultReflectorServer).calculateBlobHash(sdBlobData)
 
 	// Mock store methods
-	store.On("Has", sdHash).Return(false, nil)
+	store.EXPECT().Has(mock.Anything, sdHash).Return(false, nil)
 
 	// Test shouldAcceptBlob for SD blob
-	shouldSend, _, err := server.(*DefaultReflectorServer).shouldAcceptBlob(sdHash, true, "127.0.0.1")
+	shouldSend, _, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), sdHash, true, "127.0.0.1")
 	assert.NoError(t, err, "Expected shouldAcceptBlob to succeed")
 	assert.True(t, shouldSend, "Expected shouldSend to be true for new SD blob")
 
@@ -735,7 +735,7 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 	blobHash := server.(*DefaultReflectorServer).calculateBlobHash(blobData)
 
 	// Mock store methods - blob already exists
-	store.On("Has", blobHash).Return(true, nil)
+	store.EXPECT().Has(mock.Anything, blobHash).Return(true, nil)
 
 	// Write blob request
 	request := SendBlobRequest{
@@ -747,12 +747,12 @@ func TestReceiveBlob_ExistingBlob(t *testing.T) {
 
 	// Receive blob (should not read blob data since we don't want it)
 	reader := bufio.NewReader(conn)
-	err := server.(*DefaultReflectorServer).receiveBlob(conn, reader)
+	err := server.(*DefaultReflectorServer).receiveBlob(t.Context(), conn, reader)
 
 	assert.NoError(t, err, "Expected receiveBlob to succeed for existing blob")
 
 	// Verify only Has was called, not Put
-	store.AssertCalled(t, "Has", blobHash)
+	store.AssertCalled(t, "Has", mock.Anything, blobHash)
 	store.AssertNotCalled(t, "Put", mock.Anything, mock.Anything)
 }
 
@@ -766,10 +766,10 @@ func TestReceiveBlob_Integration(t *testing.T) {
 	blobHash := server.(*DefaultReflectorServer).calculateBlobHash(blobData)
 
 	// Mock store expectations - we only test Has since we're not testing full blob storage
-	store.On("Has", blobHash).Return(false, nil)
+	store.EXPECT().Has(mock.Anything, blobHash).Return(false, nil)
 
 	// Test shouldAcceptBlob first - this is called by receiveBlob
-	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(blobHash, false, testLocalIP)
+	shouldSend, neededBlobs, err := server.(*DefaultReflectorServer).shouldAcceptBlob(t.Context(), blobHash, false, testLocalIP)
 	assert.NoError(t, err)
 	assert.True(t, shouldSend)
 	assert.Empty(t, neededBlobs)
@@ -786,7 +786,7 @@ func TestReceiveBlob_Integration(t *testing.T) {
 	assert.Contains(t, string(conn.GetWrittenData()), `"received_blob":true`)
 
 	// Verify only Has was called, not Put since we're not testing full blob storage
-	store.AssertCalled(t, "Has", blobHash)
+	store.AssertCalled(t, "Has", mock.Anything, blobHash)
 	store.AssertNotCalled(t, "Put", mock.Anything, mock.Anything)
 }
 
@@ -805,7 +805,7 @@ func TestReceiveBlob_NegativeSize(t *testing.T) {
 
 	// Receive blob
 	reader := bufio.NewReader(conn)
-	err := server.(*DefaultReflectorServer).receiveBlob(conn, reader)
+	err := server.(*DefaultReflectorServer).receiveBlob(t.Context(), conn, reader)
 
 	assert.Error(t, err, "Expected receiveBlob to fail with negative size")
 	assert.True(t, errors.Is(err, ErrNegativeBlobSize), "Expected ErrNegativeBlobSize")

@@ -34,7 +34,7 @@ func TestLoggerIntegration(t *testing.T) {
 	testData := []byte("test data")
 	testHash := "84eaddedccac7c406994a857e6c821f5ab3f0e700a81d716afd2570d11d5ef0e963152e95459ddc3637b4011ba3b38c2"
 
-	err = store.Put(testHash, testData)
+	err = store.Put(t.Context(), testHash, testData)
 	require.NoError(t, err, "Failed to put data")
 
 	// Test 2: Logger properly configured from config
@@ -48,7 +48,7 @@ func TestLoggerIntegration(t *testing.T) {
 	require.NoError(t, err, "Failed to create store with logger")
 
 	// Test putting and getting data with actual logger
-	err = storeWithLogger.Put(testHash, testData)
+	err = storeWithLogger.Put(t.Context(), testHash, testData)
 	require.NoError(t, err, "Failed to put data with logger")
 
 	// Test 3: Verify both stores implement the interface

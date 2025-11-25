@@ -715,7 +715,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 		)
 
 		err := WithRetry(r.ctx, r.retryOptions, func() error {
-			has, err := r.store.Has(blobHash)
+			has, err := r.store.Has(r.ctx, blobHash)
 			if err != nil {
 				return NewStreamError(OperationStorageHasCheck, r.sdHash, blobHash, err, 1)
 			}
@@ -723,7 +723,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 				return ErrStreamNotFound
 			}
 
-			data, err := r.store.Get(blobHash)
+			data, err := r.store.Get(r.ctx, blobHash)
 			if err != nil {
 				return NewStreamError(OperationStorageGet, r.sdHash, blobHash, err, 1)
 			}
@@ -816,7 +816,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 		go func() {
 			defer r.storageWG.Done()
 			// Non-blocking storage to avoid slowing down reads
-			if err := r.store.Put(blobHash, data); err != nil {
+			if err := r.store.Put(r.ctx, blobHash, data); err != nil {
 				// Log error but don't fail the operation
 				r.logger.Error("failed to store blob in storage",
 					zap.String("blobHash", blobHash),
@@ -978,8 +978,8 @@ func (r *streamingReader) startPrefetcher() {
 						zap.Int("blobIndex", blobIndex),
 					)
 
-					if has, err := r.store.Has(blobHash); err == nil && has {
-						data, err := r.store.Get(blobHash)
+					if has, err := r.store.Has(r.ctx, blobHash); err == nil && has {
+						data, err := r.store.Get(r.ctx, blobHash)
 						if err == nil {
 							// Verify blob hash if verification is enabled
 							if r.config.VerificationEnabled {
@@ -1071,7 +1071,7 @@ func (r *streamingReader) startPrefetcher() {
 					r.storageWG.Add(1)
 					go func(hash string, d []byte) {
 						defer r.storageWG.Done()
-						if err := r.store.Put(hash, d); err != nil {
+						if err := r.store.Put(r.ctx, hash, d); err != nil {
 							r.logger.Debug("Prefetch: failed to store blob in storage",
 								zap.String("sdHash", r.sdHash),
 								zap.String("blobHash", hash),
@@ -1315,14 +1315,14 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, config *AcquireConfig, sdHash, blobHash string, blobIndex int, blobInfo *stream.BlobInfo) ([]byte, error) {
 	// Try storage first if available
 	if sa.store != nil {
-		if has, err := sa.store.Has(blobHash); err == nil && has {
+		if has, err := sa.store.Has(ctx, blobHash); err == nil && has {
 			sa.logger.Debug("Content blob found in storage",
 				zap.String("sdHash", sdHash),
 				zap.String("blobHash", blobHash),
 				zap.Int("blobIndex", blobIndex),
 			)
 
-			blobData, err := sa.store.Get(blobHash)
+			blobData, err := sa.store.Get(ctx, blobHash)
 			if err != nil {
 				sa.logger.Debug("Failed to retrieve blob from storage, acquiring from network",
 					zap.String("sdHash", sdHash),
@@ -1402,7 +1402,7 @@ func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, co
 
 	// Store the blob if we have a store
 	if sa.store != nil {
-		if err := sa.store.Put(blobHash, blobData); err != nil {
+		if err := sa.store.Put(nil, blobHash, blobData); err != nil {
 			sa.logger.Debug("Failed to store acquired blob",
 				zap.String("sdHash", sdHash),
 				zap.String("blobHash", blobHash),

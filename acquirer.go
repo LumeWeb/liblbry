@@ -3,6 +3,7 @@ package liblbry
 import (
 	"context"
 	"errors"
+
 	"go.lumeweb.com/liblbry/blob/transfer"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
@@ -38,14 +39,14 @@ func (ba *DefaultBlobAcquirer) Acquire(ctx context.Context, hash string) ([]byte
 	}
 
 	// First check if blob already exists in storage
-	has, err := ba.store.Has(hash)
+	has, err := ba.store.Has(ctx, hash)
 	if err != nil {
 		return nil, err
 	}
 
 	if has {
 		// Blob exists in storage, retrieve it
-		data, err := ba.store.Get(hash)
+		data, err := ba.store.Get(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +61,7 @@ func (ba *DefaultBlobAcquirer) Acquire(ctx context.Context, hash string) ([]byte
 		data, err := transferMethod.Get(ctx, hash)
 		if err == nil {
 			// Successfully acquired blob, store it
-			err = ba.store.Put(hash, data)
+			err = ba.store.Put(ctx, hash, data)
 			if err != nil {
 				return nil, err
 			}

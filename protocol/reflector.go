@@ -12,6 +12,7 @@ package protocol
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -31,6 +32,14 @@ import (
 // ReflectorServer defines the interface for handling reflector connections
 type ReflectorServer interface {
 	ConnectionHandler
+}
+
+// wrapReflectorContext creates a new context with reflector source and IP address information
+func wrapReflectorContext(ctx context.Context, conn net.Conn) context.Context {
+	ip := GetConnectionIP(conn)
+	ctx = context.WithValue(ctx, SourceContextKey, SourceReflector)
+	ctx = context.WithValue(ctx, IPAddressContextKey, ip)
+	return ctx
 }
 
 // Protocol constants
@@ -120,18 +129,30 @@ func WithReflectorNotifier(notifier Notifier) ReflectorServerOption {
 func (r *DefaultReflectorServer) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	// Wrap context with reflector source and IP address information
+	ctx := wrapReflectorContext(context.Background(), conn)
+
 	reader := bufio.NewReader(conn)
 
 	// Perform handshake
 	if err := r.doHandshake(conn, reader); err != nil {
-		r.logger.Error("Handshake failed", zap.Error(err))
+		ip, _ := GetIPAddressFromContext(ctx)
+		r.logger.Error("Handshake failed",
+			zap.Error(err),
+			zap.String("source", string(SourceReflector)),
+			zap.String("ip", ip))
 		r.sendError(conn, err)
 		return
 	}
 
 	// Handle blob uploads
 	for {
-		err := r.receiveBlob(conn, reader)
+		// Create context for each blob operation with timeout, preserving source and IP info
+		ctx, cancel := context.WithTimeout(ctx, r.connectionTimeout)
+
+		err := r.receiveBlob(ctx, conn, reader)
+		cancel() // Cancel context when done with this blob
+
 		if err != nil {
 			if err == io.EOF {
 				return // Normal connection close
@@ -164,7 +185,7 @@ func (r *DefaultReflectorServer) doHandshake(conn net.Conn, reader *bufio.Reader
 }
 
 // receiveBlob handles a blob upload request
-func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader) error {
+func (r *DefaultReflectorServer) receiveBlob(ctx context.Context, conn net.Conn, reader *bufio.Reader) error {
 	// Read blob request
 	blobSize, blobHash, isSdBlob, err := r.readBlobRequest(conn, reader)
 	if err != nil {
@@ -177,7 +198,7 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 	}
 
 	// Check if we want this blob
-	shouldSend, neededBlobs, err := r.shouldAcceptBlob(blobHash, isSdBlob, peerIP)
+	shouldSend, neededBlobs, err := r.shouldAcceptBlob(ctx, blobHash, isSdBlob, peerIP)
 	if err != nil {
 		return err
 	}
@@ -215,9 +236,9 @@ func (r *DefaultReflectorServer) receiveBlob(conn net.Conn, reader *bufio.Reader
 
 	// Store blob
 	if isSdBlob {
-		err = r.store.PutSD(blobHash, blobData)
+		err = r.store.PutSD(ctx, blobHash, blobData)
 	} else {
-		err = r.store.Put(blobHash, blobData)
+		err = r.store.Put(ctx, blobHash, blobData)
 	}
 	if err != nil {
 		return errors.Join(liblbryerrors.ErrFailedToStoreBlob, fmt.Errorf("failed to store blob %s: %w", safeHashPrefix(blobHash), err))
@@ -269,7 +290,7 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Re
 }
 
 // shouldAcceptBlob determines if the server should accept a blob
-func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool, peerIP string) (bool, []string, error) {
+func (r *DefaultReflectorServer) shouldAcceptBlob(ctx context.Context, blobHash string, isSdBlob bool, peerIP string) (bool, []string, error) {
 	// Check access control
 	if r.accessControl != nil && !r.accessControl.Allow(blobHash, peerIP) {
 		return false, []string{}, nil
@@ -288,7 +309,7 @@ func (r *DefaultReflectorServer) shouldAcceptBlob(blobHash string, isSdBlob bool
 		decidedByBlocklister = true
 	} else {
 		// Fall back to Has() method
-		blobExists, err := r.store.Has(blobHash)
+		blobExists, err := r.store.Has(ctx, blobHash)
 		if err != nil {
 			return false, nil, errors.Join(liblbryerrors.ErrFailedToCheckBlobExistence, err)
 		}

@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"context"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -36,16 +38,16 @@ func (_m *MockDummyMissingBlobStore) EXPECT() *MockDummyMissingBlobStore_Expecte
 }
 
 // Delete provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) Delete(hash string) error {
-	ret := _mock.Called(hash)
+func (_mock *MockDummyMissingBlobStore) Delete(ctx context.Context, hash string) error {
+	ret := _mock.Called(ctx, hash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Delete")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string) error); ok {
-		r0 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, hash)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -58,19 +60,25 @@ type MockDummyMissingBlobStore_Delete_Call struct {
 }
 
 // Delete is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
-func (_e *MockDummyMissingBlobStore_Expecter) Delete(hash interface{}) *MockDummyMissingBlobStore_Delete_Call {
-	return &MockDummyMissingBlobStore_Delete_Call{Call: _e.mock.On("Delete", hash)}
+func (_e *MockDummyMissingBlobStore_Expecter) Delete(ctx interface{}, hash interface{}) *MockDummyMissingBlobStore_Delete_Call {
+	return &MockDummyMissingBlobStore_Delete_Call{Call: _e.mock.On("Delete", ctx, hash)}
 }
 
-func (_c *MockDummyMissingBlobStore_Delete_Call) Run(run func(hash string)) *MockDummyMissingBlobStore_Delete_Call {
+func (_c *MockDummyMissingBlobStore_Delete_Call) Run(run func(ctx context.Context, hash string)) *MockDummyMissingBlobStore_Delete_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -81,14 +89,14 @@ func (_c *MockDummyMissingBlobStore_Delete_Call) Return(err error) *MockDummyMis
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_Delete_Call) RunAndReturn(run func(hash string) error) *MockDummyMissingBlobStore_Delete_Call {
+func (_c *MockDummyMissingBlobStore_Delete_Call) RunAndReturn(run func(ctx context.Context, hash string) error) *MockDummyMissingBlobStore_Delete_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Get provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) Get(hash string) ([]byte, error) {
-	ret := _mock.Called(hash)
+func (_mock *MockDummyMissingBlobStore) Get(ctx context.Context, hash string) ([]byte, error) {
+	ret := _mock.Called(ctx, hash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Get")
@@ -96,18 +104,18 @@ func (_mock *MockDummyMissingBlobStore) Get(hash string) ([]byte, error) {
 
 	var r0 []byte
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) ([]byte, error)); ok {
-		return returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]byte, error)); ok {
+		return returnFunc(ctx, hash)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) []byte); ok {
-		r0 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []byte); ok {
+		r0 = returnFunc(ctx, hash)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]byte)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
-		r1 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, hash)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -120,19 +128,25 @@ type MockDummyMissingBlobStore_Get_Call struct {
 }
 
 // Get is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
-func (_e *MockDummyMissingBlobStore_Expecter) Get(hash interface{}) *MockDummyMissingBlobStore_Get_Call {
-	return &MockDummyMissingBlobStore_Get_Call{Call: _e.mock.On("Get", hash)}
+func (_e *MockDummyMissingBlobStore_Expecter) Get(ctx interface{}, hash interface{}) *MockDummyMissingBlobStore_Get_Call {
+	return &MockDummyMissingBlobStore_Get_Call{Call: _e.mock.On("Get", ctx, hash)}
 }
 
-func (_c *MockDummyMissingBlobStore_Get_Call) Run(run func(hash string)) *MockDummyMissingBlobStore_Get_Call {
+func (_c *MockDummyMissingBlobStore_Get_Call) Run(run func(ctx context.Context, hash string)) *MockDummyMissingBlobStore_Get_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -143,14 +157,14 @@ func (_c *MockDummyMissingBlobStore_Get_Call) Return(bytes []byte, err error) *M
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_Get_Call) RunAndReturn(run func(hash string) ([]byte, error)) *MockDummyMissingBlobStore_Get_Call {
+func (_c *MockDummyMissingBlobStore_Get_Call) RunAndReturn(run func(ctx context.Context, hash string) ([]byte, error)) *MockDummyMissingBlobStore_Get_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Has provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) Has(hash string) (bool, error) {
-	ret := _mock.Called(hash)
+func (_mock *MockDummyMissingBlobStore) Has(ctx context.Context, hash string) (bool, error) {
+	ret := _mock.Called(ctx, hash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Has")
@@ -158,16 +172,16 @@ func (_mock *MockDummyMissingBlobStore) Has(hash string) (bool, error) {
 
 	var r0 bool
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) (bool, error)); ok {
-		return returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (bool, error)); ok {
+		return returnFunc(ctx, hash)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) bool); ok {
-		r0 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) bool); ok {
+		r0 = returnFunc(ctx, hash)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
-	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
-		r1 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, hash)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -180,19 +194,25 @@ type MockDummyMissingBlobStore_Has_Call struct {
 }
 
 // Has is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
-func (_e *MockDummyMissingBlobStore_Expecter) Has(hash interface{}) *MockDummyMissingBlobStore_Has_Call {
-	return &MockDummyMissingBlobStore_Has_Call{Call: _e.mock.On("Has", hash)}
+func (_e *MockDummyMissingBlobStore_Expecter) Has(ctx interface{}, hash interface{}) *MockDummyMissingBlobStore_Has_Call {
+	return &MockDummyMissingBlobStore_Has_Call{Call: _e.mock.On("Has", ctx, hash)}
 }
 
-func (_c *MockDummyMissingBlobStore_Has_Call) Run(run func(hash string)) *MockDummyMissingBlobStore_Has_Call {
+func (_c *MockDummyMissingBlobStore_Has_Call) Run(run func(ctx context.Context, hash string)) *MockDummyMissingBlobStore_Has_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -203,14 +223,14 @@ func (_c *MockDummyMissingBlobStore_Has_Call) Return(b bool, err error) *MockDum
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_Has_Call) RunAndReturn(run func(hash string) (bool, error)) *MockDummyMissingBlobStore_Has_Call {
+func (_c *MockDummyMissingBlobStore_Has_Call) RunAndReturn(run func(ctx context.Context, hash string) (bool, error)) *MockDummyMissingBlobStore_Has_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // List provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) List(offset int, limit int) ([]string, error) {
-	ret := _mock.Called(offset, limit)
+func (_mock *MockDummyMissingBlobStore) List(ctx context.Context, offset int, limit int) ([]string, error) {
+	ret := _mock.Called(ctx, offset, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
@@ -218,18 +238,18 @@ func (_mock *MockDummyMissingBlobStore) List(offset int, limit int) ([]string, e
 
 	var r0 []string
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(int, int) ([]string, error)); ok {
-		return returnFunc(offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]string, error)); ok {
+		return returnFunc(ctx, offset, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(int, int) []string); ok {
-		r0 = returnFunc(offset, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []string); ok {
+		r0 = returnFunc(ctx, offset, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]string)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(int, int) error); ok {
-		r1 = returnFunc(offset, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
+		r1 = returnFunc(ctx, offset, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -242,25 +262,31 @@ type MockDummyMissingBlobStore_List_Call struct {
 }
 
 // List is a helper method to define mock.On call
+//   - ctx context.Context
 //   - offset int
 //   - limit int
-func (_e *MockDummyMissingBlobStore_Expecter) List(offset interface{}, limit interface{}) *MockDummyMissingBlobStore_List_Call {
-	return &MockDummyMissingBlobStore_List_Call{Call: _e.mock.On("List", offset, limit)}
+func (_e *MockDummyMissingBlobStore_Expecter) List(ctx interface{}, offset interface{}, limit interface{}) *MockDummyMissingBlobStore_List_Call {
+	return &MockDummyMissingBlobStore_List_Call{Call: _e.mock.On("List", ctx, offset, limit)}
 }
 
-func (_c *MockDummyMissingBlobStore_List_Call) Run(run func(offset int, limit int)) *MockDummyMissingBlobStore_List_Call {
+func (_c *MockDummyMissingBlobStore_List_Call) Run(run func(ctx context.Context, offset int, limit int)) *MockDummyMissingBlobStore_List_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 int
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(int)
+			arg0 = args[0].(context.Context)
 		}
 		var arg1 int
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -271,7 +297,7 @@ func (_c *MockDummyMissingBlobStore_List_Call) Return(strings []string, err erro
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_List_Call) RunAndReturn(run func(offset int, limit int) ([]string, error)) *MockDummyMissingBlobStore_List_Call {
+func (_c *MockDummyMissingBlobStore_List_Call) RunAndReturn(run func(ctx context.Context, offset int, limit int) ([]string, error)) *MockDummyMissingBlobStore_List_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -383,16 +409,16 @@ func (_c *MockDummyMissingBlobStore_Name_Call) RunAndReturn(run func() string) *
 }
 
 // Put provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) Put(hash string, data []byte) error {
-	ret := _mock.Called(hash, data)
+func (_mock *MockDummyMissingBlobStore) Put(ctx context.Context, hash string, data []byte) error {
+	ret := _mock.Called(ctx, hash, data)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Put")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, []byte) error); ok {
-		r0 = returnFunc(hash, data)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte) error); ok {
+		r0 = returnFunc(ctx, hash, data)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -405,25 +431,31 @@ type MockDummyMissingBlobStore_Put_Call struct {
 }
 
 // Put is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
 //   - data []byte
-func (_e *MockDummyMissingBlobStore_Expecter) Put(hash interface{}, data interface{}) *MockDummyMissingBlobStore_Put_Call {
-	return &MockDummyMissingBlobStore_Put_Call{Call: _e.mock.On("Put", hash, data)}
+func (_e *MockDummyMissingBlobStore_Expecter) Put(ctx interface{}, hash interface{}, data interface{}) *MockDummyMissingBlobStore_Put_Call {
+	return &MockDummyMissingBlobStore_Put_Call{Call: _e.mock.On("Put", ctx, hash, data)}
 }
 
-func (_c *MockDummyMissingBlobStore_Put_Call) Run(run func(hash string, data []byte)) *MockDummyMissingBlobStore_Put_Call {
+func (_c *MockDummyMissingBlobStore_Put_Call) Run(run func(ctx context.Context, hash string, data []byte)) *MockDummyMissingBlobStore_Put_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
 		}
-		var arg1 []byte
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].([]byte)
+			arg1 = args[1].(string)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -434,22 +466,22 @@ func (_c *MockDummyMissingBlobStore_Put_Call) Return(err error) *MockDummyMissin
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_Put_Call) RunAndReturn(run func(hash string, data []byte) error) *MockDummyMissingBlobStore_Put_Call {
+func (_c *MockDummyMissingBlobStore_Put_Call) RunAndReturn(run func(ctx context.Context, hash string, data []byte) error) *MockDummyMissingBlobStore_Put_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // PutSD provides a mock function for the type MockDummyMissingBlobStore
-func (_mock *MockDummyMissingBlobStore) PutSD(hash string, data []byte) error {
-	ret := _mock.Called(hash, data)
+func (_mock *MockDummyMissingBlobStore) PutSD(ctx context.Context, hash string, data []byte) error {
+	ret := _mock.Called(ctx, hash, data)
 
 	if len(ret) == 0 {
 		panic("no return value specified for PutSD")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, []byte) error); ok {
-		r0 = returnFunc(hash, data)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte) error); ok {
+		r0 = returnFunc(ctx, hash, data)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -462,25 +494,31 @@ type MockDummyMissingBlobStore_PutSD_Call struct {
 }
 
 // PutSD is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
 //   - data []byte
-func (_e *MockDummyMissingBlobStore_Expecter) PutSD(hash interface{}, data interface{}) *MockDummyMissingBlobStore_PutSD_Call {
-	return &MockDummyMissingBlobStore_PutSD_Call{Call: _e.mock.On("PutSD", hash, data)}
+func (_e *MockDummyMissingBlobStore_Expecter) PutSD(ctx interface{}, hash interface{}, data interface{}) *MockDummyMissingBlobStore_PutSD_Call {
+	return &MockDummyMissingBlobStore_PutSD_Call{Call: _e.mock.On("PutSD", ctx, hash, data)}
 }
 
-func (_c *MockDummyMissingBlobStore_PutSD_Call) Run(run func(hash string, data []byte)) *MockDummyMissingBlobStore_PutSD_Call {
+func (_c *MockDummyMissingBlobStore_PutSD_Call) Run(run func(ctx context.Context, hash string, data []byte)) *MockDummyMissingBlobStore_PutSD_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
 		}
-		var arg1 []byte
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].([]byte)
+			arg1 = args[1].(string)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -491,7 +529,7 @@ func (_c *MockDummyMissingBlobStore_PutSD_Call) Return(err error) *MockDummyMiss
 	return _c
 }
 
-func (_c *MockDummyMissingBlobStore_PutSD_Call) RunAndReturn(run func(hash string, data []byte) error) *MockDummyMissingBlobStore_PutSD_Call {
+func (_c *MockDummyMissingBlobStore_PutSD_Call) RunAndReturn(run func(ctx context.Context, hash string, data []byte) error) *MockDummyMissingBlobStore_PutSD_Call {
 	_c.Call.Return(run)
 	return _c
 }
