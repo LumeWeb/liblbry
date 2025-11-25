@@ -195,16 +195,16 @@ func (_c *MockBlobManager_AcquireSDBlob_Call) RunAndReturn(run func(ctx context.
 }
 
 // AddBlob provides a mock function for the type MockBlobManager
-func (_mock *MockBlobManager) AddBlob(hash string, data []byte) error {
-	ret := _mock.Called(hash, data)
+func (_mock *MockBlobManager) AddBlob(ctx context.Context, hash string, data []byte) error {
+	ret := _mock.Called(ctx, hash, data)
 
 	if len(ret) == 0 {
 		panic("no return value specified for AddBlob")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, []byte) error); ok {
-		r0 = returnFunc(hash, data)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte) error); ok {
+		r0 = returnFunc(ctx, hash, data)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -217,25 +217,31 @@ type MockBlobManager_AddBlob_Call struct {
 }
 
 // AddBlob is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
 //   - data []byte
-func (_e *MockBlobManager_Expecter) AddBlob(hash interface{}, data interface{}) *MockBlobManager_AddBlob_Call {
-	return &MockBlobManager_AddBlob_Call{Call: _e.mock.On("AddBlob", hash, data)}
+func (_e *MockBlobManager_Expecter) AddBlob(ctx interface{}, hash interface{}, data interface{}) *MockBlobManager_AddBlob_Call {
+	return &MockBlobManager_AddBlob_Call{Call: _e.mock.On("AddBlob", ctx, hash, data)}
 }
 
-func (_c *MockBlobManager_AddBlob_Call) Run(run func(hash string, data []byte)) *MockBlobManager_AddBlob_Call {
+func (_c *MockBlobManager_AddBlob_Call) Run(run func(ctx context.Context, hash string, data []byte)) *MockBlobManager_AddBlob_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
 		}
-		var arg1 []byte
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].([]byte)
+			arg1 = args[1].(string)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -246,22 +252,22 @@ func (_c *MockBlobManager_AddBlob_Call) Return(err error) *MockBlobManager_AddBl
 	return _c
 }
 
-func (_c *MockBlobManager_AddBlob_Call) RunAndReturn(run func(hash string, data []byte) error) *MockBlobManager_AddBlob_Call {
+func (_c *MockBlobManager_AddBlob_Call) RunAndReturn(run func(ctx context.Context, hash string, data []byte) error) *MockBlobManager_AddBlob_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // AddSDBlob provides a mock function for the type MockBlobManager
-func (_mock *MockBlobManager) AddSDBlob(hash string, data []byte) error {
-	ret := _mock.Called(hash, data)
+func (_mock *MockBlobManager) AddSDBlob(ctx context.Context, hash string, data []byte) error {
+	ret := _mock.Called(ctx, hash, data)
 
 	if len(ret) == 0 {
 		panic("no return value specified for AddSDBlob")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string, []byte) error); ok {
-		r0 = returnFunc(hash, data)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte) error); ok {
+		r0 = returnFunc(ctx, hash, data)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -274,25 +280,31 @@ type MockBlobManager_AddSDBlob_Call struct {
 }
 
 // AddSDBlob is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
 //   - data []byte
-func (_e *MockBlobManager_Expecter) AddSDBlob(hash interface{}, data interface{}) *MockBlobManager_AddSDBlob_Call {
-	return &MockBlobManager_AddSDBlob_Call{Call: _e.mock.On("AddSDBlob", hash, data)}
+func (_e *MockBlobManager_Expecter) AddSDBlob(ctx interface{}, hash interface{}, data interface{}) *MockBlobManager_AddSDBlob_Call {
+	return &MockBlobManager_AddSDBlob_Call{Call: _e.mock.On("AddSDBlob", ctx, hash, data)}
 }
 
-func (_c *MockBlobManager_AddSDBlob_Call) Run(run func(hash string, data []byte)) *MockBlobManager_AddSDBlob_Call {
+func (_c *MockBlobManager_AddSDBlob_Call) Run(run func(ctx context.Context, hash string, data []byte)) *MockBlobManager_AddSDBlob_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
 		}
-		var arg1 []byte
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].([]byte)
+			arg1 = args[1].(string)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -303,7 +315,7 @@ func (_c *MockBlobManager_AddSDBlob_Call) Return(err error) *MockBlobManager_Add
 	return _c
 }
 
-func (_c *MockBlobManager_AddSDBlob_Call) RunAndReturn(run func(hash string, data []byte) error) *MockBlobManager_AddSDBlob_Call {
+func (_c *MockBlobManager_AddSDBlob_Call) RunAndReturn(run func(ctx context.Context, hash string, data []byte) error) *MockBlobManager_AddSDBlob_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -445,16 +457,16 @@ func (_c *MockBlobManager_GetSDBlob_Call) RunAndReturn(run func(ctx context.Cont
 }
 
 // RemoveBlob provides a mock function for the type MockBlobManager
-func (_mock *MockBlobManager) RemoveBlob(hash string) error {
-	ret := _mock.Called(hash)
+func (_mock *MockBlobManager) RemoveBlob(ctx context.Context, hash string) error {
+	ret := _mock.Called(ctx, hash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RemoveBlob")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(string) error); ok {
-		r0 = returnFunc(hash)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, hash)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -467,19 +479,25 @@ type MockBlobManager_RemoveBlob_Call struct {
 }
 
 // RemoveBlob is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
-func (_e *MockBlobManager_Expecter) RemoveBlob(hash interface{}) *MockBlobManager_RemoveBlob_Call {
-	return &MockBlobManager_RemoveBlob_Call{Call: _e.mock.On("RemoveBlob", hash)}
+func (_e *MockBlobManager_Expecter) RemoveBlob(ctx interface{}, hash interface{}) *MockBlobManager_RemoveBlob_Call {
+	return &MockBlobManager_RemoveBlob_Call{Call: _e.mock.On("RemoveBlob", ctx, hash)}
 }
 
-func (_c *MockBlobManager_RemoveBlob_Call) Run(run func(hash string)) *MockBlobManager_RemoveBlob_Call {
+func (_c *MockBlobManager_RemoveBlob_Call) Run(run func(ctx context.Context, hash string)) *MockBlobManager_RemoveBlob_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -490,7 +508,7 @@ func (_c *MockBlobManager_RemoveBlob_Call) Return(err error) *MockBlobManager_Re
 	return _c
 }
 
-func (_c *MockBlobManager_RemoveBlob_Call) RunAndReturn(run func(hash string) error) *MockBlobManager_RemoveBlob_Call {
+func (_c *MockBlobManager_RemoveBlob_Call) RunAndReturn(run func(ctx context.Context, hash string) error) *MockBlobManager_RemoveBlob_Call {
 	_c.Call.Return(run)
 	return _c
 }

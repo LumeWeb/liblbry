@@ -81,10 +81,17 @@ func validateHashWithError(hash string, operation string) error {
 // For small data, it writes directly. For larger data, it writes in chunks
 // to allow context cancellation during the write operation.
 func writeWithContext(ctx context.Context, file *os.File, data []byte) error {
-	// For small data, write directly
+	// For small data, write directly with retry for partial writes
 	if len(data) <= 4096 {
-		if _, err := file.Write(data); err != nil {
-			return err
+		for written := 0; written < len(data); {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			n, err := file.Write(data[written:])
+			if err != nil {
+				return err
+			}
+			written += n
 		}
 		return nil
 	}
@@ -102,8 +109,16 @@ func writeWithContext(ctx context.Context, file *os.File, data []byte) error {
 			end = len(data)
 		}
 
-		if _, err := file.Write(data[i:end]); err != nil {
-			return err
+		// Write the chunk with retry for partial writes
+		for written := 0; written < end-i; {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			n, err := file.Write(data[i+written : end])
+			if err != nil {
+				return err
+			}
+			written += n
 		}
 	}
 

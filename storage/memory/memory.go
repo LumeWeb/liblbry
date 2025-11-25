@@ -69,28 +69,15 @@ func (m *MemoryStore) acquireWriteLock(ctx context.Context) error {
 
 // copyWithContext creates a copy of data while respecting context cancellation
 func (m *MemoryStore) copyWithContext(ctx context.Context, data []byte) ([]byte, error) {
+	// Check context before the copy operation
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// For in-memory operations, direct copy is optimal
+	// Memory copies complete in microseconds, making chunked copying unnecessary
 	dst := make([]byte, len(data))
-
-	// For small data, copy directly
-	if len(data) <= 1024 {
-		copy(dst, data)
-		return dst, nil
-	}
-
-	// For larger data, copy in chunks to allow context cancellation
-	const chunkSize = 4096
-	for i := 0; i < len(data); i += chunkSize {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		end := i + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
-
-		copy(dst[i:end], data[i:end])
-	}
+	copy(dst, data)
 
 	return dst, nil
 }
@@ -274,13 +261,8 @@ func (m *MemoryStore) List(ctx context.Context, offset, limit int) ([]string, er
 		hashSlice = append(hashSlice, hash)
 	}
 
-	// Sort with context cancellation checks
-	sort.Slice(hashSlice, func(i, j int) bool {
-		if err := ctx.Err(); err != nil {
-			return false // This will be caught by the outer context check
-		}
-		return hashSlice[i] < hashSlice[j]
-	})
+	// Sort for deterministic ordering
+	sort.Strings(hashSlice)
 
 	// Final context check before pagination
 	if err := ctx.Err(); err != nil {

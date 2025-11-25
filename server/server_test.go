@@ -573,7 +573,7 @@ func TestDefaultServer_AddBlob_Success(t *testing.T) {
 	testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(nil)
 
 	// Test successful blob addition
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.NoError(t, err)
 }
 
@@ -588,7 +588,7 @@ func TestDefaultServer_AddBlob_EmptyHash(t *testing.T) {
 	blobData := []byte(TestBlobData)
 
 	// Test with empty hash
-	err := server.AddBlob("", blobData)
+	err := server.AddBlob(t.Context(), "", blobData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 }
@@ -604,7 +604,7 @@ func TestDefaultServer_AddBlob_EmptyData(t *testing.T) {
 	blobHash := TestBlobHash
 
 	// Test with empty data
-	err := server.AddBlob(blobHash, []byte{})
+	err := server.AddBlob(t.Context(), blobHash, []byte{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "blob data cannot be empty")
 }
@@ -625,7 +625,7 @@ func TestDefaultServer_AddBlob_StorageFailure(t *testing.T) {
 	testMocks.storage.EXPECT().Put(mock.Anything, blobHash, blobData).Return(storageError)
 
 	// Test storage failure
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to store blob")
 	assert.Contains(t, err.Error(), blobHash)
@@ -649,7 +649,7 @@ func TestDefaultServer_AddBlob_WithNotifier(t *testing.T) {
 	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_ADDED, TestNotificationHash).Return(nil)
 
 	// Test blob addition with notification
-	err := server.AddBlob(blobHash, blobData)
+	err := server.AddBlob(t.Context(), blobHash, blobData)
 	assert.NoError(t, err)
 }
 
@@ -737,7 +737,7 @@ func TestDefaultServer_AddSDBlob(t *testing.T) {
 			// Setup test-specific mocks
 			tc.setupMocks(testMocks, server)
 
-			err := server.AddSDBlob(tc.hash, tc.data)
+			err := server.AddSDBlob(t.Context(), tc.hash, tc.data)
 
 			if tc.expectErr {
 				assert.Error(t, err)
@@ -766,7 +766,7 @@ func TestDefaultServer_ConcurrentAddSDBlob(t *testing.T) {
 
 	// Test concurrent AddSDBlob operations using helper
 	runConcurrentTest(t, numGoroutines, func(index int) error {
-		return server.AddSDBlob(blobHash, blobData)
+		return server.AddSDBlob(t.Context(), blobHash, blobData)
 	})
 }
 
@@ -784,7 +784,7 @@ func TestDefaultServer_RemoveBlob_Success(t *testing.T) {
 	testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(nil)
 
 	// Test successful blob removal
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.NoError(t, err)
 }
 
@@ -797,7 +797,7 @@ func TestDefaultServer_RemoveBlob_EmptyHash(t *testing.T) {
 	server := setupServer(t, testMocks, map[string]any{})
 
 	// Test with empty hash
-	err := server.RemoveBlob("")
+	err := server.RemoveBlob(t.Context(), "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "hash cannot be empty")
 }
@@ -817,7 +817,7 @@ func TestDefaultServer_RemoveBlob_StorageFailure(t *testing.T) {
 	testMocks.storage.EXPECT().Delete(mock.Anything, blobHash).Return(storageError)
 
 	// Test storage failure
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete blob")
 	assert.Contains(t, err.Error(), blobHash)
@@ -840,7 +840,7 @@ func TestDefaultServer_RemoveBlob_WithNotifier(t *testing.T) {
 	mockNotifier.EXPECT().Notify(protocol.NOTIFY_BLOB_REMOVED, TestNotificationHash).Return(nil)
 
 	// Test blob removal with notification
-	err := server.RemoveBlob(blobHash)
+	err := server.RemoveBlob(t.Context(), blobHash)
 	assert.NoError(t, err)
 }
 
@@ -874,7 +874,7 @@ func TestDefaultServer_ConcurrentAddBlob(t *testing.T) {
 	runConcurrentTest(t, numGoroutines, func(index int) error {
 		blobHash := generateTestBlobHash(index)
 		blobData := generateSimpleTestBlobData(index)
-		return server.AddBlob(blobHash, blobData)
+		return server.AddBlob(t.Context(), blobHash, blobData)
 	})
 }
 
@@ -897,7 +897,7 @@ func TestDefaultServer_ConcurrentRemoveBlob(t *testing.T) {
 	// Test concurrent RemoveBlob operations using helper
 	runConcurrentTest(t, numGoroutines, func(index int) error {
 		blobHash := generateTestBlobHash(index)
-		return server.RemoveBlob(blobHash)
+		return server.RemoveBlob(t.Context(), blobHash)
 	})
 }
 
@@ -928,13 +928,13 @@ func TestDefaultServer_ConcurrentBlobOperations(t *testing.T) {
 	runConcurrentTest(t, numOperations, func(index int) error {
 		blobHash := generateNamedTestBlobHash("add_hash", index)
 		blobData := generateTestBlobData("add data", index)
-		return server.AddBlob(blobHash, blobData)
+		return server.AddBlob(t.Context(), blobHash, blobData)
 	})
 
 	// Test concurrent Remove operations using helper
 	runConcurrentTest(t, numOperations, func(index int) error {
 		blobHash := generateNamedTestBlobHash("remove_hash", index)
-		return server.RemoveBlob(blobHash)
+		return server.RemoveBlob(t.Context(), blobHash)
 	})
 }
 

@@ -63,11 +63,11 @@ const (
 // BlobManager defines the interface for blob management operations
 type BlobManager interface {
 	// AddBlob stores a blob and notifies about the addition
-	AddBlob(hash string, data []byte) error
+	AddBlob(ctx context.Context, hash string, data []byte) error
 	// AddSDBlob stores an SD blob and notifies about the addition
-	AddSDBlob(hash string, data []byte) error
+	AddSDBlob(ctx context.Context, hash string, data []byte) error
 	// RemoveBlob deletes a blob and notifies about the removal
-	RemoveBlob(hash string) error
+	RemoveBlob(ctx context.Context, hash string) error
 
 	// AcquireBlob retrieves a blob using available transfer methods
 	AcquireBlob(ctx context.Context, hash string) ([]byte, error)
@@ -569,14 +569,14 @@ func validateBlobInput(hash string, data []byte) error {
 }
 
 // AddBlob stores a blob and notifies about the addition
-func (s *DefaultServer) AddBlob(hash string, data []byte) error {
+func (s *DefaultServer) AddBlob(ctx context.Context, hash string, data []byte) error {
 	// Validate input
 	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
 	// Store the blob
-	err := s.storage.Put(nil, hash, data)
+	err := s.storage.Put(ctx, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store blob",
 			zap.String("hash", hash),
@@ -593,14 +593,14 @@ func (s *DefaultServer) AddBlob(hash string, data []byte) error {
 }
 
 // AddSDBlob stores an SD blob and notifies about the addition
-func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
+func (s *DefaultServer) AddSDBlob(ctx context.Context, hash string, data []byte) error {
 	// Validate input
 	if err := validateBlobInput(hash, data); err != nil {
 		return err
 	}
 
 	// Store the SD blob
-	err := s.storage.PutSD(nil, hash, data)
+	err := s.storage.PutSD(ctx, hash, data)
 	if err != nil {
 		s.logger.Error("Failed to store SD blob",
 			zap.String("hash", hash),
@@ -617,14 +617,14 @@ func (s *DefaultServer) AddSDBlob(hash string, data []byte) error {
 }
 
 // RemoveBlob deletes a blob and notifies about the removal
-func (s *DefaultServer) RemoveBlob(hash string) error {
+func (s *DefaultServer) RemoveBlob(ctx context.Context, hash string) error {
 	// Validate hash
 	if err := validateHash(hash); err != nil {
 		return err
 	}
 
 	// Delete the blob from storage
-	err := s.storage.Delete(nil, hash)
+	err := s.storage.Delete(ctx, hash)
 	if err != nil {
 		s.logger.Error("Failed to delete blob",
 			zap.String("hash", hash),

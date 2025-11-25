@@ -488,7 +488,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		_, err := store.Has(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test Get with cancelled context
@@ -498,7 +498,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		_, err := store.Get(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test Put with cancelled context
@@ -508,7 +508,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		err := store.Put(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data"))
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test PutSD with cancelled context
@@ -518,7 +518,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		err := store.PutSD(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59", []byte("test data"))
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test List with cancelled context
@@ -528,7 +528,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		_, err := store.List(ctx, 0, 10)
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test Delete with cancelled context
@@ -538,7 +538,7 @@ func TestDiskStore_ContextCancellation(t *testing.T) {
 
 		err := store.Delete(ctx, "adabf83a9b41323d9ea4a3e91debe037d20733d88af579076a37e024123f24f869d9a2e27f958bb293b179d141a27f59")
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 }
 

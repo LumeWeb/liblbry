@@ -216,12 +216,12 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 
 		// Create context for this request with timeout, preserving source and IP info
 		ctx, cancel := context.WithTimeout(ctx, p.connectionTimeout)
-		defer cancel()
 
 		// Handle request
 		response, blobData, err := p.handleRequest(ctx, request, peerIP)
 		if err != nil {
 			p.sendError(conn, err.Error())
+			cancel()
 			continue
 		}
 
@@ -229,6 +229,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		err = conn.SetWriteDeadline(time.Now().Add(p.connectionTimeout))
 		if err != nil {
 			p.logger.Error("Error setting write deadline", zap.Error(err))
+			cancel()
 			return
 		}
 
@@ -237,6 +238,7 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 			if !strings.Contains(err.Error(), "connection reset by peer") && !strings.Contains(err.Error(), "broken pipe") {
 				p.logger.Error("Error sending response", zap.Error(err))
 			}
+			cancel()
 			return
 		}
 
@@ -244,8 +246,12 @@ func (p *DefaultPeerServer) HandleConnection(conn net.Conn) {
 		err = conn.SetWriteDeadline(time.Time{})
 		if err != nil {
 			p.logger.Error("Error clearing write deadline", zap.Error(err))
+			cancel()
 			return
 		}
+
+		// Cancel the context for this iteration
+		cancel()
 	}
 }
 

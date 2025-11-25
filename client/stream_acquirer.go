@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	liblbry "go.lumeweb.com/liblbry"
+	"go.lumeweb.com/liblbry"
 	"go.lumeweb.com/liblbry/blob"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.lumeweb.com/liblbry/storage"
@@ -815,8 +815,10 @@ func (r *streamingReader) ensureCurrentBlob() error {
 		r.storageWG.Add(1)
 		go func() {
 			defer r.storageWG.Done()
-			// Non-blocking storage to avoid slowing down reads
-			if err := r.store.Put(r.ctx, blobHash, data); err != nil {
+			// Use background context for best-effort storage writes that should complete
+			// regardless of reader state, avoiding cancellation when reader is closed
+			ctx := context.Background()
+			if err := r.store.Put(ctx, blobHash, data); err != nil {
 				// Log error but don't fail the operation
 				r.logger.Error("failed to store blob in storage",
 					zap.String("blobHash", blobHash),
@@ -1402,7 +1404,7 @@ func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, co
 
 	// Store the blob if we have a store
 	if sa.store != nil {
-		if err := sa.store.Put(nil, blobHash, blobData); err != nil {
+		if err := sa.store.Put(ctx, blobHash, blobData); err != nil {
 			sa.logger.Debug("Failed to store acquired blob",
 				zap.String("sdHash", sdHash),
 				zap.String("blobHash", blobHash),
