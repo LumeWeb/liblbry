@@ -712,7 +712,9 @@ func (r *streamingReader) ensureCurrentBlob() error {
 				}
 			}
 
-			r.setBlobData(currentBlob, data)
+			if err := r.setBlobData(currentBlob, data); err != nil {
+				return err
+			}
 			return nil
 		})
 
@@ -817,12 +819,14 @@ func (r *streamingReader) ensureCurrentBlob() error {
 		zap.Int("dataSize", len(data)),
 	)
 
-	r.setBlobData(currentBlob, data)
+	if err := r.setBlobData(currentBlob, data); err != nil {
+		return err
+	}
 	return nil
 }
 
 // setBlobData stores blob data in cache and sets current data
-func (r *streamingReader) setBlobData(blobIndex int, data []byte) {
+func (r *streamingReader) setBlobData(blobIndex int, data []byte) error {
 	// Decrypt blob data using blob package with individual IV
 	blobInfo := r.sdBlob.BlobInfos[blobIndex]
 	decryptedData, err := blob.Blob(data).Plaintext(r.sdBlob.Key, blobInfo.IV)
@@ -832,16 +836,16 @@ func (r *streamingReader) setBlobData(blobIndex int, data []byte) {
 			zap.Int("blobIndex", blobIndex),
 			zap.Error(err),
 		)
-		// If decryption fails, store encrypted data and let caller handle error
-		decryptedData = data
-	} else {
-		r.logger.Debug("Successfully decrypted blob data",
-			zap.String("sdHash", r.sdHash),
-			zap.Int("blobIndex", blobIndex),
-			zap.Int("encryptedSize", len(data)),
-			zap.Int("decryptedSize", len(decryptedData)),
-		)
+		// Don't cache corrupted data - return error to let caller retry or fail
+		return NewStreamError(OperationDecryptBlob, r.sdHash, hex.EncodeToString(blobInfo.BlobHash), err, 1)
 	}
+
+	r.logger.Debug("Successfully decrypted blob data",
+		zap.String("sdHash", r.sdHash),
+		zap.Int("blobIndex", blobIndex),
+		zap.Int("encryptedSize", len(data)),
+		zap.Int("decryptedSize", len(decryptedData)),
+	)
 
 	// Get current blob info BEFORE acquiring any locks to avoid deadlock
 	// This prevents the scenario where Close() holds cacheMutex while waiting
@@ -857,7 +861,7 @@ func (r *streamingReader) setBlobData(blobIndex int, data []byte) {
 
 	// Manage cache size - remove oldest entries if needed
 	if len(r.blobCache) > r.cacheSize {
-		// Simple LRU: remove entries with smallest index
+		// Simple FIFO-like: remove entries with smallest index
 		var minIndex int = blobIndex
 		for idx := range r.blobCache {
 			if idx < minIndex {
@@ -878,6 +882,8 @@ func (r *streamingReader) setBlobData(blobIndex int, data []byte) {
 		}
 		r.readMutex.Unlock()
 	}
+
+	return nil
 }
 
 // startPrefetcher starts the prefetching goroutine
@@ -962,7 +968,15 @@ func (r *streamingReader) startPrefetcher() {
 								zap.String("blobHash", blobHash),
 								zap.Int("blobIndex", blobIndex),
 							)
-							r.setBlobData(blobIndex, data)
+							if err := r.setBlobData(blobIndex, data); err != nil {
+								r.logger.Debug("Prefetch: failed to decrypt blob from storage",
+									zap.String("sdHash", r.sdHash),
+									zap.String("blobHash", blobHash),
+									zap.Int("blobIndex", blobIndex),
+									zap.Error(err),
+								)
+								continue // Skip decryption errors in prefetcher
+							}
 							continue
 						} else {
 							r.logger.Debug("Prefetch: failed to get blob from storage",
@@ -1047,7 +1061,15 @@ func (r *streamingReader) startPrefetcher() {
 					zap.Int("dataSize", len(data)),
 				)
 
-				r.setBlobData(blobIndex, data)
+				if err := r.setBlobData(blobIndex, data); err != nil {
+					r.logger.Debug("Prefetch: failed to decrypt blob from network",
+						zap.String("sdHash", r.sdHash),
+						zap.String("blobHash", blobHash),
+						zap.Int("blobIndex", blobIndex),
+						zap.Error(err),
+					)
+					// Skip decryption errors in prefetcher - will be retried on demand
+				}
 			}
 		}
 	}()
@@ -1273,6 +1295,125 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 	return reader, nil
 }
 
+// acquireBlobWithFallback tries to get blob from storage first, then falls back to network acquisition
+func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, config *AcquireConfig, sdHash, blobHash string, blobIndex int, blobInfo *stream.BlobInfo) ([]byte, error) {
+	// Try storage first if available
+	if sa.store != nil {
+		if has, err := sa.store.Has(blobHash); err == nil && has {
+			sa.logger.Debug("Content blob found in storage",
+				zap.String("sdHash", sdHash),
+				zap.String("blobHash", blobHash),
+				zap.Int("blobIndex", blobIndex),
+			)
+
+			blobData, err := sa.store.Get(blobHash)
+			if err != nil {
+				sa.logger.Debug("Failed to retrieve blob from storage, acquiring from network",
+					zap.String("sdHash", sdHash),
+					zap.String("blobHash", blobHash),
+					zap.Int("blobIndex", blobIndex),
+					zap.Error(err),
+				)
+			} else {
+				// Verify blob hash if verification is enabled
+				if config.VerificationEnabled {
+					if err := verifyBlobHash(blobData, blobHash); err != nil {
+						sa.logger.Error("Stored blob hash verification failed",
+							zap.String("sdHash", sdHash),
+							zap.String("blobHash", blobHash),
+							zap.Int("blobIndex", blobIndex),
+							zap.Error(err),
+						)
+					} else {
+						sa.logger.Debug("Successfully retrieved content blob from storage",
+							zap.String("sdHash", sdHash),
+							zap.String("blobHash", blobHash),
+							zap.Int("blobIndex", blobIndex),
+							zap.Int("dataSize", len(blobData)),
+						)
+						return blobData, nil
+					}
+				} else {
+					sa.logger.Debug("Successfully retrieved content blob from storage",
+						zap.String("sdHash", sdHash),
+						zap.String("blobHash", blobHash),
+						zap.Int("blobIndex", blobIndex),
+						zap.Int("dataSize", len(blobData)),
+					)
+					return blobData, nil
+				}
+			}
+		} else {
+			sa.logger.Debug("Content blob not found in storage",
+				zap.String("sdHash", sdHash),
+				zap.String("blobHash", blobHash),
+				zap.Int("blobIndex", blobIndex),
+				zap.Error(err),
+			)
+		}
+	}
+
+	// Acquire from network
+	sa.logger.Info("Acquiring content blob from network",
+		zap.String("sdHash", sdHash),
+		zap.String("blobHash", blobHash),
+		zap.Int("blobIndex", blobIndex),
+	)
+
+	blobData, err := sa.blobAcquirer.Acquire(ctx, blobHash)
+	if err != nil {
+		sa.logger.Error("Failed to acquire content blob",
+			zap.String("sdHash", sdHash),
+			zap.String("blobHash", blobHash),
+			zap.Int("blobIndex", blobIndex),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("failed to acquire content blob %s (index %d): %w", blobHash, blobIndex, err)
+	}
+
+	// Verify blob hash if verification is enabled
+	if config.VerificationEnabled {
+		if err := verifyBlobHash(blobData, blobHash); err != nil {
+			sa.logger.Error("Content blob hash verification failed",
+				zap.String("sdHash", sdHash),
+				zap.String("blobHash", blobHash),
+				zap.Int("blobIndex", blobIndex),
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("content blob hash verification failed for %s (index %d): %w", blobHash, blobIndex, err)
+		}
+	}
+
+	// Store the blob if we have a store
+	if sa.store != nil {
+		if err := sa.store.Put(blobHash, blobData); err != nil {
+			sa.logger.Debug("Failed to store acquired blob",
+				zap.String("sdHash", sdHash),
+				zap.String("blobHash", blobHash),
+				zap.Int("blobIndex", blobIndex),
+				zap.String("store", sa.store.Name()),
+				zap.Error(err),
+			)
+		} else {
+			sa.logger.Debug("Successfully stored acquired blob",
+				zap.String("sdHash", sdHash),
+				zap.String("blobHash", blobHash),
+				zap.Int("blobIndex", blobIndex),
+				zap.String("store", sa.store.Name()),
+			)
+		}
+	}
+
+	sa.logger.Debug("Successfully acquired content blob",
+		zap.String("sdHash", sdHash),
+		zap.String("blobHash", blobHash),
+		zap.Int("blobIndex", blobIndex),
+		zap.Int("dataSize", len(blobData)),
+	)
+
+	return blobData, nil
+}
+
 // GetStreamResult retrieves full stream data (for backward compatibility)
 func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash string, opts ...AcquireOption) (*stream.StreamResult, error) {
 	sa.logger.Info("Getting stream result",
@@ -1386,121 +1527,11 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 			zap.Int("blobLength", blobInfo.Length),
 		)
 
-		// Check if we already have this blob
-		if sa.store != nil {
-			if has, err := sa.store.Has(blobHash); err == nil && has {
-				sa.logger.Debug("Content blob found in storage",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-				)
-
-				// Blob exists in storage, retrieve it
-				blobData, err := sa.store.Get(blobHash)
-				if err != nil {
-					sa.logger.Debug("Failed to retrieve blob from storage, acquiring from network",
-						zap.String("sdHash", sdHash),
-						zap.String("blobHash", blobHash),
-						zap.Int("blobIndex", i),
-						zap.Error(err),
-					)
-					// Continue with acquisition if storage retrieval fails
-					goto acquireBlob
-				}
-
-				// Verify blob hash if verification is enabled
-				if config.VerificationEnabled {
-					if err := verifyBlobHash(blobData, blobHash); err != nil {
-						sa.logger.Error("Stored blob hash verification failed",
-							zap.String("sdHash", sdHash),
-							zap.String("blobHash", blobHash),
-							zap.Int("blobIndex", i),
-							zap.Error(err),
-						)
-						// Continue with acquisition if verification fails
-						goto acquireBlob
-					}
-				}
-
-				sa.logger.Debug("Successfully retrieved content blob from storage",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-					zap.Int("dataSize", len(blobData)),
-				)
-
-				contentBlobs = append(contentBlobs, blobData)
-				contentHashes = append(contentHashes, blobHash)
-				chunkSizes = append(chunkSizes, blobInfo.Length)
-				continue
-			} else {
-				sa.logger.Debug("Content blob not found in storage",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-					zap.Error(err),
-				)
-			}
-		}
-
-	acquireBlob:
-		// Acquire the blob
-		sa.logger.Info("Acquiring content blob from network",
-			zap.String("sdHash", sdHash),
-			zap.String("blobHash", blobHash),
-			zap.Int("blobIndex", i),
-		)
-
-		blobData, err := sa.blobAcquirer.Acquire(ctx, blobHash)
+		// Acquire blob with storage fallback
+		blobData, err := sa.acquireBlobWithFallback(ctx, config, sdHash, blobHash, i, &blobInfo)
 		if err != nil {
-			sa.logger.Error("Failed to acquire content blob",
-				zap.String("sdHash", sdHash),
-				zap.String("blobHash", blobHash),
-				zap.Int("blobIndex", i),
-				zap.Error(err),
-			)
-			return nil, fmt.Errorf("failed to acquire content blob %s (index %d): %w", blobHash, i, err)
+			return nil, err
 		}
-
-		// Verify blob hash if verification is enabled
-		if config.VerificationEnabled {
-			if err := verifyBlobHash(blobData, blobHash); err != nil {
-				sa.logger.Error("Content blob hash verification failed",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-					zap.Error(err),
-				)
-				return nil, fmt.Errorf("content blob hash verification failed for %s (index %d): %w", blobHash, i, err)
-			}
-		}
-
-		// Store the blob if we have a store
-		if sa.store != nil {
-			if err := sa.store.Put(blobHash, blobData); err != nil {
-				sa.logger.Debug("Failed to store acquired blob",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-					zap.String("store", sa.store.Name()),
-					zap.Error(err),
-				)
-			} else {
-				sa.logger.Debug("Successfully stored acquired blob",
-					zap.String("sdHash", sdHash),
-					zap.String("blobHash", blobHash),
-					zap.Int("blobIndex", i),
-					zap.String("store", sa.store.Name()),
-				)
-			}
-		}
-
-		sa.logger.Debug("Successfully acquired content blob",
-			zap.String("sdHash", sdHash),
-			zap.String("blobHash", blobHash),
-			zap.Int("blobIndex", i),
-			zap.Int("dataSize", len(blobData)),
-		)
 
 		contentBlobs = append(contentBlobs, blobData)
 		contentHashes = append(contentHashes, blobHash)

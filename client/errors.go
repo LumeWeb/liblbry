@@ -32,6 +32,7 @@ const (
 	OperationAcquireSDBlob   = "acquire_sd_blob"
 	OperationParseSDBlob     = "parse_sd_blob"
 	OperationValidateSDBlob  = "validate_sd_blob"
+	OperationDecryptBlob     = "decrypt_blob"
 )
 
 // DefaultRetryOptions returns sensible default retry options using retry-go
@@ -125,13 +126,14 @@ func NewStreamError(operation, sdBlob, blobHash string, err error, attempt int) 
 
 // IsStreamError checks if error is a StreamError
 func IsStreamError(err error) bool {
-	_, ok := err.(*StreamError)
-	return ok
+	var streamErr *StreamError
+	return errors.As(err, &streamErr)
 }
 
 // GetStreamError extracts StreamError from wrapped error
 func GetStreamError(err error) (*StreamError, bool) {
-	if streamErr, ok := err.(*StreamError); ok {
+	var streamErr *StreamError
+	if errors.As(err, &streamErr) {
 		return streamErr, true
 	}
 	return nil, false
