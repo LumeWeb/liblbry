@@ -19,6 +19,19 @@ func TestDefaultRetryOptions(t *testing.T) {
 
 	// Verify default options are set
 	require.NotEmpty(t, options)
+
+	// Test that defaults produce expected behavior by checking attempt count
+	// This indirectly verifies the default attempts setting
+	calls := 0
+	retryableErr := errors.New("temporary error")
+	operation := func() error {
+		calls++
+		return retryableErr
+	}
+
+	err := WithRetry(context.Background(), nil, operation)
+	assert.Error(t, err)
+	assert.Equal(t, 3, calls, "Default should be 3 attempts")
 }
 
 func TestWithRetry_Success(t *testing.T) {
@@ -80,6 +93,9 @@ func TestWithRetry_CustomOptions(t *testing.T) {
 	calls := 0
 	retryableErr := errors.New("temporary error")
 
+	// Fake timer implementation that triggers immediately
+	fakeTimer := &testTimer{}
+
 	// Custom retry options with 2 attempts and short delay
 	customOptions := []retry.Option{
 		retry.Attempts(2),
@@ -88,6 +104,7 @@ func TestWithRetry_CustomOptions(t *testing.T) {
 			return !errors.Is(err, stream.ErrInvalidSDBlob)
 		}),
 		retry.LastErrorOnly(true),
+		retry.WithTimer(fakeTimer),
 	}
 
 	operation := func() error {
@@ -104,7 +121,7 @@ func TestWithRetry_CustomOptions(t *testing.T) {
 
 	assert.Error(t, err) // Should fail after 2 attempts
 	assert.Equal(t, 2, calls)
-	assert.GreaterOrEqual(t, duration, 10*time.Millisecond) // At least one delay
+	assert.Less(t, duration, 5*time.Millisecond) // Should complete quickly with fake timer
 }
 
 func TestWithRetry_ContextCancellation(t *testing.T) {
@@ -114,11 +131,10 @@ func TestWithRetry_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Custom options with context
+	// Custom options; WithRetry will attach ctx via retry.Context
 	customOptions := []retry.Option{
 		retry.Attempts(10), // High attempts
 		retry.Delay(20 * time.Millisecond),
-		retry.Context(ctx),
 	}
 
 	operation := func() error {
@@ -155,6 +171,16 @@ func TestIsRetryableError(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+// testTimer implements retry.Timer interface for testing
+// It triggers immediately without real delays
+type testTimer struct{}
+
+func (t *testTimer) After(d time.Duration) <-chan time.Time {
+	ch := make(chan time.Time, 1)
+	ch <- time.Now() // Trigger immediately
+	return ch
 }
 
 func TestStreamError(t *testing.T) {

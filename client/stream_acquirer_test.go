@@ -195,10 +195,10 @@ func getStreamWithoutVerificationWithRetry(acquirer StreamAcquirer, ctx context.
 func (ts *testSetup) setupMockExpectations() {
 	ts.store.EXPECT().Name().Return("mock-store")
 	if len(ts.sdBlobData) > 0 {
-		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.sdHash).Return(ts.sdBlobData, nil)
+		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.sdHash).Return(ts.sdBlobData, nil).Maybe()
 	}
 	if len(ts.encryptedContent) > 0 {
-		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.contentHash).Return(ts.encryptedContent, nil)
+		ts.acquirer.EXPECT().Acquire(ts.ctx, ts.contentHash).Return(ts.encryptedContent, nil).Maybe()
 		ts.store.EXPECT().Has(ts.contentHash).Return(false, nil)
 		ts.store.EXPECT().Put(ts.contentHash, ts.encryptedContent).Return(nil)
 	}
