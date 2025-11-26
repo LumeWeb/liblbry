@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"context"
+
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -36,16 +38,16 @@ func (_m *MockAccessControl) EXPECT() *MockAccessControl_Expecter {
 }
 
 // Allow provides a mock function for the type MockAccessControl
-func (_mock *MockAccessControl) Allow(hash string, peerIP string) bool {
-	ret := _mock.Called(hash, peerIP)
+func (_mock *MockAccessControl) Allow(ctx context.Context, hash string, peerIP string) bool {
+	ret := _mock.Called(ctx, hash, peerIP)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Allow")
 	}
 
 	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func(string, string) bool); ok {
-		r0 = returnFunc(hash, peerIP)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) bool); ok {
+		r0 = returnFunc(ctx, hash, peerIP)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
@@ -58,25 +60,31 @@ type MockAccessControl_Allow_Call struct {
 }
 
 // Allow is a helper method to define mock.On call
+//   - ctx context.Context
 //   - hash string
 //   - peerIP string
-func (_e *MockAccessControl_Expecter) Allow(hash interface{}, peerIP interface{}) *MockAccessControl_Allow_Call {
-	return &MockAccessControl_Allow_Call{Call: _e.mock.On("Allow", hash, peerIP)}
+func (_e *MockAccessControl_Expecter) Allow(ctx interface{}, hash interface{}, peerIP interface{}) *MockAccessControl_Allow_Call {
+	return &MockAccessControl_Allow_Call{Call: _e.mock.On("Allow", ctx, hash, peerIP)}
 }
 
-func (_c *MockAccessControl_Allow_Call) Run(run func(hash string, peerIP string)) *MockAccessControl_Allow_Call {
+func (_c *MockAccessControl_Allow_Call) Run(run func(ctx context.Context, hash string, peerIP string)) *MockAccessControl_Allow_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
 		}
 		var arg1 string
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -87,7 +95,7 @@ func (_c *MockAccessControl_Allow_Call) Return(b bool) *MockAccessControl_Allow_
 	return _c
 }
 
-func (_c *MockAccessControl_Allow_Call) RunAndReturn(run func(hash string, peerIP string) bool) *MockAccessControl_Allow_Call {
+func (_c *MockAccessControl_Allow_Call) RunAndReturn(run func(ctx context.Context, hash string, peerIP string) bool) *MockAccessControl_Allow_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -415,12 +415,12 @@ func TestInvalidBlobHashes(t *testing.T) {
 func TestAccessControl(t *testing.T) {
 	// Create a mock access control that denies access to the first blob
 	mockAccessControl := storagemocks.NewMockAccessControl(t)
-	mockAccessControl.On("Allow", mock.AnythingOfType("string"), testLocalIP).Return(true)
+	mockAccessControl.EXPECT().Allow(mock.Anything, mock.AnythingOfType("string"), testLocalIP).Return(true)
 	// Deny access to the first blob in our blobs map
 	blobKeys := getBlobKeys()
 	if len(blobKeys) > 0 {
-		mockAccessControl.On("Allow", blobKeys[0], testDeniedIP).Return(false)
-		mockAccessControl.On("Allow", blobKeys[0], testLocalIP).Return(true)
+		mockAccessControl.EXPECT().Allow(mock.Anything, blobKeys[0], testDeniedIP).Return(false)
+		mockAccessControl.EXPECT().Allow(mock.Anything, blobKeys[0], testLocalIP).Return(true)
 	}
 
 	s, _ := getServerWithAccessControl(t, true, mockAccessControl)

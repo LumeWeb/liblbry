@@ -717,13 +717,13 @@ func TestPeerPartialBlobTransfer(t *testing.T) {
 // allowAllAccessControl is a simple access control that allows all requests
 type allowAllAccessControl struct{}
 
-func (a *allowAllAccessControl) Allow(hash string, peerIP string) bool {
+func (a *allowAllAccessControl) Allow(ctx context.Context, hash string, peerIP string) bool {
 	return true
 }
 
 // denyAllAccessControl is a simple access control that denies all requests
 type denyAllAccessControl struct{}
 
-func (d *denyAllAccessControl) Allow(hash string, peerIP string) bool {
+func (d *denyAllAccessControl) Allow(ctx context.Context, hash string, peerIP string) bool {
 	return false
 }
