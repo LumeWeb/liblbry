@@ -388,7 +388,7 @@ func (p *DefaultPeerServer) handleBlobAvailabilityRequest(ctx context.Context, b
 		}
 
 		// Check access control
-		if p.accessControl != nil && !p.accessControl.Allow(hash, peerIP) {
+		if p.accessControl != nil && !p.accessControl.Allow(ctx, hash, peerIP) {
 			continue
 		}
 
@@ -432,7 +432,7 @@ func (p *DefaultPeerServer) handleBlobDataRequest(ctx context.Context, blobHash 
 	}
 
 	// Check access control
-	if p.accessControl != nil && !p.accessControl.Allow(blobHash, peerIP) {
+	if p.accessControl != nil && !p.accessControl.Allow(ctx, blobHash, peerIP) {
 		return p.createIncomingBlobError(blobHash, liblbryerrors.ErrAccessDenied.Error()), nil, nil
 	}
 
@@ -494,7 +494,7 @@ func (p *DefaultPeerServer) handleBlobPaymentRateRequest(ctx context.Context, bl
 	}
 
 	// Check access control
-	if p.accessControl != nil && !p.accessControl.Allow(blobHash, peerIP) {
+	if p.accessControl != nil && !p.accessControl.Allow(ctx, blobHash, peerIP) {
 		return PaymentRateTooLow, nil
 	}
 

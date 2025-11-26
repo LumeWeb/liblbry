@@ -292,7 +292,7 @@ func (r *DefaultReflectorServer) readBlobRequest(conn net.Conn, reader *bufio.Re
 // shouldAcceptBlob determines if the server should accept a blob
 func (r *DefaultReflectorServer) shouldAcceptBlob(ctx context.Context, blobHash string, isSdBlob bool, peerIP string) (bool, []string, error) {
 	// Check access control
-	if r.accessControl != nil && !r.accessControl.Allow(blobHash, peerIP) {
+	if r.accessControl != nil && !r.accessControl.Allow(ctx, blobHash, peerIP) {
 		return false, []string{}, nil
 	}
 
