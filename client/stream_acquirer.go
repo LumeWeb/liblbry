@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +33,12 @@ func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabl
 		}
 	}
 
-	// Validate SD blob structure
+	// Check if data is valid JSON - if not, it's likely binary content
+	if !json.Valid(data) {
+		return NewStreamError(OperationValidateSDBlob, expectedHash, "", ErrNotSDBlob, 1)
+	}
+
+	// Validate SD blob structure - this includes json.Valid() check
 	if err := stream.ValidateSDBlob(data); err != nil {
 		return fmt.Errorf("invalid SD blob %s: %w", expectedHash, err)
 	}
@@ -1250,6 +1256,15 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 
 	// Verify SD blob hash and validate structure
 	if err := verifyAndValidateSDBlob(sdBlobData, sdHash, config.VerificationEnabled); err != nil {
+		// Provide enhanced error message for non-SD blob cases
+		if errors.Is(err, ErrNotSDBlob) {
+			sa.logger.Error("Requested hash appears to be content blob, not SD blob",
+				zap.String("sdHash", sdHash),
+				zap.Int("dataSize", len(sdBlobData)),
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("hash %s appears to be content blob data, not an SD blob manifest. SD blobs should be JSON manifests, but this data appears to be binary content", sdHash)
+		}
 		return nil, err
 	}
 
@@ -1604,6 +1619,15 @@ func (sa *DefaultStreamAcquirer) GetSDBlob(ctx context.Context, sdHash string) (
 	}
 
 	if err := verifyAndValidateSDBlob(sdBlobData, sdHash, true); err != nil {
+		// Provide enhanced error message for non-SD blob cases
+		if errors.Is(err, ErrNotSDBlob) {
+			sa.logger.Error("Requested hash appears to be content blob, not SD blob",
+				zap.String("sdHash", sdHash),
+				zap.Int("dataSize", len(sdBlobData)),
+				zap.Error(err),
+			)
+			return nil, nil, fmt.Errorf("hash %s appears to be content blob data, not an SD blob manifest. SD blobs should be JSON manifests, but this data appears to be binary content", sdHash)
+		}
 		return nil, nil, err
 	}
 

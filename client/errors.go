@@ -20,6 +20,7 @@ var (
 	ErrInvalidHash      = liblbryerrors.Err("invalid blob hash")
 	ErrDecryptionFailed = liblbryerrors.Err("blob decryption failed")
 	ErrContextCancelled = liblbryerrors.Err("operation cancelled by context")
+	ErrNotSDBlob        = liblbryerrors.Err("blob is not an SD blob (appears to be binary content data)")
 )
 
 // Stream operation types for error reporting
@@ -66,6 +67,7 @@ func isRetryableError(err error) bool {
 
 	// Don't retry invalid data errors
 	if errors.Is(err, stream.ErrInvalidSDBlob) ||
+		errors.Is(err, ErrNotSDBlob) ||
 		errors.Is(err, ErrStreamCorrupted) ||
 		errors.Is(err, ErrInvalidHash) ||
 		errors.Is(err, ErrDecryptionFailed) ||
