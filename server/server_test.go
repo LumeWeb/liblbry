@@ -53,8 +53,8 @@ func generateSimpleTestBlobData(index int) []byte {
 	return generateTestBlobData("test blob data", index)
 }
 
-// createValidSDBlobData creates valid SD blob data with the correct hash
-func createValidSDBlobData(t *testing.T, expectedHash string, blobInfos []stream.BlobInfo, streamHash []byte) []byte {
+// createValidSDBlobData creates valid SD blob data
+func createValidSDBlobData(t *testing.T, blobInfos []stream.BlobInfo, streamHash []byte) []byte {
 	sdBlob := &stream.SDBlob{
 		BlobInfos:  blobInfos,
 		StreamHash: streamHash,
@@ -1135,12 +1135,11 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer server.Stop(context.Background())
 
-	sdBlobHash := TestBlobHash
 	expectedStreamHashBytes, _ := hex.DecodeString("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b")
 
 	// Create valid SD blob data with correct hash
 	blobHashBytes, _ := hex.DecodeString("68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3")
-	validSDBlobData := createValidSDBlobData(t, sdBlobHash, []stream.BlobInfo{
+	validSDBlobData := createValidSDBlobData(t, []stream.BlobInfo{
 		{Length: 100, BlobNum: 0, BlobHash: blobHashBytes, IV: []byte("1234567890123456")},
 		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("")},
 	}, expectedStreamHashBytes)
