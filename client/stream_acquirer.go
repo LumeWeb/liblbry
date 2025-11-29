@@ -1324,6 +1324,7 @@ func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, co
 							zap.Int("blobIndex", blobIndex),
 							zap.Error(err),
 						)
+						// Fall through to network acquisition since stored data is corrupted
 					} else {
 						sa.logger.Debug("Successfully retrieved content blob from storage",
 							zap.String("sdHash", sdHash),
