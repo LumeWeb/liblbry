@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,48 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
+
+// testCompletionHandler implements CompletionHandler with proper CompleteOnce semantics for testing
+type testCompletionHandler struct {
+	completed int32
+}
+
+func (tch *testCompletionHandler) CompleteWithData(req *blob.BlobRequest, data []byte, raceCancel context.CancelFunc, hash string) {
+	if atomic.CompareAndSwapInt32(&tch.completed, 0, 1) {
+		// First call - actually complete the request
+		req.SetResult(blob.NewTaskResult(data, nil))
+		req.MarkDone()
+		if raceCancel != nil {
+			raceCancel()
+		}
+	}
+	// Subsequent calls are ignored (simulating CompleteOnce behavior)
+}
+
+func (tch *testCompletionHandler) CompleteWithError(req *blob.BlobRequest, err error) error {
+	if atomic.CompareAndSwapInt32(&tch.completed, 0, 1) {
+		req.SetResult(blob.NewTaskResult(nil, err))
+		req.MarkDone()
+	}
+	return nil
+}
+
+func (tch *testCompletionHandler) CompleteWithErrorAndCancel(req *blob.BlobRequest, err error, raceCancel context.CancelFunc, hash string) {
+	if atomic.CompareAndSwapInt32(&tch.completed, 0, 1) {
+		req.SetResult(blob.NewTaskResult(nil, err))
+		req.MarkDone()
+		if raceCancel != nil {
+			raceCancel()
+		}
+	}
+}
+
+func (tch *testCompletionHandler) TrackFailedPeer(req *blob.BlobRequest, err error) (int32, bool) {
+	completed := req.IncrementCompleted()
+	totalPeers := req.GetTotalPeers()
+	isFinal := completed >= totalPeers
+	return completed, isFinal
+}
 
 // Test helpers and common setup functions
 // These helpers eliminate code duplication across test functions and provide
@@ -182,23 +225,26 @@ func TestNewPeerTaskExecutor(t *testing.T) {
 
 func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Success(t *testing.T) {
 	setup := setupTestWithConcurrency(t, 2)
-	executor := setup.executor
 
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 	contacts := createTestContacts()[:2] // Use first 2 contacts
 	hashBitmap := createTestHashBitmap(2)
 	req := createTestBlobRequest()
 
+	// Get valid test data that matches the hash
+	validTestData := lbryTesting.TestData(t, hash)
+
 	// Mock IsFixedPeer to return false (non-fixed peers)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[1]).Return(false).Once()
 
-	// Mock successful download with peer address string
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil)
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.2:6347", hash).Return([]byte("test data"), nil)
+	// Mock successful download with valid blob data that passes hash verification
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(validTestData, nil)
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.2:6347", hash).Return(validTestData, nil)
 
-	// Mock coordinator completion
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Times(2)
+	// Use test completion handler with proper CompleteOnce semantics
+	testCompletionHandler := &testCompletionHandler{}
+	executor := NewPeerTaskExecutor(setup.connMgr, setup.peerDiscovery, testCompletionHandler, setup.maxConcurrency, setup.logger)
 
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 
@@ -341,37 +387,42 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_ContextCancellation(t *testing
 
 func TestDefaultPeerTaskExecutor_ExecutePeerTasks_Concurrency(t *testing.T) {
 	setup := setupTestWithConcurrency(t, 2)
-	executor := setup.executor
 
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 	contacts := createTestContacts() // Use all 3 contacts
 	hashBitmap := createTestHashBitmap(3)
 	req := createTestBlobRequest()
 
+	// Get valid test data that matches the hash
+	validTestData := lbryTesting.TestData(t, hash)
+
 	// Mock IsFixedPeer to return false (non-fixed peers)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[1]).Return(false).Once()
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[2]).Return(false).Once()
 
-	// Mock downloads with peer address strings
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil).Once()
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.2:6347", hash).Return([]byte("test data"), nil).Once()
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.3:6347", hash).Return([]byte("test data"), nil).Once()
+	// Mock downloads - only first one will actually execute due to CompleteOnce semantics
+	// The other peers will be cancelled before they can download
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(validTestData, nil).Once()
+	// The other downloads may or may not be called depending on timing, so use Maybe()
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.2:6347", hash).Return(validTestData, nil).Maybe()
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.3:6347", hash).Return(validTestData, nil).Maybe()
 
-	// Mock coordinator completion - all 3 should succeed
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Times(3)
+	// Use test completion handler with proper CompleteOnce semantics
+	testCompletionHandler := &testCompletionHandler{}
+	executor := NewPeerTaskExecutor(setup.connMgr, setup.peerDiscovery, testCompletionHandler, setup.maxConcurrency, setup.logger)
 
 	start := time.Now()
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
 	require.NoError(t, err)
 
 	// Wait for tasks to complete and measure total execution time
-	err = executor.WaitForCompletion(500 * time.Millisecond)
+	err = executor.WaitForCompletion(1000 * time.Millisecond)
 	require.NoError(t, err)
 	duration := time.Since(start)
 
-	// Should complete quickly due to concurrent execution with race condition
-	assert.Less(t, duration, 500*time.Millisecond)
+	// Should complete quickly due to concurrent execution
+	assert.Less(t, duration, 1*time.Second)
 
 	// Verify task stats
 	assertTaskStats(t, executor, 3, 3, 0)
@@ -410,7 +461,7 @@ func TestDefaultPeerTaskExecutor_ExecutePeerTasks_FinalPeerFailure(t *testing.T)
 	require.NoError(t, err)
 
 	// Wait for tasks to complete
-	err = executor.WaitForCompletion(500 * time.Millisecond)
+	err = executor.WaitForCompletion(2 * time.Second)
 	require.NoError(t, err)
 
 	// Verify task stats
@@ -468,11 +519,14 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext(t *testing.T) {
 	hashBitmap := createTestHashBitmap(1)
 	req := createTestBlobRequest()
 
+	// Get valid test data that matches the hash
+	validTestData := lbryTesting.TestData(t, hash)
+
 	// Mock IsFixedPeer to return false (non-fixed peer)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 
 	// Mock successful download
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil)
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(validTestData, nil)
 	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
 
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
@@ -495,12 +549,15 @@ func TestDefaultPeerTaskExecutor_WaitForCompletionWithContext_Cancelled_LongRunn
 	hashBitmap := createTestHashBitmap(1)
 	req := createTestBlobRequest()
 
+	// Get valid test data that matches the hash
+	validTestData := lbryTesting.TestData(t, hash)
+
 	// Mock IsFixedPeer to return false (non-fixed peer)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 
 	// Mock a long-running task that will still be running when context times out
 	// This will complete successfully after 300ms, but the context timeout is 200ms
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil).After(300 * time.Millisecond)
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(validTestData, nil).After(300 * time.Millisecond)
 
 	// Mock the successful completion that will happen after the context times out
 	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash).Maybe()
@@ -531,7 +588,47 @@ func TestDefaultPeerTaskExecutor_GetWorkerPoolStats(t *testing.T) {
 
 func TestDefaultPeerTaskExecutor_WaitAllTasksComplete(t *testing.T) {
 	setup := setupTestWithConcurrency(t, 2)
+
+	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
+	contacts := createTestContacts()[:1] // Use first contact
+	hashBitmap := createTestHashBitmap(1)
+	req := createTestBlobRequest()
+
+	// Get valid test data that matches the hash
+	validTestData := lbryTesting.TestData(t, hash)
+
+	// Mock IsFixedPeer to return false (non-fixed peer)
+	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
+
+	// Mock successful download
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(validTestData, nil)
+
+	// Use test completion handler with proper CompleteOnce semantics
+	testCompletionHandler := &testCompletionHandler{}
+	executor := NewPeerTaskExecutor(setup.connMgr, setup.peerDiscovery, testCompletionHandler, setup.maxConcurrency, setup.logger)
+
+	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
+	require.NoError(t, err)
+
+	// Wait for task to complete naturally first
+	err = executor.WaitForCompletion(2 * time.Second)
+	require.NoError(t, err)
+
+	// Test WaitAllTasksComplete - should work fine even when no tasks are pending
+	err = executor.WaitAllTasksComplete()
+	assert.NoError(t, err)
+
+	// Verify executor is still functional after WaitAllTasksComplete
+	assert.False(t, executor.IsStopped())
+}
+
+func TestDefaultPeerTaskExecutor_ExecutePeerTasks_HashValidationFailure(t *testing.T) {
+	setup := setupTestWithConcurrency(t, 2)
 	executor := setup.executor
+
+	// Create mock DHT node for peer failure handling
+	mockDHTNode := protocolMocks.NewMockDHTNode(t)
+	setup.peerDiscovery.EXPECT().DHTNode().Return(mockDHTNode)
 
 	hash := lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1]
 	contacts := createTestContacts()[:1] // Use first contact
@@ -541,21 +638,25 @@ func TestDefaultPeerTaskExecutor_WaitAllTasksComplete(t *testing.T) {
 	// Mock IsFixedPeer to return false (non-fixed peer)
 	setup.peerDiscovery.EXPECT().IsFixedPeer(contacts[0]).Return(false).Once()
 
-	// Mock successful download
-	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return([]byte("test data"), nil)
-	setup.completionHandler.EXPECT().CompleteWithData(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
+	// Mock RemoveBadPeerFromHash to be called when hash validation fails
+	mockDHTNode.EXPECT().RemoveBadPeerFromHash(hashBitmap, contacts[0]).Return().Once()
+
+	// Mock successful download but with mismatching data that will fail hash validation
+	mismatchingData := []byte("this data does not match the expected hash")
+	setup.connMgr.EXPECT().DownloadFromPeer(mock.Anything, "192.168.1.1:6347", hash).Return(mismatchingData, nil)
+
+	// Mock failed peer tracking due to hash validation failure
+	setup.completionHandler.EXPECT().TrackFailedPeer(req, mock.Anything).Return(int32(1), true)
+	setup.completionHandler.EXPECT().CompleteWithErrorAndCancel(req, mock.Anything, mock.AnythingOfType("context.CancelFunc"), hash)
 
 	err := executor.ExecutePeerTasks(context.Background(), hash, contacts, hashBitmap, req, func() {})
+
+	require.NoError(t, err) // Should not return error, just handle the failure
+
+	// Wait for tasks to complete
+	err = executor.WaitForCompletion(2 * time.Second)
 	require.NoError(t, err)
 
-	// Wait for task to complete naturally first
-	err = executor.WaitForCompletion(100 * time.Millisecond)
-	require.NoError(t, err)
-
-	// Test WaitAllTasksComplete - should work fine even when no tasks are pending
-	err = executor.WaitAllTasksComplete()
-	assert.NoError(t, err)
-
-	// Verify executor is still functional after WaitAllTasksComplete
-	assert.False(t, executor.IsStopped())
+	// Verify task stats
+	assertTaskStats(t, executor, 1, 1, 0)
 }

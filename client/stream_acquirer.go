@@ -51,6 +51,27 @@ func verifyBlobHash(data []byte, expectedHash string) error {
 	return nil
 }
 
+// verifyAndValidateSDBlob verifies the blob hash (if enabled) and validates SD blob structure
+func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabled bool) error {
+	if len(data) == 0 {
+		return NewStreamError(OperationValidation, "", expectedHash, ErrBlobAcquisition, 1)
+	}
+
+	// Verify blob hash if verification is enabled
+	if verificationEnabled {
+		if err := verifyBlobHash(data, expectedHash); err != nil {
+			return fmt.Errorf("SD blob hash verification failed for %s: %w", expectedHash, err)
+		}
+	}
+
+	// Validate SD blob structure
+	if err := stream.ValidateSDBlob(data); err != nil {
+		return fmt.Errorf("invalid SD blob %s: %w", expectedHash, err)
+	}
+
+	return nil
+}
+
 // StreamReader provides reading and seeking capabilities for streams with on-demand blob acquisition
 type StreamReader interface {
 	io.Reader
@@ -1259,16 +1280,9 @@ func (sa *DefaultStreamAcquirer) GetStream(ctx context.Context, sdHash string, o
 		zap.Int("dataSize", len(sdBlobData)),
 	)
 
-	// Verify SD blob hash if verification is enabled (before parsing for fail-fast)
-	if config.VerificationEnabled {
-		if err := verifyBlobHash(sdBlobData, sdHash); err != nil {
-			return nil, fmt.Errorf("SD blob hash verification failed for %s: %w", sdHash, err)
-		}
-	}
-
-	// Validate SD blob data
-	if err := stream.ValidateSDBlob(sdBlobData); err != nil {
-		return nil, fmt.Errorf("invalid SD blob %s: %w", sdHash, err)
+	// Verify SD blob hash and validate structure
+	if err := verifyAndValidateSDBlob(sdBlobData, sdHash, config.VerificationEnabled); err != nil {
+		return nil, err
 	}
 
 	// Parse the SD blob
@@ -1489,8 +1503,8 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 	}
 
 	// Validate SD blob data
-	if err := stream.ValidateSDBlob(sdBlobData); err != nil {
-		return nil, fmt.Errorf("invalid SD blob %s: %w", sdHash, err)
+	if err := verifyAndValidateSDBlob(sdBlobData, sdHash, config.VerificationEnabled); err != nil {
+		return nil, err
 	}
 
 	// Parse the SD blob
@@ -1627,9 +1641,8 @@ func (sa *DefaultStreamAcquirer) GetSDBlob(ctx context.Context, sdHash string) (
 		return nil, nil, fmt.Errorf("failed to acquire SD blob %s: %w", sdHash, err)
 	}
 
-	// Validate SD blob data
-	if err := stream.ValidateSDBlob(sdBlobData); err != nil {
-		return nil, nil, fmt.Errorf("invalid SD blob %s: %w", sdHash, err)
+	if err := verifyAndValidateSDBlob(sdBlobData, sdHash, true); err != nil {
+		return nil, nil, err
 	}
 
 	// Parse the SD blob
@@ -1648,15 +1661,6 @@ func (sa *DefaultStreamAcquirer) GetSDBlob(ctx context.Context, sdHash string) (
 			zap.String("sdHash", sdHash),
 		)
 		return nil, nil, fmt.Errorf("invalid SD blob %s: no blob infos found", sdHash)
-	}
-
-	// Verify SD blob hash (always enabled for GetSDBlob for security)
-	if err := verifyBlobHash(sdBlobData, sdHash); err != nil {
-		sa.logger.Error("SD blob metadata hash verification failed",
-			zap.String("sdHash", sdHash),
-			zap.Error(err),
-		)
-		return nil, nil, fmt.Errorf("SD blob hash verification failed for %s: %w", sdHash, err)
 	}
 
 	sa.logger.Info("Successfully retrieved SD blob metadata",

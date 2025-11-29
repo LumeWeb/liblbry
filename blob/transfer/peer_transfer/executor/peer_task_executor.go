@@ -2,6 +2,8 @@ package executor
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -12,12 +14,42 @@ import (
 	"github.com/gammazero/workerpool"
 	"go.lumeweb.com/lbry-dht"
 	"go.lumeweb.com/lbry-dht/bits"
+	"go.lumeweb.com/liblbry/blob"
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/connection"
 	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/discovery"
+	liblbryerrors "go.lumeweb.com/liblbry/errors"
 	"go.uber.org/zap"
 
-	"go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
+	peerblob "go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
 )
+
+// verifyBlobHash verifies that blob data matches the expected hash
+// This is a critical security function to ensure peers don't return invalid/malicious data
+func verifyBlobHash(data []byte, expectedHash string) error {
+	if len(data) == 0 {
+		return liblbryerrors.Err("empty blob data received from peer")
+	}
+
+	// Compute hash of the actual data
+	computedHash, err := blob.ComputeBlobHashBytes(data)
+	if err != nil {
+		return liblbryerrors.Err("failed to compute hash of peer blob data: %w", err)
+	}
+
+	// Decode expected hash for constant-time comparison
+	expectedHashBytes, err := hex.DecodeString(expectedHash)
+	if err != nil {
+		return liblbryerrors.Err("invalid expected hash format: %w", err)
+	}
+
+	// Compare computed hash with expected hash using constant-time comparison
+	if subtle.ConstantTimeCompare(computedHash, expectedHashBytes) != 1 {
+		return liblbryerrors.Err("peer blob hash verification failed: expected %s, got %s",
+			expectedHash, hex.EncodeToString(computedHash))
+	}
+
+	return nil
+}
 
 // errorType represents the type of error that occurred during peer transfer
 type errorType string
@@ -40,7 +72,7 @@ const (
 //     avoid overlapping WaitForCompletionWithContext calls unless this behavior is desired.
 type PeerTaskExecutor interface {
 	// ExecutePeerTasks executes download tasks for all provided peers concurrently
-	ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error
+	ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *peerblob.BlobRequest, raceCancel context.CancelFunc) error
 
 	// IsStopped checks if the executor is stopped. Returns true only after Stop() has been called.
 	// During Start(), this returns false only after the worker pool is fully initialized.
@@ -137,7 +169,7 @@ func NewPeerTaskExecutor(
 }
 
 // ExecutePeerTasks executes download tasks for all provided peers concurrently
-func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) error {
+func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash string, contacts []dht.Contact, hashBitmap bits.Bitmap, req *peerblob.BlobRequest, raceCancel context.CancelFunc) error {
 	if pte.IsStopped() {
 		return fmt.Errorf("peer task executor is stopped")
 	}
@@ -198,7 +230,7 @@ func (pte *DefaultPeerTaskExecutor) ExecutePeerTasks(ctx context.Context, hash s
 }
 
 // createPeerTask creates a task function for downloading from a specific peer
-func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash string, contact dht.Contact, hashBitmap bits.Bitmap, req *blob.BlobRequest, raceCancel context.CancelFunc) func() {
+func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash string, contact dht.Contact, hashBitmap bits.Bitmap, req *peerblob.BlobRequest, raceCancel context.CancelFunc) func() {
 	// Check if this is a fixed peer
 	isFixed := pte.discovery.IsFixedPeer(contact)
 
@@ -228,8 +260,14 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 		data, err := pte.connMgr.DownloadFromPeer(ctx, peerAddress, blobHash)
 
 		if err == nil {
-			// SUCCESS! Set result and notify all waiters
-			pte.completionHandler.CompleteWithData(req, data, raceCancelFunc, blobHash)
+			// Verify blob hash before accepting data from peer
+			if verifyErr := verifyBlobHash(data, blobHash); verifyErr != nil {
+				// Hash verification failed - treat as peer failure
+				pte.handlePeerFailure(ctx, req, verifyErr, peerContact, peerHashBitmap, isFixedPeer, peerAddress, blobHash, raceCancelFunc)
+			} else {
+				// SUCCESS! Data verified, set result and notify all waiters
+				pte.completionHandler.CompleteWithData(req, data, raceCancelFunc, blobHash)
+			}
 		} else {
 			// Handle peer failure
 			pte.handlePeerFailure(ctx, req, err, peerContact, peerHashBitmap, isFixedPeer, peerAddress, blobHash, raceCancelFunc)
@@ -242,7 +280,7 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 }
 
 // handlePeerFailure handles the failure of a peer download attempt
-func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *blob.BlobRequest, err error, contact dht.Contact, hashBitmap bits.Bitmap, isFixed bool, peerAddr string, hash string, raceCancel context.CancelFunc) {
+func (pte *DefaultPeerTaskExecutor) handlePeerFailure(ctx context.Context, req *peerblob.BlobRequest, err error, contact dht.Contact, hashBitmap bits.Bitmap, isFixed bool, peerAddr string, hash string, raceCancel context.CancelFunc) {
 	// Only mark peer as bad for non-context errors (connection failures, protocol errors, etc.)
 	// Context cancellation/timeout errors shouldn't penalize the peer
 	// Also, never remove fixed peers from DHT as they are fallback peers
@@ -350,7 +388,7 @@ func (pte *DefaultPeerTaskExecutor) GetMaxConcurrency() int {
 }
 
 // shouldSkipTask checks if we should skip submitting tasks
-func (pte *DefaultPeerTaskExecutor) shouldSkipTask(req *blob.BlobRequest) bool {
+func (pte *DefaultPeerTaskExecutor) shouldSkipTask(req *peerblob.BlobRequest) bool {
 	// Check if request is already done before submitting tasks
 	select {
 	case <-req.GetDone():
@@ -362,7 +400,7 @@ func (pte *DefaultPeerTaskExecutor) shouldSkipTask(req *blob.BlobRequest) bool {
 }
 
 // shouldProceedWithTask checks if we should proceed with a task
-func (pte *DefaultPeerTaskExecutor) shouldProceedWithTask(ctx context.Context, req *blob.BlobRequest) bool {
+func (pte *DefaultPeerTaskExecutor) shouldProceedWithTask(ctx context.Context, req *peerblob.BlobRequest) bool {
 	// Check if request is already done or context is cancelled before doing any work
 	select {
 	case <-req.GetDone():
@@ -393,7 +431,7 @@ func (pte *DefaultPeerTaskExecutor) handleEarlyTaskExit() {
 // checkEarlyExit checks if the task should exit early due to context cancellation or request completion.
 // If so, it handles the counter adjustments and returns true. Otherwise, returns false.
 // This should only be called after pendingTasks has been incremented for the task.
-func (pte *DefaultPeerTaskExecutor) checkEarlyExit(ctx context.Context, req *blob.BlobRequest) bool {
+func (pte *DefaultPeerTaskExecutor) checkEarlyExit(ctx context.Context, req *peerblob.BlobRequest) bool {
 	select {
 	case <-req.GetDone():
 		// Request already completed, handle counter adjustments and return
