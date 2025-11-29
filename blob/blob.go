@@ -12,7 +12,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha512"
+	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	liblbcrypto "go.lumeweb.com/liblbry/crypto"
@@ -24,6 +26,30 @@ const (
 	BlobHashSize      = sha512.Size384
 	BlobHashHexLength = BlobHashSize * 2 // in hex, each byte is 2 chars
 )
+
+// VerifyBlobHash verifies that blob data matches the expected hash
+func VerifyBlobHash(data []byte, expectedHash string) error {
+	if len(data) == 0 {
+		return errors.New("empty blob data")
+	}
+
+	computedHash, err := ComputeBlobHashBytes(data)
+	if err != nil {
+		return fmt.Errorf("failed to compute blob hash: %w", err)
+	}
+
+	expectedHashBytes, err := hex.DecodeString(expectedHash)
+	if err != nil {
+		return fmt.Errorf("invalid expected hash format: %w", err)
+	}
+
+	if subtle.ConstantTimeCompare(computedHash, expectedHashBytes) != 1 {
+		return fmt.Errorf("hash mismatch: expected %s, got %s",
+			expectedHash, hex.EncodeToString(computedHash))
+	}
+
+	return nil
+}
 
 // Blob represents a data blob with encryption capabilities
 type Blob []byte
