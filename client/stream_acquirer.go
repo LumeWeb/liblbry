@@ -33,12 +33,13 @@ func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabl
 		}
 	}
 
+	// Check if data is valid JSON - if not, it's likely binary content
+	if !json.Valid(data) {
+		return NewStreamError(OperationValidateSDBlob, expectedHash, "", ErrNotSDBlob, 1)
+	}
+
 	// Validate SD blob structure - this includes json.Valid() check
 	if err := stream.ValidateSDBlob(data); err != nil {
-		// Check if the error is specifically due to invalid JSON (likely binary content)
-		if !json.Valid(data) {
-			return NewStreamError(OperationValidateSDBlob, expectedHash, "", ErrNotSDBlob, 1)
-		}
 		return fmt.Errorf("invalid SD blob %s: %w", expectedHash, err)
 	}
 
