@@ -375,11 +375,19 @@ func (r *streamingReader) Read(p []byte) (int, error) {
 
 	// Ensure we have current blob data
 	if err := r.ensureCurrentBlob(); err != nil {
-		r.logger.Error("Failed to ensure current blob data",
-			zap.String("sdHash", r.sdHash),
-			zap.Int("currentBlob", r.currentBlob),
-			zap.Error(err),
-		)
+		// EOF is expected when reaching the end of stream - don't log as error
+		if errors.Is(err, io.EOF) {
+			r.logger.Debug("Reached end of stream",
+				zap.String("sdHash", r.sdHash),
+				zap.Int("currentBlob", r.currentBlob),
+			)
+		} else {
+			r.logger.Error("Failed to ensure current blob data",
+				zap.String("sdHash", r.sdHash),
+				zap.Int("currentBlob", r.currentBlob),
+				zap.Error(err),
+			)
+		}
 		return 0, err
 	}
 
