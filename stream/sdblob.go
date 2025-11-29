@@ -295,23 +295,28 @@ func ValidateSDBlob(sdBlobData []byte) error {
 		return ErrInvalidSDBlob
 	}
 
+	if !json.Valid(sdBlobData) {
+		return ErrInvalidSDBlob
+	}
+
 	// Parse JSON to validate structure
-	var jsonSDBlob JSONSDBlob
-	if err := json.Unmarshal(sdBlobData, &jsonSDBlob); err != nil {
+	var sdBlob SDBlob
+
+	if err := sdBlob.FromBlob(sdBlobData); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSDBlob, err)
 	}
 
 	// Validate required fields
-	if jsonSDBlob.StreamType == "" {
+	if sdBlob.StreamType == "" {
 		return fmt.Errorf("%w: missing stream_type", ErrInvalidSDBlob)
 	}
 
-	if len(jsonSDBlob.Blobs) == 0 {
+	if len(sdBlob.BlobInfos) == 0 {
 		return fmt.Errorf("%w: no blobs found", ErrInvalidSDBlob)
 	}
 
 	// Validate each blob info
-	for i, blobInfo := range jsonSDBlob.Blobs {
+	for i, blobInfo := range sdBlob.BlobInfos {
 		// Zero-length blobs (terminating blobs) are allowed to have missing hashes
 		if blobInfo.Length > 0 {
 			if len(blobInfo.BlobHash) == 0 {

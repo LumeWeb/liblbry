@@ -1098,7 +1098,7 @@ func TestStreamAcquirer_WithRetryNonRetryableError(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, streamReader)
-	assert.Contains(t, err.Error(), "invalid SD blob")
+	assert.Contains(t, err.Error(), "appears to be content blob data, not an SD blob manifest")
 }
 
 func TestStreamAcquirer_WithRetryMaxAttemptsExhausted(t *testing.T) {
@@ -1235,16 +1235,16 @@ func TestStreamReader_WithRetryOnStorageFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mock SD blob storage - always succeed
-	mockStore.On("Has", sdHash).Return(true, nil)
-	mockStore.On("Get", sdHash).Return(sdBlobData, nil)
+	mockStore.On("Has", mock.Anything, sdHash).Return(true, nil)
+	mockStore.On("Get", mock.Anything, sdHash).Return(sdBlobData, nil)
 
 	// Mock blob storage Has check to fail initially, then succeed
 	// First call fails with temporary error
-	mockStore.On("Has", blobHashHex).Return(false, errors.New("storage temporarily unavailable")).Once()
+	mockStore.On("Has", mock.Anything, blobHashHex).Return(false, errors.New("storage temporarily unavailable")).Once()
 	// Subsequent calls succeed (use Maybe() to handle multiple retry attempts)
-	mockStore.On("Has", blobHashHex).Return(true, nil).Maybe()
+	mockStore.On("Has", mock.Anything, blobHashHex).Return(true, nil).Maybe()
 	// Get call succeeds when Has returns true
-	mockStore.On("Get", blobHashHex).Return(encryptedBlobData, nil).Maybe()
+	mockStore.On("Get", mock.Anything, blobHashHex).Return(encryptedBlobData, nil).Maybe()
 
 	// Create mock transfer for blob acquisition as fallback (may not be called if storage succeeds)
 	mockTransfer := transferMocks.NewMockTransfer(t)
