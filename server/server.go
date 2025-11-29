@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/liblbry/storage"
 	"go.lumeweb.com/liblbry/stream"
 
+	"github.com/avast/retry-go/v4"
 	"go.uber.org/zap"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -82,7 +83,9 @@ type BlobManager interface {
 
 // AcquireSDConfig holds configuration for SD blob acquisition
 type AcquireSDConfig struct {
-	Recursive bool // Whether to fetch all content blobs
+	Recursive           bool           // Whether to fetch all content blobs
+	RetryOptions        []retry.Option // Retry configuration using retry-go
+	VerificationEnabled bool           // Whether to verify blob hashes during acquisition
 }
 
 // AcquireSDOption defines a function type for configuring SD blob acquisition
@@ -92,6 +95,20 @@ type AcquireSDOption func(*AcquireSDConfig)
 func WithAcquireRecursive(recursive bool) AcquireSDOption {
 	return func(config *AcquireSDConfig) {
 		config.Recursive = recursive
+	}
+}
+
+// WithAcquireRetry sets the retry configuration for SD blob acquisition
+func WithAcquireRetry(retryOptions []retry.Option) AcquireSDOption {
+	return func(config *AcquireSDConfig) {
+		config.RetryOptions = retryOptions
+	}
+}
+
+// WithAcquireVerification enables or disables hash verification during SD blob acquisition
+func WithAcquireVerification(enabled bool) AcquireSDOption {
+	return func(config *AcquireSDConfig) {
+		config.VerificationEnabled = enabled
 	}
 }
 
@@ -758,14 +775,24 @@ func (s *DefaultServer) AcquireSDBlob(ctx context.Context, hash string, opts ...
 
 	// Apply default configuration
 	config := &AcquireSDConfig{
-		Recursive: true, // Default to recursive fetching
+		Recursive:           true, // Default to recursive fetching
+		RetryOptions:        client.DefaultRetryOptions(),
+		VerificationEnabled: true, // Default to verification enabled
 	}
 	for _, opt := range opts {
 		opt(config)
 	}
 
-	// Convert recursive option
+	// Convert server options to stream acquirer options
 	acquireOpts = append(acquireOpts, client.WithAcquireRecursive(config.Recursive))
+
+	// Pass retry options if configured
+	if config.RetryOptions != nil {
+		acquireOpts = append(acquireOpts, client.WithAcquireRetry(config.RetryOptions))
+	}
+
+	// Pass verification option
+	acquireOpts = append(acquireOpts, client.WithAcquireVerification(config.VerificationEnabled))
 
 	// Use unified stream acquisition logic
 	return streamAcquirer.GetStreamResult(ctx, hash, acquireOpts...)

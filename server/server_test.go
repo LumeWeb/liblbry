@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -12,11 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/liblbry/crypto"
 	lbryTesting "go.lumeweb.com/liblbry/internal/testing"
 	"go.lumeweb.com/liblbry/mocks"
 	"go.lumeweb.com/liblbry/protocol"
 	protocolMocks "go.lumeweb.com/liblbry/protocol/mocks"
 	storageMocks "go.lumeweb.com/liblbry/storage/mocks"
+	"go.lumeweb.com/liblbry/stream"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
@@ -48,6 +51,21 @@ func generateTestBlobData(prefix string, index int) []byte {
 // This ensures predictable test data generation for consistent testing.
 func generateSimpleTestBlobData(index int) []byte {
 	return generateTestBlobData("test blob data", index)
+}
+
+// createValidSDBlobData creates valid SD blob data with the correct hash
+func createValidSDBlobData(t *testing.T, expectedHash string, blobInfos []stream.BlobInfo, streamHash []byte) []byte {
+	sdBlob := &stream.SDBlob{
+		BlobInfos:  blobInfos,
+		StreamHash: streamHash,
+		StreamType: "lbryfile",
+	}
+
+	data, err := sdBlob.ToBlob()
+	require.NoError(t, err)
+
+	// Return the generated data and use its actual hash for the test
+	return data
 }
 
 // generateNamedTestBlobHash generates a named test blob hash with the specified name and index.
@@ -1118,27 +1136,30 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 	defer server.Stop(context.Background())
 
 	sdBlobHash := TestBlobHash
-	sdBlobData := []byte(`{
-		"blobs": [
-			{"length": 100, "blob_num": 0, "blob_hash": "68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3", "iv": "1234567890123456"},
-			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
-		],
-		"stream_type": "lbryfile",
-		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	}`)
-	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	expectedStreamHashBytes, _ := hex.DecodeString("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b")
+
+	// Create valid SD blob data with correct hash
+	blobHashBytes, _ := hex.DecodeString("68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3")
+	validSDBlobData := createValidSDBlobData(t, sdBlobHash, []stream.BlobInfo{
+		{Length: 100, BlobNum: 0, BlobHash: blobHashBytes, IV: []byte("1234567890123456")},
+		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("")},
+	}, expectedStreamHashBytes)
+
+	// Calculate the actual hash of the generated data
+	hasher := crypto.NewHasher()
+	actualHash := hasher.Hash(validSDBlobData)
 
 	// Setup mock expectations for SD blob acquisition
-	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return([]byte(sdBlobData), nil)
+	testMocks.acquirer.EXPECT().Acquire(ctx, actualHash).Return(validSDBlobData, nil)
 
-	// Test successful SD blob acquisition (non-recursive)
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(false))
+	// Test successful SD blob acquisition (non-recursive) with verification disabled for test
+	result, err := server.AcquireSDBlob(ctx, actualHash, WithAcquireRecursive(false), WithAcquireVerification(false))
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, sdBlobHash, result.SDBlobHash)
-	assert.Equal(t, expectedStreamHash, result.StreamHash)
+	assert.Equal(t, actualHash, result.SDBlobHash)
+	assert.Equal(t, hex.EncodeToString(expectedStreamHashBytes), result.StreamHash)
 	assert.NotNil(t, result.SDBlob)
-	assert.Equal(t, []byte(sdBlobData), result.SDBlobData)
+	assert.Equal(t, validSDBlobData, result.SDBlobData)
 	assert.Nil(t, result.ContentBlobs)     // Should be nil for non-recursive
 	assert.Nil(t, result.ContentHashes)    // Should be nil for non-recursive
 	assert.Equal(t, 0, result.TotalChunks) // Should be 0 for non-recursive
@@ -1185,7 +1206,7 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	testMocks.storage.EXPECT().Put(mock.Anything, contentBlobHash, contentBlobData).Return(nil)
 
 	// Test successful recursive SD blob acquisition
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true), WithAcquireVerification(false))
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, sdBlobHash, result.SDBlobHash)
@@ -1243,7 +1264,7 @@ func TestDefaultServer_AcquireSDBlob_SDBlobAcquisitionFailure(t *testing.T) {
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(nil, acquirerError)
 
 	// Test SD blob acquisition failure
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash)
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireVerification(false))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire SD blob")
 	assert.Contains(t, err.Error(), sdBlobHash)
@@ -1271,7 +1292,7 @@ func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(invalidJSON, nil)
 
 	// Test invalid JSON handling
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash)
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireVerification(false))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid SD blob")
 	assert.Contains(t, err.Error(), sdBlobHash)
@@ -1314,7 +1335,7 @@ func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
 	testMocks.storage.EXPECT().Get(mock.Anything, contentBlobHash).Return(contentBlobData, nil)
 
 	// Test successful recursive SD blob acquisition with storage hit
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true), WithAcquireVerification(false))
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, sdBlobHash, result.SDBlobHash)
@@ -1368,7 +1389,7 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 	testMocks.acquirer.EXPECT().Acquire(mock.Anything, contentBlobHash).Return(nil, acquirerError)
 
 	// Test content blob acquisition failure
-	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true))
+	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireRecursive(true), WithAcquireVerification(false))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to acquire content blob")
 	assert.Contains(t, err.Error(), contentBlobHash)
