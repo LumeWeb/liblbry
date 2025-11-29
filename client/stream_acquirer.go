@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -20,37 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// verifyBlobHash verifies that the blob data matches the expected hash
-func verifyBlobHash(data []byte, expectedHash string) error {
-	if len(data) == 0 {
-		return NewStreamError(OperationValidation, "", expectedHash, ErrBlobAcquisition, 1)
-	}
-
-	// Compute hash of the actual data
-	computedHash, err := blob.ComputeBlobHashBytes(data)
-	if err != nil {
-		return NewStreamError(OperationValidation, "", expectedHash, err, 1)
-	}
-
-	// Convert to hex string for error reporting
-	computedHashHex := hex.EncodeToString(computedHash)
-
-	// Decode expected hash for constant-time comparison
-	expectedHashBytes, err := hex.DecodeString(expectedHash)
-	if err != nil {
-		return NewStreamError(OperationValidation, "", expectedHash,
-			liblbryerrors.Err("invalid expected hash format: %w", err), 1)
-	}
-
-	// Compare computed hash with expected hash using constant-time comparison
-	if subtle.ConstantTimeCompare(computedHash, expectedHashBytes) != 1 {
-		return NewStreamError(OperationValidation, "", expectedHash,
-			liblbryerrors.Err("blob hash verification failed: expected %s, got %s", expectedHash, computedHashHex), 1)
-	}
-
-	return nil
-}
-
 // verifyAndValidateSDBlob verifies the blob hash (if enabled) and validates SD blob structure
 func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabled bool) error {
 	if len(data) == 0 {
@@ -59,7 +27,7 @@ func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabl
 
 	// Verify blob hash if verification is enabled
 	if verificationEnabled {
-		if err := verifyBlobHash(data, expectedHash); err != nil {
+		if err := blob.VerifyBlobHash(data, expectedHash); err != nil {
 			return fmt.Errorf("SD blob hash verification failed for %s: %w", expectedHash, err)
 		}
 	}
@@ -751,7 +719,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 
 			// Verify blob hash if verification is enabled
 			if r.config.VerificationEnabled {
-				if err := verifyBlobHash(data, blobHash); err != nil {
+				if err := blob.VerifyBlobHash(data, blobHash); err != nil {
 					return fmt.Errorf("stored blob hash verification failed for %s: %w", blobHash, err)
 				}
 			}
@@ -826,7 +794,7 @@ func (r *streamingReader) ensureCurrentBlob() error {
 
 	// Verify blob hash if verification is enabled
 	if r.config.VerificationEnabled {
-		if err := verifyBlobHash(data, blobHash); err != nil {
+		if err := blob.VerifyBlobHash(data, blobHash); err != nil {
 			return fmt.Errorf("blob hash verification failed for %s: %w", blobHash, err)
 		}
 	}
@@ -1006,7 +974,7 @@ func (r *streamingReader) startPrefetcher() {
 						if err == nil {
 							// Verify blob hash if verification is enabled
 							if r.config.VerificationEnabled {
-								if err := verifyBlobHash(data, blobHash); err != nil {
+								if err := blob.VerifyBlobHash(data, blobHash); err != nil {
 									r.logger.Debug("Prefetch: blob hash verification failed",
 										zap.String("sdHash", r.sdHash),
 										zap.String("blobHash", blobHash),
@@ -1078,7 +1046,7 @@ func (r *streamingReader) startPrefetcher() {
 
 				// Verify blob hash if verification is enabled
 				if r.config.VerificationEnabled {
-					if err := verifyBlobHash(data, blobHash); err != nil {
+					if err := blob.VerifyBlobHash(data, blobHash); err != nil {
 						r.logger.Debug("Prefetch: blob hash verification failed",
 							zap.String("sdHash", r.sdHash),
 							zap.String("blobHash", blobHash),
@@ -1349,7 +1317,7 @@ func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, co
 			} else {
 				// Verify blob hash if verification is enabled
 				if config.VerificationEnabled {
-					if err := verifyBlobHash(blobData, blobHash); err != nil {
+					if err := blob.VerifyBlobHash(blobData, blobHash); err != nil {
 						sa.logger.Error("Stored blob hash verification failed",
 							zap.String("sdHash", sdHash),
 							zap.String("blobHash", blobHash),
@@ -1405,7 +1373,7 @@ func (sa *DefaultStreamAcquirer) acquireBlobWithFallback(ctx context.Context, co
 
 	// Verify blob hash if verification is enabled
 	if config.VerificationEnabled {
-		if err := verifyBlobHash(blobData, blobHash); err != nil {
+		if err := blob.VerifyBlobHash(blobData, blobHash); err != nil {
 			sa.logger.Error("Content blob hash verification failed",
 				zap.String("sdHash", sdHash),
 				zap.String("blobHash", blobHash),
@@ -1530,13 +1498,6 @@ func (sa *DefaultStreamAcquirer) GetStreamResult(ctx context.Context, sdHash str
 		zap.String("streamHash", hex.EncodeToString(sdBlob.StreamHash)),
 		zap.Int("blobCount", len(sdBlob.BlobInfos)),
 	)
-
-	// Verify SD blob hash if verification is enabled
-	if config.VerificationEnabled {
-		if err := verifyBlobHash(sdBlobData, sdHash); err != nil {
-			return nil, fmt.Errorf("SD blob hash verification failed for %s: %w", sdHash, err)
-		}
-	}
 
 	// Create the basic stream result
 	result := &stream.StreamResult{

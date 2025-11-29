@@ -2,8 +2,6 @@ package executor
 
 import (
 	"context"
-	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -22,34 +20,6 @@ import (
 
 	peerblob "go.lumeweb.com/liblbry/blob/transfer/peer_transfer/blob"
 )
-
-// verifyBlobHash verifies that blob data matches the expected hash
-// This is a critical security function to ensure peers don't return invalid/malicious data
-func verifyBlobHash(data []byte, expectedHash string) error {
-	if len(data) == 0 {
-		return liblbryerrors.Err("empty blob data received from peer")
-	}
-
-	// Compute hash of the actual data
-	computedHash, err := blob.ComputeBlobHashBytes(data)
-	if err != nil {
-		return liblbryerrors.Err("failed to compute hash of peer blob data: %w", err)
-	}
-
-	// Decode expected hash for constant-time comparison
-	expectedHashBytes, err := hex.DecodeString(expectedHash)
-	if err != nil {
-		return liblbryerrors.Err("invalid expected hash format: %w", err)
-	}
-
-	// Compare computed hash with expected hash using constant-time comparison
-	if subtle.ConstantTimeCompare(computedHash, expectedHashBytes) != 1 {
-		return liblbryerrors.Err("peer blob hash verification failed: expected %s, got %s",
-			expectedHash, hex.EncodeToString(computedHash))
-	}
-
-	return nil
-}
 
 // errorType represents the type of error that occurred during peer transfer
 type errorType string
@@ -261,7 +231,8 @@ func (pte *DefaultPeerTaskExecutor) createPeerTask(ctx context.Context, hash str
 
 		if err == nil {
 			// Verify blob hash before accepting data from peer
-			if verifyErr := verifyBlobHash(data, blobHash); verifyErr != nil {
+			if verifyErr := blob.VerifyBlobHash(data, blobHash); verifyErr != nil {
+				verifyErr = liblbryerrors.Err("peer blob %s", verifyErr)
 				// Hash verification failed - treat as peer failure
 				pte.handlePeerFailure(ctx, req, verifyErr, peerContact, peerHashBitmap, isFixedPeer, peerAddress, blobHash, raceCancelFunc)
 			} else {
