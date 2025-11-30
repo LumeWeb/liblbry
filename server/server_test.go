@@ -1293,7 +1293,7 @@ func TestDefaultServer_AcquireSDBlob_InvalidJSON(t *testing.T) {
 	// Test invalid JSON handling
 	result, err := server.AcquireSDBlob(ctx, sdBlobHash, WithAcquireVerification(false))
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid SD blob")
+	assert.Contains(t, err.Error(), "blob is not an SD blob")
 	assert.Contains(t, err.Error(), sdBlobHash)
 	assert.Nil(t, result)
 }
