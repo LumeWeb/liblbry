@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
+	lbrytesting "go.lumeweb.com/liblbry/internal/testing"
 	protocolmocks "go.lumeweb.com/liblbry/protocol/mocks"
 	"go.lumeweb.com/liblbry/storage"
+	"go.lumeweb.com/liblbry/storage/memory"
 	storagemocks "go.lumeweb.com/liblbry/storage/mocks"
 )
 
@@ -547,5 +550,104 @@ func TestInvalidDataHandling(t *testing.T) {
 	_, err = conn.Read(response)
 	if err != io.EOF {
 		t.Error("error reading", err)
+	}
+}
+
+func TestCompositeRequestHandling(t *testing.T) {
+	store := memory.NewMemoryStore()
+	server := NewPeerServer(store,
+		WithPeerAccessControl(storage.NewAllowAllAccess()),
+	)
+
+	// Add a test blob to the store using existing test data
+	testBlobHash := lbrytesting.LBRYTestHashes[lbrytesting.LBRYHashKey1]
+	testBlobData := []byte("test blob data")
+	err := store.Put(context.Background(), testBlobHash, testBlobData)
+	if err != nil {
+		t.Fatalf("Failed to add test blob: %v", err)
+	}
+
+	ctx := context.Background()
+	peerIP := "127.0.0.1"
+
+	tests := []struct {
+		name           string
+		request        CompositeRequest
+		expectPrice    bool
+		expectAvail    bool
+		expectBlobData bool
+	}{
+		{
+			name: "blob data request with payment and availability",
+			request: CompositeRequest{
+				RequestedBlob:       testBlobHash,
+				RequestedBlobs:      []string{testBlobHash},
+				BlobDataPaymentRate: new(float64),
+			},
+			expectPrice:    true,
+			expectAvail:    true,
+			expectBlobData: true,
+		},
+		{
+			name: "payment rate request only",
+			request: CompositeRequest{
+				RequestedBlobs:      []string{testBlobHash},
+				BlobDataPaymentRate: new(float64),
+			},
+			expectPrice:    true,
+			expectAvail:    true,
+			expectBlobData: false,
+		},
+		{
+			name: "availability request only",
+			request: CompositeRequest{
+				RequestedBlobs: []string{testBlobHash},
+			},
+			expectPrice:    false,
+			expectAvail:    true,
+			expectBlobData: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response, blobData, err := server.(*DefaultPeerServer).handleRequest(ctx, tt.request, peerIP)
+
+			if err != nil {
+				t.Fatalf("handleRequest failed: %v", err)
+			}
+
+			// Check pricing response
+			if tt.expectPrice && response.BlobDataPaymentRate == "" {
+				t.Error("Expected pricing response but got none")
+			}
+			if !tt.expectPrice && response.BlobDataPaymentRate != "" {
+				t.Error("Unexpected pricing response")
+			}
+
+			// Check availability response
+			if tt.expectAvail && len(response.AvailableBlobs) == 0 {
+				t.Error("Expected availability response but got none")
+			}
+			if !tt.expectAvail && len(response.AvailableBlobs) > 0 {
+				t.Error("Unexpected availability response")
+			}
+
+			// Check blob data response
+			if tt.expectBlobData && response.IncomingBlob == nil {
+				t.Error("Expected blob data response but got none")
+			}
+			if !tt.expectBlobData && response.IncomingBlob != nil {
+				t.Error("Unexpected blob data response")
+			}
+
+			// Check actual blob data
+			if tt.expectBlobData && len(blobData) == 0 {
+				t.Error("Expected blob data but got none")
+			}
+			if !tt.expectBlobData && len(blobData) > 0 {
+				t.Error("Unexpected blob data")
+			}
+		})
 	}
 }

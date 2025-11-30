@@ -327,41 +327,34 @@ func (p *DefaultPeerServer) handleRequest(ctx context.Context, request Composite
 		AvailableBlobs: []string{}, // Always initialize as empty slice
 	}
 
-	// Handle blob data request (highest priority)
+	var blobData []byte
+	var err error
+
+	// Handle blob data request if present
 	if request.RequestedBlob != "" {
-		incomingBlob, blobData, err := p.handleBlobDataRequest(ctx, request.RequestedBlob, peerIP)
+		response.IncomingBlob, blobData, err = p.handleBlobDataRequest(ctx, request.RequestedBlob, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
-		response.IncomingBlob = incomingBlob
-		return response, blobData, nil
 	}
 
-	// Handle payment rate request
+	// Handle payment rate request if present
 	if request.BlobDataPaymentRate != nil {
-		paymentRateResponse, err := p.handleBlobPaymentRateRequest(ctx, request.RequestedBlobs, *request.BlobDataPaymentRate, peerIP)
+		response.BlobDataPaymentRate, err = p.handleBlobPaymentRateRequest(ctx, request.RequestedBlobs, *request.BlobDataPaymentRate, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
-
-		response.BlobDataPaymentRate = paymentRateResponse
-
-		// Also handle availability if requested_blobs is present
-		return p.handleBlobAvailabilityInResponse(ctx, request.RequestedBlobs, response, peerIP)
 	}
 
-	// Handle blob availability request
+	// Handle availability request if present
 	if len(request.RequestedBlobs) > 0 {
-		availableBlobs, err := p.handleBlobAvailabilityRequest(ctx, request.RequestedBlobs, peerIP)
+		response.AvailableBlobs, err = p.handleBlobAvailabilityRequest(ctx, request.RequestedBlobs, peerIP)
 		if err != nil {
 			return CompositeResponse{}, nil, err
 		}
-		response.AvailableBlobs = availableBlobs
-		return response, nil, nil
 	}
 
-	// Return response with empty available_blobs if no specific fields were requested
-	return response, nil, nil
+	return response, blobData, nil
 }
 
 // handleBlobAvailabilityRequest processes a blob availability check request
