@@ -618,19 +618,36 @@ func TestCompositeRequestHandling(t *testing.T) {
 			}
 
 			// Check pricing response
-			if tt.expectPrice && response.BlobDataPaymentRate == "" {
-				t.Error("Expected pricing response but got none")
+			if tt.expectPrice {
+				if response.BlobDataPaymentRate == "" {
+					t.Error("Expected pricing response but got none")
+				} else if response.BlobDataPaymentRate != PaymentRateAccepted {
+					t.Errorf("Expected pricing response %s but got %s", PaymentRateAccepted, response.BlobDataPaymentRate)
+				}
 			}
 			if !tt.expectPrice && response.BlobDataPaymentRate != "" {
-				t.Error("Unexpected pricing response")
+				t.Errorf("Unexpected pricing response: %s", response.BlobDataPaymentRate)
 			}
 
 			// Check availability response
-			if tt.expectAvail && len(response.AvailableBlobs) == 0 {
-				t.Error("Expected availability response but got none")
+			if tt.expectAvail {
+				if len(response.AvailableBlobs) == 0 {
+					t.Error("Expected availability response but got none")
+				} else {
+					found := false
+					for _, blob := range response.AvailableBlobs {
+						if blob == testBlobHash {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("Expected availability response to contain %s but got %v", testBlobHash, response.AvailableBlobs)
+					}
+				}
 			}
 			if !tt.expectAvail && len(response.AvailableBlobs) > 0 {
-				t.Error("Unexpected availability response")
+				t.Errorf("Unexpected availability response: %v", response.AvailableBlobs)
 			}
 
 			// Check blob data response
@@ -642,11 +659,15 @@ func TestCompositeRequestHandling(t *testing.T) {
 			}
 
 			// Check actual blob data
-			if tt.expectBlobData && len(blobData) == 0 {
-				t.Error("Expected blob data but got none")
+			if tt.expectBlobData {
+				if len(blobData) == 0 {
+					t.Error("Expected blob data but got none")
+				} else if !bytes.Equal(blobData, testBlobData) {
+					t.Errorf("Expected blob data %q but got %q", testBlobData, blobData)
+				}
 			}
 			if !tt.expectBlobData && len(blobData) > 0 {
-				t.Error("Unexpected blob data")
+				t.Errorf("Unexpected blob data: %q", blobData)
 			}
 		})
 	}

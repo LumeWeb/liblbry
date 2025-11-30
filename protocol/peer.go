@@ -564,15 +564,3 @@ func (p *DefaultPeerServer) createIncomingBlobError(blobHash string, errorMsg st
 		Length:   0,
 	}
 }
-
-// handleBlobAvailabilityInResponse handles blob availability checking and updates response
-func (p *DefaultPeerServer) handleBlobAvailabilityInResponse(ctx context.Context, blobHashes []string, response CompositeResponse, peerIP string) (CompositeResponse, []byte, error) {
-	if len(blobHashes) > 0 {
-		availableBlobs, err := p.handleBlobAvailabilityRequest(ctx, blobHashes, peerIP)
-		if err != nil {
-			return response, nil, err
-		}
-		response.AvailableBlobs = availableBlobs
-	}
-	return response, nil, nil
-}
