@@ -110,6 +110,7 @@ func main() {
         WithDefaultAcquirer()
     
     // Create the server
+    // Note: zap.NewDevelopment() is used for examples. Use zap.NewProduction() in production
     srv, err := builder.Build(zap.NewDevelopment())
     if err != nil {
         panic(err)
@@ -134,7 +135,11 @@ package main
 import (
     "context"
     "fmt"
+    "go.lumeweb.com/liblbry"
+    "go.lumeweb.com/liblbry/blob/transfer"
+    "go.lumeweb.com/liblbry/blob/transfer/peer_transfer"
     "go.lumeweb.com/liblbry/client"
+    "go.lumeweb.com/liblbry/protocol"
     "go.lumeweb.com/liblbry/storage/memory"
     "go.uber.org/zap"
 )
@@ -143,11 +148,27 @@ func main() {
     // Create a memory storage backend
     storage := memory.NewMemoryStore()
     
-    // Create a client with default configuration
-    acquirer := client.NewDefaultAcquirer(storage, zap.NewDevelopment())
+    // Create a blob transfer (using peer transfer as an example)
+    // Note: In a real application, you'd configure proper DHT node and peer client factory
+    dhtNode, err := protocol.NewDHTNodeWithDefaults()
+    if err != nil {
+        panic(fmt.Sprintf("Failed to create DHT node: %v", err))
+    }
     
-    // Create a stream acquirer
-    streamAcquirer := client.NewStreamAcquirer(acquirer)
+    peerTransfer, err := peer_transfer.NewPeerTransfer(dhtNode, nil) // peer client factory can be nil for basic usage
+    if err != nil {
+        panic(fmt.Sprintf("Failed to create peer transfer: %v", err))
+    }
+    
+    // Create a blob acquirer with the transfer methods
+    blobAcquirer, err := liblbry.NewBlobAcquirer([]transfer.Transfer{peerTransfer}, storage)
+    if err != nil {
+        panic(fmt.Sprintf("Failed to create blob acquirer: %v", err))
+    }
+    
+    // Create a stream acquirer with all required parameters
+    // Note: zap.NewDevelopment() is used for examples. Use zap.NewProduction() in production
+    streamAcquirer := client.NewStreamAcquirer(blobAcquirer, storage, zap.NewDevelopment())
     
     // Acquire a stream (using a sample SD blob hash)
     ctx := context.Background()
@@ -173,6 +194,7 @@ import (
     "context"
     "fmt"
     "go.lumeweb.com/liblbry/blob/transfer/peer_transfer"
+    "go.lumeweb.com/liblbry/protocol"
     "go.lumeweb.com/liblbry/storage/memory"
     "go.uber.org/zap"
 )
@@ -181,9 +203,18 @@ func main() {
     // Create a memory storage backend
     storage := memory.NewMemoryStore()
     
-    // Create a peer transfer (this would normally use a DHT node)
-    // Note: In a real application, you'd need to configure a DHT node
-    transfer := peer_transfer.NewPeerTransfer(nil, nil) // DHT node and client factory required
+    // Create a DHT node for peer discovery
+    dhtNode, err := protocol.NewDHTNodeWithDefaults()
+    if err != nil {
+        panic(fmt.Sprintf("Failed to create DHT node: %v", err))
+    }
+    
+    // Create a peer transfer with proper DHT node and peer client factory
+    // Note: peerClientFactory can be nil for basic usage, or you can provide a custom factory
+    transfer, err := peer_transfer.NewPeerTransfer(dhtNode, nil) // DHT node and client factory required
+    if err != nil {
+        panic(fmt.Sprintf("Failed to create peer transfer: %v", err))
+    }
     
     // Example of getting a blob (requires valid hash)
     ctx := context.Background()
@@ -238,9 +269,24 @@ func main() {
 }
 ```
 
+## Production Considerations
+
+### Logger Configuration
+The examples in this documentation use `zap.NewDevelopment()` for clarity and debugging. For production deployments, use `zap.NewProduction()` instead:
+
+```go
+// Production logger configuration
+logger, err := zap.NewProduction()
+if err != nil {
+    panic(fmt.Sprintf("Failed to create production logger: %v", err))
+}
+```
+
+Development logger provides verbose, human-readable output suitable for examples and debugging, while production logger provides structured, optimized logging with appropriate log levels for production environments.
+
 ## Contributing
 
-Contributions are welcome! Please open a issue before submitting pull requests if you are planning on large changes.
+Contributions are welcome! Please open an issue before submitting pull requests if you are planning on large changes.
 
 ## License
 
