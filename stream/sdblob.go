@@ -316,6 +316,9 @@ func ValidateSDBlob(sdBlobData []byte) error {
 	}
 
 	// Validate each blob info
+	terminatingBlobFound := false
+	terminatingBlobIndex := -1
+	totalBlobs := len(sdBlob.BlobInfos)
 	for i, blobInfo := range sdBlob.BlobInfos {
 		// Zero-length blobs (terminating blobs) are allowed to have missing hashes
 		if blobInfo.Length > 0 {
@@ -329,6 +332,20 @@ func ValidateSDBlob(sdBlobData []byte) error {
 		if blobInfo.Length < 0 {
 			return fmt.Errorf("%w: blob %d has invalid length", ErrInvalidSDBlob, i)
 		}
+
+		// Track terminating blobs (zero-length blobs)
+		if blobInfo.Length == 0 {
+			if terminatingBlobFound {
+				return fmt.Errorf("%w: terminating blob can only appear once", ErrInvalidSDBlob)
+			}
+			terminatingBlobFound = true
+			terminatingBlobIndex = i
+		}
+	}
+
+	// After validating all blobs, check if terminating blob is at the end (if present)
+	if terminatingBlobFound && terminatingBlobIndex != totalBlobs-1 {
+		return fmt.Errorf("%w: terminating blob must be at the end", ErrInvalidSDBlob)
 	}
 
 	return nil
