@@ -391,3 +391,140 @@ func TestEncoderChunkHandler_DifferentDataSizes(t *testing.T) {
 		})
 	}
 }
+
+func TestEncoderEncode_WithExistingSDBlobWithBlobInfos(t *testing.T) {
+	// First, create a stream and get its SD blob
+	testData := make([]byte, maxBlobDataSize*2+5000)
+	_, err := rand.Read(testData)
+	require.NoError(t, err)
+
+	buf := bytes.NewBuffer(testData)
+	enc := NewEncoder(buf)
+	result, err := enc.Encode(nil)
+	require.NoError(t, err)
+
+	// Now encode again using the existing SD blob
+	// This should skip stream processing since the SD blob has blob infos
+	buf2 := bytes.NewBuffer(testData)
+	enc2 := NewEncoder(buf2)
+	config := &StreamConfig{
+		ExistingSDBlob: result.SDBlobData,
+	}
+
+	result2, err := enc2.Encode(config)
+	require.NoError(t, err)
+
+	// Verify the SD blob is reused
+	require.Equal(t, result.SDBlobHash, result2.SDBlobHash)
+	require.Equal(t, result.StreamHash, result2.StreamHash)
+	require.Equal(t, len(result.SDBlob.BlobInfos), len(result2.SDBlob.BlobInfos))
+
+	// Verify chunk sizes match
+	require.Equal(t, result.ChunkSizes, result2.ChunkSizes)
+	require.Equal(t, result.ContentHashes, result2.ContentHashes)
+	require.Equal(t, result.TotalChunks, result2.TotalChunks)
+
+	// Verify that the source reader was NOT processed (source length should be 0)
+	require.Equal(t, 0, enc2.SourceLen())
+}
+
+func TestEncoderEncode_WithExistingSDBlobWithoutBlobInfos(t *testing.T) {
+	// Create an SD blob with no blob infos (empty stream)
+	sdBlob := &SDBlob{
+		StreamType:        StreamTypeLBRYFile,
+		StreamName:        "test",
+		SuggestedFileName: "test.txt",
+	}
+	sdBlobData, err := sdBlob.ToBlob()
+	require.NoError(t, err)
+
+	// Encode with existing SD blob that has no blob infos
+	testData := make([]byte, 1000)
+	_, err = rand.Read(testData)
+	require.NoError(t, err)
+
+	buf := bytes.NewBuffer(testData)
+	enc := NewEncoder(buf)
+	config := &StreamConfig{
+		ExistingSDBlob: sdBlobData,
+	}
+
+	result, err := enc.Encode(config)
+	require.NoError(t, err)
+
+	// Verify that stream was processed (source length should be > 0)
+	require.Equal(t, 1000, enc.SourceLen())
+
+	// Verify result is valid
+	require.NotNil(t, result.SDBlob)
+	require.Equal(t, 1, result.TotalChunks) // One chunk for 1000 bytes + terminating blob
+}
+
+func TestEncoderEncode_WithExistingSDBlobAndChunkHandler(t *testing.T) {
+	// First, create a stream and get its SD blob
+	testData := make([]byte, maxBlobDataSize*2+5000)
+	_, err := rand.Read(testData)
+	require.NoError(t, err)
+
+	buf := bytes.NewBuffer(testData)
+	enc := NewEncoder(buf)
+	result, err := enc.Encode(nil)
+	require.NoError(t, err)
+
+	// Now encode again using the existing SD blob with a chunk handler
+	// The chunk handler should not be called since we skip processing
+	buf2 := bytes.NewBuffer(testData)
+	enc2 := NewEncoder(buf2)
+
+	chunkHandlerCalled := false
+	config := &StreamConfig{
+		ExistingSDBlob: result.SDBlobData,
+		ChunkHandler: func(chunk Chunk) error {
+			chunkHandlerCalled = true
+			return nil
+		},
+	}
+
+	result2, err := enc2.Encode(config)
+	require.NoError(t, err)
+
+	// Verify chunk handler was NOT called
+	require.False(t, chunkHandlerCalled, "chunk handler should not be called when using existing SD blob with blob infos")
+
+	// Verify the SD blob is reused
+	require.Equal(t, result.SDBlobHash, result2.SDBlobHash)
+	require.Equal(t, result.TotalChunks, result2.TotalChunks)
+}
+
+func TestEncoderEncode_ExistingSDBlobExtractsCorrectInfo(t *testing.T) {
+	// Create a stream with a specific number of chunks
+	testData := make([]byte, maxBlobDataSize*3+1000)
+	_, err := rand.Read(testData)
+	require.NoError(t, err)
+
+	buf := bytes.NewBuffer(testData)
+	enc := NewEncoder(buf)
+	result, err := enc.Encode(nil)
+	require.NoError(t, err)
+
+	// Re-encode using existing SD blob
+	buf2 := bytes.NewBuffer(testData)
+	enc2 := NewEncoder(buf2)
+	config := &StreamConfig{
+		ExistingSDBlob: result.SDBlobData,
+	}
+
+	result2, err := enc2.Encode(config)
+	require.NoError(t, err)
+
+	// Verify that chunk sizes and hashes were extracted correctly
+	require.Equal(t, len(result.ChunkSizes), len(result2.ChunkSizes))
+	for i := 0; i < len(result.ChunkSizes); i++ {
+		require.Equal(t, result.ChunkSizes[i], result2.ChunkSizes[i], "chunk size mismatch at index %d", i)
+		require.Equal(t, result.ContentHashes[i], result2.ContentHashes[i], "content hash mismatch at index %d", i)
+	}
+
+	// Verify terminating blob is excluded from count
+	expectedChunks := len(result.SDBlob.BlobInfos) - 1 // Exclude terminating blob
+	require.Equal(t, expectedChunks, result2.TotalChunks)
+}

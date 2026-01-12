@@ -246,11 +246,17 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	}
 
 	// If using existing SD blob, parse it and use its data
+	existingSDBlobHasBlobInfos := false
 	if len(config.ExistingSDBlob) > 0 {
 		sdBlob := &SDBlob{}
 		err := sdBlob.FromBlob(config.ExistingSDBlob)
 		if err != nil {
 			return nil, liblbryerrors.Err("failed to parse existing SD blob: %w", err)
+		}
+
+		// Check if existing SD blob has blob infos - if so, skip stream processing
+		if len(sdBlob.BlobInfos) > 0 {
+			existingSDBlobHasBlobInfos = true
 		}
 
 		// Generate a new key if the existing SD blob has an empty key
@@ -288,8 +294,21 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 	var contentBlobs [][]byte
 	var contentHashes []string
 
-	// If using chunk handler, process chunks individually
-	if config.ChunkHandler != nil {
+	// If existing SD blob has blob infos, skip stream processing and use existing data
+	if existingSDBlobHasBlobInfos {
+		// Extract chunk sizes and hashes from existing blob infos
+		for _, blobInfo := range e.sd.BlobInfos {
+			// Skip terminating blob (zero-length blob at the end)
+			if blobInfo.Length == 0 {
+				continue
+			}
+			chunkSizes = append(chunkSizes, blobInfo.Length)
+			if len(blobInfo.BlobHash) > 0 {
+				contentHashes = append(contentHashes, hex.EncodeToString(blobInfo.BlobHash))
+			}
+		}
+	} else {
+		// Process stream chunks
 		chunkNumber := 0
 		for {
 			b, err := e.Next()
@@ -300,43 +319,41 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 				return nil, err
 			}
 
-			chunk := Chunk{
-				Number: chunkNumber,
-				Hash:   b.HashHex(),
-				Data:   []byte(b),
-				Size:   len(b),
-			}
-
-			// Call chunk handler
-			err = config.ChunkHandler(chunk)
-			if err != nil {
-				if err == io.ErrUnexpectedEOF {
-					return nil, err
-				}
-				return nil, liblbryerrors.Err("chunk handler failed for chunk %d: %w", chunkNumber, err)
-			}
-
 			// Store chunk info for result
-			chunkSizes = append(chunkSizes, chunk.Size)
-			contentHashes = append(contentHashes, chunk.Hash)
+			chunkSizes = append(chunkSizes, len(b))
+			contentHashes = append(contentHashes, b.HashHex())
+
+			// Call chunk handler if provided
+			if config.ChunkHandler != nil {
+				chunk := Chunk{
+					Number: chunkNumber,
+					Hash:   b.HashHex(),
+					Data:   []byte(b),
+					Size:   len(b),
+				}
+
+				err = config.ChunkHandler(chunk)
+				if err != nil {
+					if err == io.ErrUnexpectedEOF {
+						return nil, err
+					}
+					return nil, liblbryerrors.Err("chunk handler failed for chunk %d: %w", chunkNumber, err)
+				}
+			} else {
+				// Store content blobs only if not using chunk handler
+				contentBlobs = append(contentBlobs, b)
+			}
 
 			chunkNumber++
 		}
-	} else {
-		// Process all chunks in memory
-		for {
-			b, err := e.Next()
-			if err != nil {
-				if liblbryerrors.Is(err, io.EOF) {
-					break
-				}
-				return nil, err
-			}
+	}
 
-			contentBlobs = append(contentBlobs, b)
-			contentHashes = append(contentHashes, b.HashHex())
-			chunkSizes = append(chunkSizes, len(b))
-		}
+	// Set stream metadata from config if provided
+	if config.StreamName != "" {
+		e.sd.StreamName = config.StreamName
+	}
+	if config.SuggestedFileName != "" {
+		e.sd.SuggestedFileName = config.SuggestedFileName
 	}
 
 	// Generate final SD blob data

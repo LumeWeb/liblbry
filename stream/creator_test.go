@@ -182,6 +182,7 @@ func TestDefaultStreamCreator_WithExistingSDBlob(t *testing.T) {
 	streamCreator := NewStreamCreator(manifestCreator)
 
 	// Create stream with existing SD blob
+	// Since the SD blob has blob infos, stream processing should be skipped
 	result, err := streamCreator.CreateStream(reader, int64(len(testData)), WithExistingSDBlob(sdBlobData))
 	require.NoError(t, err)
 	assert.NotNil(t, result)
@@ -189,7 +190,10 @@ func TestDefaultStreamCreator_WithExistingSDBlob(t *testing.T) {
 	assert.NotNil(t, result.SDBlobData)
 	assert.NotEmpty(t, result.SDBlobHash)
 	assert.NotEmpty(t, result.StreamHash)
-	assert.Equal(t, int64(len(testData)), result.SourceSize)
+	// SourceSize should be 0 because stream processing is skipped when using existing SD blob with blob infos
+	assert.Equal(t, int64(0), result.SourceSize)
+	// TotalChunks should match the number of blobs in the SD blob (excluding terminating blob)
+	assert.Equal(t, len(sdBlob.BlobInfos)-1, result.TotalChunks)
 }
 
 func TestDefaultStreamCreator_EmptyData(t *testing.T) {
