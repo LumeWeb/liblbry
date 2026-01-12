@@ -2,12 +2,14 @@ package stream
 
 // StreamConfig holds configuration for stream creation
 type StreamConfig struct {
-	ChunkHandler   func(Chunk) error
-	ChunkSize      int
-	ExistingSDBlob []byte
-	SDHandler      func(*SDBlob, []byte) error
-	Concurrency    int
-	Progress       func(float64)
+	ChunkHandler      func(Chunk) error
+	ChunkSize         int
+	ExistingSDBlob    []byte
+	SDHandler         func(*SDBlob, []byte) error
+	Concurrency       int
+	Progress          func(float64)
+	StreamName        string
+	SuggestedFileName string
 }
 
 // StreamOption is a functional option for stream creation
@@ -52,5 +54,19 @@ func WithConcurrency(workers int) StreamOption {
 func WithProgress(callback func(float64)) StreamOption {
 	return func(config *StreamConfig) {
 		config.Progress = callback
+	}
+}
+
+// WithStreamName sets the stream name
+func WithStreamName(name string) StreamOption {
+	return func(config *StreamConfig) {
+		config.StreamName = name
+	}
+}
+
+// WithSuggestedFileName sets the suggested file name
+func WithSuggestedFileName(name string) StreamOption {
+	return func(config *StreamConfig) {
+		config.SuggestedFileName = name
 	}
 }

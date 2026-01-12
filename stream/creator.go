@@ -154,47 +154,11 @@ func (sc *DefaultStreamCreator) CreateStreamFromPath(path string, opts ...Stream
 
 // createStreamWithMetadata is a helper that creates a stream with file metadata
 func (sc *DefaultStreamCreator) createStreamWithMetadata(source io.Reader, size int64, filename string, opts ...StreamOption) (*StreamResult, error) {
-	// Apply options to config
-	config := &StreamConfig{}
-	applyOpts(config, opts)
+	// Add stream name and suggested file name to options
+	newOpts := appendOption(opts, WithStreamName(filename))
+	newOpts = appendOption(newOpts, WithSuggestedFileName(filename))
 
-	// If no existing SD blob is provided, create a manifest-based one
-	if len(config.ExistingSDBlob) == 0 {
-		// Create manifest from source
-		sdBlob, sdBlobData, err := sc.manifestCreator.CreateManifest(source, size)
-		if err != nil {
-			return nil, liblbryerrors.Err("failed to create manifest: %w", err)
-		}
-
-		// Set stream name and suggested file name
-		sdBlob.StreamName = filename
-		sdBlob.SuggestedFileName = filename
-
-		// Convert to blob data
-		sdBlobData, err = sdBlob.ToBlob()
-		if err != nil {
-			return nil, liblbryerrors.Err("failed to convert SD blob to data: %w", err)
-		}
-
-		config.ExistingSDBlob = sdBlobData
-
-		// Reset source since we consumed it for manifest creation
-		if resetter, ok := source.(io.Seeker); ok {
-			_, err = resetter.Seek(0, io.SeekStart)
-			if err != nil {
-				return nil, liblbryerrors.Err("failed to reset source reader: %w", err)
-			}
-		} else {
-			return nil, liblbryerrors.Err("source reader does not support seeking")
-		}
-	}
-
-	// Create stream with existing SD blob
-	// We need to propagate the SD blob through options since CreateStream doesn't have direct access to the config
-	newOpts := appendOption(opts, func(c *StreamConfig) {
-		c.ExistingSDBlob = config.ExistingSDBlob
-	})
-
+	// Create stream directly with metadata
 	return sc.CreateStream(source, size, newOpts...)
 }
 
@@ -215,12 +179,12 @@ func appendOption(opts []StreamOption, opt StreamOption) []StreamOption {
 
 // generateStreamID generates a unique identifier for a stream
 func (sc *DefaultStreamCreator) generateStreamID() (string, error) {
-	bytes := make([]byte, 16)
-	_, err := rand.Read(bytes)
+	_bytes := make([]byte, 16)
+	_, err := rand.Read(_bytes)
 	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(bytes), nil
+	return hex.EncodeToString(_bytes), nil
 }
 
 // progressTrackingReader wraps an io.Reader to track read progress
