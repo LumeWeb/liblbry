@@ -225,7 +225,7 @@ func createTestSDBlob(tb testing.TB, contentLength int, blobHashHex string, iv [
 		tb.Fatal(err)
 	}
 
-	sdBlob := stream.SDBlob{
+	sdBlob := &stream.SDBlob{
 		StreamType: "lbryfile",
 		Key:        key,
 		BlobInfos: []stream.BlobInfo{
@@ -236,9 +236,26 @@ func createTestSDBlob(tb testing.TB, contentLength int, blobHashHex string, iv [
 				IV:       iv,
 			},
 		},
+		StreamName:        "test_stream",
+		SuggestedFileName: "test_file.txt",
 	}
 
-	sdBlobData, err := json.Marshal(sdBlob)
+	// Compute and set the stream hash
+	sdBlobData, err := sdBlob.ToBlob()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	// Parse the blob to get the stream hash computed
+	var parsedSD stream.SDBlob
+	if err := parsedSD.FromBlob(sdBlobData); err != nil {
+		tb.Fatal(err)
+	}
+
+	// Compute the stream hash using the Update method
+	parsedSD.UpdateStreamHash()
+	sdBlob.StreamHash = parsedSD.StreamHash
+	sdBlobData, err = sdBlob.ToBlob()
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -263,8 +280,7 @@ func TestStreamAcquirer_GetSDBlob(t *testing.T) {
 	contentReader := bytes.NewReader(testContent)
 
 	// Create a full stream using StreamCreator (higher level API)
-	manifestCreator := stream.NewManifestCreator()
-	streamCreator := stream.NewStreamCreator(manifestCreator)
+	streamCreator := stream.NewStreamCreator()
 
 	// Create the complete stream with all blobs
 	streamResult, err := streamCreator.CreateStream(contentReader, int64(len(testContent)))
@@ -372,8 +388,7 @@ func TestStreamAcquirer_GetSDBlob_MultipleBlobs(t *testing.T) {
 	contentReader := bytes.NewReader(testContent)
 
 	// Create a full stream using StreamCreator (higher level API)
-	manifestCreator := stream.NewManifestCreator()
-	streamCreator := stream.NewStreamCreator(manifestCreator)
+	streamCreator := stream.NewStreamCreator()
 
 	// Create the complete stream with multiple blobs
 	streamResult, err := streamCreator.CreateStream(contentReader, int64(len(testContent)))
@@ -479,8 +494,7 @@ func TestStreamAcquirer_DecryptedSize_Behavior(t *testing.T) {
 	contentReader := bytes.NewReader(testContent)
 
 	// Create a full stream using StreamCreator
-	manifestCreator := stream.NewManifestCreator()
-	streamCreator := stream.NewStreamCreator(manifestCreator)
+	streamCreator := stream.NewStreamCreator()
 
 	streamResult, err := streamCreator.CreateStream(contentReader, int64(len(testContent)))
 	require.NoError(t, err)
@@ -1042,7 +1056,9 @@ func TestStreamAcquirer_WithRetryBehavior(t *testing.T) {
 	sdHash := lbryTesting.ValidLBRYHashes[lbryTesting.ValidHashKeyBlob]
 
 	// Create test SD blob using helper function
-	sdBlobData, _ := createTestSDBlob(t, 100, lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1], nil, nil)
+	key := createTestKey()
+	iv := createTestIV()
+	sdBlobData, _ := createTestSDBlob(t, 100, lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1], iv, key)
 
 	// Test retry on SD blob acquisition failure
 	acquireCalls := 0
@@ -1152,14 +1168,29 @@ func TestStreamReader_WithRetryOnBlobAcquisition(t *testing.T) {
 	blobHashHex := hex.EncodeToString(blobHash)
 
 	sdBlob := &stream.SDBlob{
-		StreamName: "test_stream",
-		StreamType: "test",
-		Key:        key,
+		StreamName:        "test_stream",
+		StreamType:        "test",
+		Key:               key,
+		SuggestedFileName: "test_file.txt",
 		BlobInfos: []stream.BlobInfo{
 			{BlobNum: 0, Length: len(encryptedBlobData), BlobHash: blobHash, IV: iv},
 		},
 	}
-	sdBlobData, err := json.Marshal(sdBlob)
+
+	// Compute and set the stream hash
+	sdBlobData, err := sdBlob.ToBlob()
+	require.NoError(t, err)
+
+	// Parse the blob to compute the stream hash
+	var parsedSD stream.SDBlob
+	if err := parsedSD.FromBlob(sdBlobData); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the stream hash using the Update method
+	parsedSD.UpdateStreamHash()
+	sdBlob.StreamHash = parsedSD.StreamHash
+	sdBlobData, err = sdBlob.ToBlob()
 	require.NoError(t, err)
 
 	// Pre-populate memory store with SD blob
@@ -1224,14 +1255,29 @@ func TestStreamReader_WithRetryOnStorageFailure(t *testing.T) {
 	blobHashHex := hex.EncodeToString(blobHash)
 
 	sdBlob := &stream.SDBlob{
-		StreamName: "test_stream",
-		StreamType: "test",
-		Key:        key,
+		StreamName:        "test_stream",
+		StreamType:        "test",
+		Key:               key,
+		SuggestedFileName: "test_file.txt",
 		BlobInfos: []stream.BlobInfo{
 			{BlobNum: 0, Length: len(encryptedBlobData), BlobHash: blobHash, IV: iv},
 		},
 	}
-	sdBlobData, err := json.Marshal(sdBlob)
+
+	// Compute and set the stream hash
+	sdBlobData, err := sdBlob.ToBlob()
+	require.NoError(t, err)
+
+	// Parse the blob to compute the stream hash
+	var parsedSD stream.SDBlob
+	if err := parsedSD.FromBlob(sdBlobData); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the stream hash using the Update method
+	parsedSD.UpdateStreamHash()
+	sdBlob.StreamHash = parsedSD.StreamHash
+	sdBlobData, err = sdBlob.ToBlob()
 	require.NoError(t, err)
 
 	// Mock SD blob storage - always succeed
@@ -1460,6 +1506,9 @@ func TestStreamAcquirer_Verification_Enabled_ValidSDBlob_WrongBlobHash(t *testin
 		t.Fatal(err)
 	}
 	sdBlob.BlobInfos[0].BlobHash = wrongBlobHashBytes
+
+	// Update the stream hash to match the new blob hash
+	sdBlob.UpdateStreamHash()
 
 	// Re-serialize the modified SD blob
 	modifiedSDBlobData, err := sdBlob.ToBlob()

@@ -14,11 +14,8 @@ import (
 )
 
 func TestDefaultStreamCreator_CreateStream(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data
 	testData := "This is test data for stream creation"
@@ -38,11 +35,8 @@ func TestDefaultStreamCreator_CreateStream(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_CreateStreamWithOptions(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data
 	testData := "This is test data for stream creation with options"
@@ -91,11 +85,8 @@ func TestDefaultStreamCreator_CreateStreamFromPath(t *testing.T) {
 	err = tmpFile.Close()
 	require.NoError(t, err)
 
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Create stream from file path
 	result, err := streamCreator.CreateStreamFromPath(tmpFile.Name())
@@ -111,11 +102,8 @@ func TestDefaultStreamCreator_CreateStreamFromPath(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_WithChunkSize(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data - larger data to ensure multiple chunks
 	testData := strings.Repeat("A", 2048)
@@ -131,7 +119,6 @@ func TestDefaultStreamCreator_WithChunkSize(t *testing.T) {
 	assert.NotEmpty(t, result.ChunkSizes)
 
 	// Since blob data includes padding, actual chunk sizes may differ from requested size
-	// We'll verify that we have multiple chunks and that the total matches our data size
 	totalChunkData := 0
 	for _, size := range result.ChunkSizes {
 		totalChunkData += size
@@ -142,11 +129,8 @@ func TestDefaultStreamCreator_WithChunkSize(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_ErrorHandling(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test with nil reader
 	result, err := streamCreator.CreateStream(nil, 100)
@@ -157,20 +141,17 @@ func TestDefaultStreamCreator_ErrorHandling(t *testing.T) {
 	testData := "test data"
 	reader := strings.NewReader(testData)
 	result, err = streamCreator.CreateStream(reader, -1)
-	assert.NoError(t, err) // Negative size is not necessarily an error in this implementation
+	assert.NoError(t, err)
 	assert.NotNil(t, result)
 }
 
 func TestDefaultStreamCreator_WithExistingSDBlob(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create test data
 	testData := "This is test data for stream creation with existing SD blob"
 	reader := strings.NewReader(testData)
 
-	// First, create an SD blob
-	sdBlob, sdBlobData, err := manifestCreator.CreateManifest(reader, int64(len(testData)))
+	// First, create an SD blob using CreateManifestFromSource
+	sdBlob, sdBlobData, err := CreateManifestFromSource(reader, int64(len(testData)))
 	require.NoError(t, err)
 	assert.NotNil(t, sdBlob)
 	assert.NotNil(t, sdBlobData)
@@ -179,10 +160,9 @@ func TestDefaultStreamCreator_WithExistingSDBlob(t *testing.T) {
 	reader = strings.NewReader(testData)
 
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Create stream with existing SD blob
-	// Since the SD blob has blob infos, stream processing should be skipped
 	result, err := streamCreator.CreateStream(reader, int64(len(testData)), WithExistingSDBlob(sdBlobData))
 	require.NoError(t, err)
 	assert.NotNil(t, result)
@@ -197,11 +177,8 @@ func TestDefaultStreamCreator_WithExistingSDBlob(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_EmptyData(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test with empty data
 	reader := strings.NewReader("")
@@ -218,11 +195,8 @@ func TestDefaultStreamCreator_EmptyData(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_ProgressAccuracy(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data
 	testData := "This is test data for checking progress accuracy"
@@ -248,11 +222,8 @@ func TestDefaultStreamCreator_ProgressAccuracy(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_RoundTrip(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data
 	testData := "This is test data for round trip stream creation and decoding"
@@ -345,11 +316,8 @@ func (fi *mockFileInfo) Sys() any {
 }
 
 func TestDefaultStreamCreator_ChunkHandlerErrors(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test data
 	testData := "This is test data for testing chunk handler error propagation"
@@ -370,11 +338,8 @@ func TestDefaultStreamCreator_ChunkHandlerErrors(t *testing.T) {
 }
 
 func TestDefaultStreamCreator_NonSeekableFileHandling(t *testing.T) {
-	// Create a manifest creator
-	manifestCreator := NewManifestCreator()
-
 	// Create a stream creator
-	streamCreator := NewStreamCreator(manifestCreator)
+	streamCreator := NewStreamCreator()
 
 	// Test 1: Small non-seekable file should work
 	t.Run("SmallNonSeekableFile", func(t *testing.T) {
@@ -394,7 +359,7 @@ func TestDefaultStreamCreator_NonSeekableFileHandling(t *testing.T) {
 	// Test 2: Large non-seekable file should return error
 	t.Run("LargeNonSeekableFile", func(t *testing.T) {
 		// Create mock FS with large file (exceeding maxFileSizeForMemory)
-		largeData := make([]byte, maxFileSizeForMemory+1024) // 100MB + 1KB
+		largeData := make([]byte, maxFileSizeForMemory+1024)
 		for i := range largeData {
 			largeData[i] = byte('A' + (i % 26))
 		}
@@ -428,11 +393,8 @@ func TestDefaultStreamCreator_NonSeekableFileHandling(t *testing.T) {
 		err = tmpFile.Close()
 		require.NoError(t, err)
 
-		// Create a manifest creator
-		manifestCreator := NewManifestCreator()
-
 		// Create a stream creator
-		streamCreator := NewStreamCreator(manifestCreator)
+		streamCreator := NewStreamCreator()
 
 		// Use the real filesystem which provides seekable files
 		result, err := streamCreator.CreateStreamFromFile(os.DirFS(filepath.Dir(tmpFile.Name())), filepath.Base(tmpFile.Name()))

@@ -429,7 +429,7 @@ func TestSdBlob_NullStreamHash(t *testing.T) {
 	b := SDBlob{Key: NullIV()}
 	err := b.addBlob(blob.Blob{}, NullIV())
 	require.NoError(t, err)
-	b.updateStreamHash()
+	b.UpdateStreamHash()
 	if !bytes.Equal(b.StreamHash, expected) {
 		t.Errorf("null stream has wrong hash. expected %s, got %s", hex.EncodeToString(expected), hex.EncodeToString(b.StreamHash))
 	}
@@ -440,7 +440,6 @@ func createTestSDBlobData(t *testing.T, blobInfos []BlobInfo) []byte {
 	streamName := "test_file"
 	key, _ := hex.DecodeString("30313233343536373031323334353637")
 	suggestedFileName := "test_file"
-	streamHash, _ := hex.DecodeString("4fcd4064713bf639362248d3ac0c0ee527a93a08ce4991954d6e11b0317e79b6beedb6833e18e7ae8b0f14ddf258e386")
 
 	sd := SDBlob{
 		StreamName:        streamName,
@@ -448,8 +447,8 @@ func createTestSDBlobData(t *testing.T, blobInfos []BlobInfo) []byte {
 		StreamType:        StreamTypeLBRYFile,
 		Key:               key,
 		SuggestedFileName: suggestedFileName,
-		StreamHash:        streamHash,
 	}
+	sd.UpdateStreamHash()
 
 	sdBlobData, err := json.Marshal(sd)
 	require.NoError(t, err)
@@ -568,7 +567,7 @@ func TestValidateSDBlob_TerminatingBlobScenarios(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sdBlobData := createTestSDBlobData(t, tc.blobInfos)
-			err := ValidateSDBlob(sdBlobData)
+			err := ValidateSDBlobBytes(sdBlobData)
 
 			if tc.expectError {
 				assert.Error(t, err, "Expected validation error for: "+tc.name)

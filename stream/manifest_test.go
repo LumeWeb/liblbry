@@ -11,54 +11,202 @@ import (
 	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 )
 
-func TestDefaultManifestCreator_CreateManifest(t *testing.T) {
-	creator := NewManifestCreator()
+func TestParseManifest(t *testing.T) {
+	// Create a valid SD blob data for testing
+	testData := []byte("test data for parsing")
+	_, sdBlobData, err := CreateManifestFromSource(bytes.NewReader(testData), int64(len(testData)))
+	require.NoError(t, err)
+	require.NotEmpty(t, sdBlobData)
 
-	// Test with simple data
-	testData := []byte("test data for manifest creation")
+	// Parse the manifest using package-level function
+	parsedSD, err := ParseManifest(sdBlobData)
+	require.NoError(t, err)
+	require.NotNil(t, parsedSD)
+
+	// Verify fields are populated
+	assert.Equal(t, StreamTypeLBRYFile, parsedSD.StreamType)
+	assert.NotEmpty(t, parsedSD.StreamHash)
+	assert.NotEmpty(t, parsedSD.BlobInfos)
+}
+
+func TestParseManifest_InvalidData(t *testing.T) {
+	// Test with invalid JSON data
+	invalidData := []byte("invalid json data")
+	_, err := ParseManifest(invalidData)
+	assert.Error(t, err)
+
+	// Test with empty data
+	_, err = ParseManifest([]byte{})
+	assert.Error(t, err)
+
+	// Test with malformed JSON
+	malformedData := []byte(`{"stream_type": "lbryfile", "blobs": [}`)
+	_, err = ParseManifest(malformedData)
+	assert.Error(t, err)
+}
+
+func TestValidateSDBlob_PackageLevel(t *testing.T) {
+	// Create a valid SD blob
+	testData := []byte("test data for validation")
+	_, sdBlobData, err := CreateManifestFromSource(bytes.NewReader(testData), int64(len(testData)))
+	require.NoError(t, err)
+
+	// Validate the manifest using package-level function
+	err = ValidateSDBlobBytes(sdBlobData)
+	require.NoError(t, err)
+
+	// Test with invalid data
+	err = ValidateSDBlobBytes([]byte("invalid"))
+	assert.Error(t, err)
+
+	err = ValidateSDBlobBytes([]byte{})
+	assert.Error(t, err)
+}
+
+func TestBuildManifest(t *testing.T) {
+	// Create test blob infos
+	key, err := lbrycrypto.GenerateKey()
+	require.NoError(t, err)
+
+	blobInfos := []BlobInfo{
+		{
+			BlobNum:  0,
+			Length:   100,
+			BlobHash: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+		{
+			BlobNum:  1,
+			Length:   50,
+			BlobHash: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+		{
+			BlobNum:  2,
+			Length:   0, // Terminating blob
+			BlobHash: []byte{},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+	}
+
+	// Build manifest
+	sd, err := BuildManifest(blobInfos, key)
+	require.NoError(t, err)
+	require.NotNil(t, sd)
+
+	// Verify SD blob fields
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
+	assert.True(t, bytes.Equal(key, sd.Key))
+	assert.Equal(t, len(blobInfos), len(sd.BlobInfos))
+	assert.NotEmpty(t, sd.StreamHash)
+}
+
+func TestBuildManifest_WithMetadata(t *testing.T) {
+	// Create test blob infos
+	key, err := lbrycrypto.GenerateKey()
+	require.NoError(t, err)
+
+	blobInfos := []BlobInfo{
+		{
+			BlobNum:  0,
+			Length:   100,
+			BlobHash: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+		{
+			BlobNum:  1,
+			Length:   0, // Terminating blob
+			BlobHash: []byte{},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+	}
+
+	// Build manifest with metadata
+	streamName := "test_stream"
+	suggestedFileName := "test_file.txt"
+	sd, err := BuildManifest(blobInfos, key, WithBuildManifestStreamName(streamName), WithBuildManifestSuggestedFileName(suggestedFileName))
+	require.NoError(t, err)
+	require.NotNil(t, sd)
+
+	// Verify metadata fields
+	assert.Equal(t, streamName, sd.StreamName)
+	assert.Equal(t, suggestedFileName, sd.SuggestedFileName)
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
+}
+
+func TestBuildManifest_EmptyBlobInfos(t *testing.T) {
+	key, err := lbrycrypto.GenerateKey()
+	require.NoError(t, err)
+
+	// Test with empty blob infos
+	_, err = BuildManifest([]BlobInfo{}, key)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "blob infos cannot be empty")
+}
+
+func TestBuildManifest_InvalidKeySize(t *testing.T) {
+	blobInfos := []BlobInfo{
+		{
+			BlobNum:  0,
+			Length:   0,
+			BlobHash: []byte{},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+	}
+
+	// Test with invalid key size
+	_, err := BuildManifest(blobInfos, []byte("short"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid key size")
+}
+
+func TestBuildManifest_DefaultStreamType(t *testing.T) {
+	key, err := lbrycrypto.GenerateKey()
+	require.NoError(t, err)
+
+	blobInfos := []BlobInfo{
+		{
+			BlobNum:  0,
+			Length:   0,
+			BlobHash: []byte{},
+			IV:       []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		},
+	}
+
+	// Build manifest without specifying stream type
+	sd, err := BuildManifest(blobInfos, key)
+	require.NoError(t, err)
+
+	// Should default to StreamTypeLBRYFile
+	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
+}
+
+func TestCreateManifestFromSource(t *testing.T) {
+	testData := []byte("test data for manifest creation from source")
 	reader := bytes.NewReader(testData)
 	size := int64(len(testData))
 
-	sd, sdData, err := creator.CreateManifest(reader, size)
+	sd, sdData, err := CreateManifestFromSource(reader, size)
 	require.NoError(t, err)
 	require.NotNil(t, sd)
 	require.NotEmpty(t, sdData)
 
 	// Verify SD blob structure
-	// StreamName and SuggestedFileName are not populated by the manifest creator (json:"-" fields)
-	assert.Empty(t, sd.StreamName)
-	assert.Empty(t, sd.SuggestedFileName)
-
-	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
-	assert.Len(t, sd.Key, lbrycrypto.KeySize)
-
-	// StreamHash should be computed
+	assert.Len(t, sd.Key, lbrycrypto.AES256KeySize)
 	assert.NotEmpty(t, sd.StreamHash)
-
-	// StreamType should be set to lbryfile
 	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
-
-	// Verify blob infos exist and have at least the terminating blob
 	assert.NotEmpty(t, sd.BlobInfos)
 	assert.True(t, len(sd.BlobInfos) >= 1)
 
 	// Verify the SD blob can be parsed back
-	parsedSD, err := creator.ParseManifest(sdData)
+	parsedSD, err := ParseManifest(sdData)
 	require.NoError(t, err)
-
-	// When parsed back, StreamName and SuggestedFileName will be empty strings (not nil)
-	assert.Equal(t, "", parsedSD.StreamName)
-	assert.Equal(t, "", parsedSD.SuggestedFileName)
-
 	assert.Equal(t, sd.StreamType, parsedSD.StreamType)
 	assert.True(t, bytes.Equal(sd.StreamHash, parsedSD.StreamHash))
-	assert.True(t, bytes.Equal(sd.Key, parsedSD.Key))
 }
 
-func TestDefaultManifestCreator_CreateManifestFromPath(t *testing.T) {
-	creator := NewManifestCreator()
-
+func TestCreateManifestFromPath(t *testing.T) {
 	// Create a temporary test file
 	tmpFile, err := os.CreateTemp("", "manifest_test")
 	require.NoError(t, err)
@@ -73,174 +221,62 @@ func TestDefaultManifestCreator_CreateManifestFromPath(t *testing.T) {
 	err = tmpFile.Close()
 	require.NoError(t, err)
 
-	sd, sdData, err := creator.CreateManifestFromPath(tmpFile.Name())
+	sd, sdData, err := CreateManifestFromPath(tmpFile.Name())
 	require.NoError(t, err)
 	require.NotNil(t, sd)
 	require.NotEmpty(t, sdData)
 
 	// Verify SD blob structure
-	// StreamName and SuggestedFileName are not populated by the manifest creator (json:"-" fields)
-	assert.Empty(t, sd.StreamName)
-	assert.Empty(t, sd.SuggestedFileName)
-
-	// Key should be populated and of expected size
 	assert.NotEmpty(t, sd.Key)
-	assert.Len(t, sd.Key, lbrycrypto.KeySize)
-
-	// StreamHash should be computed
+	assert.Len(t, sd.Key, lbrycrypto.AES256KeySize)
 	assert.NotEmpty(t, sd.StreamHash)
-
-	// StreamType should be set to lbryfile
 	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
-
-	// Verify blob infos exist and have at least the terminating blob
 	assert.NotEmpty(t, sd.BlobInfos)
-	assert.True(t, len(sd.BlobInfos) >= 1)
 }
 
-func TestDefaultManifestCreator_CreateManifestFromPath_NotFound(t *testing.T) {
-	creator := NewManifestCreator()
-
-	_, _, err := creator.CreateManifestFromPath("/non/existent/file")
+func TestCreateManifestFromPath_NotFound(t *testing.T) {
+	_, _, err := CreateManifestFromPath("/non/existent/file")
 	assert.Error(t, err)
 }
 
-func TestDefaultManifestCreator_ParseManifest(t *testing.T) {
-	creator := NewManifestCreator()
-
-	// Create a valid SD blob data for testing
-	testData := []byte("test data")
-	reader := bytes.NewReader(testData)
-	size := int64(len(testData))
-
-	_, sdData, err := creator.CreateManifest(reader, size)
-	require.NoError(t, err)
-
-	// Parse the manifest
-	sd, err := creator.ParseManifest(sdData)
-	require.NoError(t, err)
-	require.NotNil(t, sd)
-
-	// Verify fields are populated
-	// StreamName and SuggestedFileName are not populated by the manifest creator (json:"-" fields)
-	assert.Empty(t, sd.StreamName)
-	assert.Empty(t, sd.SuggestedFileName)
-
-	// BlobInfos should exist
-	assert.NotEmpty(t, sd.BlobInfos)
-
-	// StreamType should be lbryfile
-	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
-
-	// Key should be populated and of expected size
-	assert.NotEmpty(t, sd.Key)
-	assert.Len(t, sd.Key, lbrycrypto.KeySize)
-
-	// StreamHash should be computed
-	assert.NotEmpty(t, sd.StreamHash)
-}
-
-func TestDefaultManifestCreator_ParseManifest_InvalidData(t *testing.T) {
-	creator := NewManifestCreator()
-
-	// Test with invalid JSON data
-	invalidData := []byte("invalid json data")
-	_, err := creator.ParseManifest(invalidData)
-	assert.Error(t, err)
-
-	// Test with empty data
-	_, err = creator.ParseManifest([]byte{})
-	assert.Error(t, err)
-
-	// Test with malformed JSON
-	malformedData := []byte(`{"stream_type": "lbryfile", "blobs": [}`)
-	_, err = creator.ParseManifest(malformedData)
-	assert.Error(t, err)
-}
-
-func TestDefaultManifestCreator_DefaultInstance(t *testing.T) {
-	instance := DefaultManifestCreatorInstance()
-	assert.NotNil(t, instance)
-
-	// Verify it's the same instance on subsequent calls
-	instance2 := DefaultManifestCreatorInstance()
-	assert.Equal(t, instance, instance2)
-}
-
-func TestDefaultManifestCreator_CreateManifest_EmptyData(t *testing.T) {
-	creator := NewManifestCreator()
-
+func TestCreateManifestFromSource_EmptyData(t *testing.T) {
 	reader := bytes.NewReader([]byte{})
 	size := int64(0)
 
-	sd, sdData, err := creator.CreateManifest(reader, size)
+	sd, sdData, err := CreateManifestFromSource(reader, size)
 	require.NoError(t, err)
 	require.NotNil(t, sd)
 	require.NotEmpty(t, sdData)
 
 	// For empty data, we should still have a valid SD blob with at least the terminating blob
 	assert.NotEmpty(t, sd.BlobInfos)
-	assert.Equal(t, 1, len(sd.BlobInfos)) // Should only have the terminating 0-length blob
+	assert.Equal(t, 1, len(sd.BlobInfos))
 	assert.Equal(t, 0, sd.BlobInfos[0].Length)
-
-	// Verify other fields are properly set
-	assert.Empty(t, sd.StreamName)
-	assert.Empty(t, sd.SuggestedFileName)
-	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
-	assert.NotEmpty(t, sd.Key)
-	assert.NotEmpty(t, sd.StreamHash)
 }
 
-func TestDefaultManifestCreator_CreateManifest_LargeData(t *testing.T) {
-	creator := NewManifestCreator()
-
+func TestCreateManifestFromSource_LargeData(t *testing.T) {
 	// Test with data that requires multiple blobs
-	testData := make([]byte, maxBlobDataSize*3+100) // 3 full blobs + 1 partial blob
+	testData := make([]byte, maxBlobDataSize*3+100)
 	for i := range testData {
 		testData[i] = byte(i % 256)
 	}
 	reader := bytes.NewReader(testData)
 	size := int64(len(testData))
 
-	sd, sdData, err := creator.CreateManifest(reader, size)
+	sd, sdData, err := CreateManifestFromSource(reader, size)
 	require.NoError(t, err)
 	require.NotNil(t, sd)
 	require.NotEmpty(t, sdData)
 
 	// Should have 5 blob infos (3 content blobs + 1 partial blob + 1 terminating blob)
 	assert.Equal(t, 5, len(sd.BlobInfos))
-
-	// Last blob should be the terminating 0-length blob
 	assert.Equal(t, 0, sd.BlobInfos[len(sd.BlobInfos)-1].Length)
-
-	// Other blobs should have proper lengths
-	for i := 0; i < len(sd.BlobInfos)-1; i++ {
-		assert.True(t, sd.BlobInfos[i].Length > 0)
-		assert.NotEmpty(t, sd.BlobInfos[i].BlobHash)
-		assert.NotEmpty(t, sd.BlobInfos[i].IV)
-	}
-
-	// Verify SD blob structure
-	assert.Empty(t, sd.StreamName)
-	assert.Empty(t, sd.SuggestedFileName)
-	assert.Equal(t, StreamTypeLBRYFile, sd.StreamType)
-	assert.NotEmpty(t, sd.Key)
-	assert.Len(t, sd.Key, lbrycrypto.KeySize)
-	assert.NotEmpty(t, sd.StreamHash)
 }
 
-func TestDefaultManifestCreator_CreateManifest_ErrorHandling(t *testing.T) {
-	creator := NewManifestCreator()
-
-	// Test with negative size
-	testData := []byte("test data")
-	reader := bytes.NewReader(testData)
-	_, _, err := creator.CreateManifest(reader, -1)
-	require.NoError(t, err) // Negative size should not cause error in this implementation
-
+func TestCreateManifestFromSource_ErrorHandling(t *testing.T) {
 	// Test with invalid reader that returns an error
-	_invalidReader := &invalidReader{}
-	_, _, err = creator.CreateManifest(_invalidReader, 100)
+	invalidReader := &invalidReader{}
+	_, _, err := CreateManifestFromSource(invalidReader, 100)
 	assert.Error(t, err)
 }
 

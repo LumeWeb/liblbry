@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"go.lumeweb.com/liblbry/blob"
+	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
 )
 
@@ -274,8 +275,8 @@ func (s *SDBlob) addBlob(b blob.Blob, iv []byte) error {
 	return nil
 }
 
-// updateStreamHash updates the stream hash of the SDBlob
-func (s *SDBlob) updateStreamHash() {
+// UpdateStreamHash updates the stream hash of the SDBlob
+func (s *SDBlob) UpdateStreamHash() {
 	s.StreamHash = s.computeStreamHash()
 }
 
@@ -289,8 +290,16 @@ func (s *SDBlob) computeStreamHash() []byte {
 	)
 }
 
-// ValidateSDBlob validates SD blob structure and content
-func ValidateSDBlob(sdBlobData []byte) error {
+// ValidateSDBlob validates an SDBlob struct's structure and content
+func ValidateSDBlob(sd *SDBlob) error {
+	if sd == nil {
+		return ErrInvalidSDBlob
+	}
+	return validateSDBlob(sd)
+}
+
+// ValidateSDBlobBytes validates SD blob structure and content from raw bytes
+func ValidateSDBlobBytes(sdBlobData []byte) error {
 	if len(sdBlobData) == 0 {
 		return ErrInvalidSDBlob
 	}
@@ -299,27 +308,40 @@ func ValidateSDBlob(sdBlobData []byte) error {
 		return ErrInvalidSDBlob
 	}
 
-	// Parse JSON to validate structure
 	var sdBlob SDBlob
-
 	if err := sdBlob.FromBlob(sdBlobData); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSDBlob, err)
 	}
 
+	return validateSDBlob(&sdBlob)
+}
+
+// validateSDBlob validates an SDBlob struct's structure and content
+func validateSDBlob(sd *SDBlob) error {
 	// Validate required fields
-	if sdBlob.StreamType == "" {
+	if sd.StreamType == "" {
 		return fmt.Errorf("%w: missing stream_type", ErrInvalidSDBlob)
 	}
 
-	if len(sdBlob.BlobInfos) == 0 {
+	if len(sd.BlobInfos) == 0 {
 		return fmt.Errorf("%w: no blobs found", ErrInvalidSDBlob)
+	}
+
+	// Validate key size
+	if len(sd.Key) != lbrycrypto.AES256KeySize && len(sd.Key) != lbrycrypto.AES128KeySize {
+		return fmt.Errorf("%w: invalid key size: expected %d or %d bytes, got %d bytes", ErrInvalidSDBlob, lbrycrypto.AES256KeySize, lbrycrypto.AES128KeySize, len(sd.Key))
 	}
 
 	// Validate each blob info
 	terminatingBlobFound := false
 	terminatingBlobIndex := -1
-	totalBlobs := len(sdBlob.BlobInfos)
-	for i, blobInfo := range sdBlob.BlobInfos {
+	totalBlobs := len(sd.BlobInfos)
+	for i, blobInfo := range sd.BlobInfos {
+		// Validate blob number
+		if blobInfo.BlobNum != i {
+			return fmt.Errorf("%w: blob %d has invalid blob_num: expected %d, got %d", ErrInvalidSDBlob, i, i, blobInfo.BlobNum)
+		}
+
 		// Zero-length blobs (terminating blobs) are allowed to have missing hashes
 		if blobInfo.Length > 0 {
 			if len(blobInfo.BlobHash) == 0 {
@@ -331,6 +353,11 @@ func ValidateSDBlob(sdBlobData []byte) error {
 		}
 		if blobInfo.Length < 0 {
 			return fmt.Errorf("%w: blob %d has invalid length", ErrInvalidSDBlob, i)
+		}
+
+		// Validate IV
+		if len(blobInfo.IV) == 0 {
+			return fmt.Errorf("%w: blob %d missing IV", ErrInvalidSDBlob, i)
 		}
 
 		// Track terminating blobs (zero-length blobs)
@@ -346,6 +373,16 @@ func ValidateSDBlob(sdBlobData []byte) error {
 	// After validating all blobs, check if terminating blob is at the end (if present)
 	if terminatingBlobFound && terminatingBlobIndex != totalBlobs-1 {
 		return fmt.Errorf("%w: terminating blob must be at the end", ErrInvalidSDBlob)
+	}
+
+	// Validate stream hash
+	if len(sd.StreamHash) == 0 {
+		return fmt.Errorf("%w: missing stream hash", ErrInvalidSDBlob)
+	}
+
+	computedHash := sd.computeStreamHash()
+	if !bytes.Equal(sd.StreamHash, computedHash) {
+		return fmt.Errorf("%w: stream hash mismatch: computed hash does not match stored hash", ErrInvalidSDBlob)
 	}
 
 	return nil
