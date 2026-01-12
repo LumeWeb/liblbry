@@ -523,6 +523,46 @@ func TestValidateSDBlob_TerminatingBlobScenarios(t *testing.T) {
 			expectError: true,
 			errorMsg:    "invalid length",
 		},
+		{
+			name: "invalid terminating blob appears twice",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 0, 1, "", "30303030303030303030303030303032"), // First terminating blob
+				createTestBlobInfo(t, 0, 2, "", "30303030303030303030303030303033"), // Second terminating blob - invalid
+			},
+			expectError: true,
+			errorMsg:    "terminating blob can only appear once",
+		},
+		{
+			name: "invalid terminating blob not at end",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 0, 1, "", "30303030303030303030303030303032"),                             // Terminating blob in middle - invalid
+				createTestBlobInfo(t, 2097152, 2, lbryTesting.LBRYHashKey2, "30303030303030303030303030303033"), // Regular blob after terminating
+			},
+			expectError: true,
+			errorMsg:    "terminating blob must be at the end",
+		},
+		{
+			name: "invalid multiple terminating blobs",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 0, 0, "", "30303030303030303030303030303031"), // First terminating blob - invalid
+				createTestBlobInfo(t, 2097152, 1, lbryTesting.LBRYHashKey1, "30303030303030303030303030303032"),
+				createTestBlobInfo(t, 0, 2, "", "30303030303030303030303030303033"), // Second terminating blob
+			},
+			expectError: true,
+			errorMsg:    "terminating blob can only appear once",
+		},
+		{
+			name: "valid terminating blob at end with multiple regular blobs",
+			blobInfos: []BlobInfo{
+				createTestBlobInfo(t, 2097152, 0, lbryTesting.LBRYHashKey1, "30303030303030303030303030303031"),
+				createTestBlobInfo(t, 2097152, 1, lbryTesting.LBRYHashKey2, "30303030303030303030303030303032"),
+				createTestBlobInfo(t, 2097152, 2, lbryTesting.LBRYHashKey1, "30303030303030303030303030303033"),
+				createTestBlobInfo(t, 0, 3, "", "30303030303030303030303030303034"), // Terminating blob at end - valid
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tc := range testCases {
