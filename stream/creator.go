@@ -22,15 +22,11 @@ type StreamCreator interface {
 }
 
 // DefaultStreamCreator implements StreamCreator interface
-type DefaultStreamCreator struct {
-	manifestCreator ManifestCreator
-}
+type DefaultStreamCreator struct{}
 
 // NewStreamCreator creates a new DefaultStreamCreator instance
-func NewStreamCreator(manifestCreator ManifestCreator) *DefaultStreamCreator {
-	return &DefaultStreamCreator{
-		manifestCreator: manifestCreator,
-	}
+func NewStreamCreator() *DefaultStreamCreator {
+	return &DefaultStreamCreator{}
 }
 
 // CreateStream creates a stream from an io.Reader

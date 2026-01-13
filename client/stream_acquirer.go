@@ -39,7 +39,7 @@ func verifyAndValidateSDBlob(data []byte, expectedHash string, verificationEnabl
 	}
 
 	// Validate SD blob structure - this includes json.Valid() check
-	if err := stream.ValidateSDBlob(data); err != nil {
+	if err := stream.ValidateSDBlobBytes(data); err != nil {
 		return fmt.Errorf("invalid SD blob %s: %w", expectedHash, err)
 	}
 

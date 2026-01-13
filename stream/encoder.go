@@ -396,7 +396,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 
 // SDBlob returns the sd blob so far
 func (e *Encoder) SDBlob() *SDBlob {
-	e.sd.updateStreamHash()
+	e.sd.UpdateStreamHash()
 	return e.sd
 }
 

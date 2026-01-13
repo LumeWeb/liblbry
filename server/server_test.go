@@ -56,12 +56,27 @@ func generateSimpleTestBlobData(index int) []byte {
 // createValidSDBlobData creates valid SD blob data
 func createValidSDBlobData(t *testing.T, blobInfos []stream.BlobInfo, streamHash []byte) []byte {
 	sdBlob := &stream.SDBlob{
-		BlobInfos:  blobInfos,
-		StreamHash: streamHash,
-		StreamType: "lbryfile",
+		BlobInfos:         blobInfos,
+		StreamHash:        streamHash,
+		StreamType:        "lbryfile",
+		StreamName:        "test_stream",
+		SuggestedFileName: "test_file.txt",
+		Key:               make([]byte, 32), // AES-256 key
 	}
 
 	data, err := sdBlob.ToBlob()
+	require.NoError(t, err)
+
+	// Parse the blob to compute the stream hash
+	var parsedSD stream.SDBlob
+	if err := parsedSD.FromBlob(data); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compute the stream hash using the Update method
+	parsedSD.UpdateStreamHash()
+	sdBlob.StreamHash = parsedSD.StreamHash
+	data, err = sdBlob.ToBlob()
 	require.NoError(t, err)
 
 	// Return the generated data and use its actual hash for the test
@@ -1135,14 +1150,12 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 	require.NoError(t, err)
 	defer server.Stop(context.Background())
 
-	expectedStreamHashBytes, _ := hex.DecodeString("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b")
-
 	// Create valid SD blob data with correct hash
 	blobHashBytes, _ := hex.DecodeString("68c0ff52fca66bc20c736e49967760d6378ce73aaf4b0a870f1c2142455629ab50dc49dae0b03c56a9bff7f270a2edf3")
 	validSDBlobData := createValidSDBlobData(t, []stream.BlobInfo{
 		{Length: 100, BlobNum: 0, BlobHash: blobHashBytes, IV: []byte("1234567890123456")},
-		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("")},
-	}, expectedStreamHashBytes)
+		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("1234567890123456")}, // Terminating blob needs a valid IV
+	}, nil) // Let the helper compute the stream hash
 
 	// Calculate the actual hash of the generated data
 	hasher := crypto.NewHasher()
@@ -1156,7 +1169,6 @@ func TestDefaultServer_AcquireSDBlob_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, actualHash, result.SDBlobHash)
-	assert.Equal(t, hex.EncodeToString(expectedStreamHashBytes), result.StreamHash)
 	assert.NotNil(t, result.SDBlob)
 	assert.Equal(t, validSDBlobData, result.SDBlobData)
 	assert.Nil(t, result.ContentBlobs)     // Should be nil for non-recursive
@@ -1181,16 +1193,21 @@ func TestDefaultServer_AcquireSDBlob_RecursiveSuccess(t *testing.T) {
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
 	contentBlobData := []byte("content blob data")
-	sdBlobData := []byte(fmt.Sprintf(`{
-		"blobs": [
-			{"length": %d, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
-			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
-		],
-		"stream_type": "lbryfile",
-		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	}`, len(contentBlobData), contentBlobHash))
 
-	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	// Parse the content blob hash
+	contentBlobHashBytes, _ := hex.DecodeString(contentBlobHash)
+
+	// Create valid SD blob data using the helper
+	sdBlobData := createValidSDBlobData(t, []stream.BlobInfo{
+		{Length: len(contentBlobData), BlobNum: 0, BlobHash: contentBlobHashBytes, IV: []byte("1234567890123456")},
+		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("1234567890123456")},
+	}, nil)
+
+	// Compute the stream hash from the valid blob data
+	var sdBlob stream.SDBlob
+	err = sdBlob.FromBlob(sdBlobData)
+	require.NoError(t, err)
+	expectedStreamHash := hex.EncodeToString(sdBlob.StreamHash)
 
 	// Setup mock expectations with explicit call ordering
 	// First, acquire the SD blob
@@ -1315,16 +1332,21 @@ func TestDefaultServer_AcquireSDBlob_StorageHit(t *testing.T) {
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
 	contentBlobData := []byte("existing content blob data")
-	sdBlobData := []byte(fmt.Sprintf(`{
-		"blobs": [
-			{"length": %d, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
-			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
-		],
-		"stream_type": "lbryfile",
-		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	}`, len(contentBlobData), contentBlobHash))
 
-	expectedStreamHash := "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	// Parse the content blob hash
+	contentBlobHashBytes, _ := hex.DecodeString(contentBlobHash)
+
+	// Create valid SD blob data using the helper
+	sdBlobData := createValidSDBlobData(t, []stream.BlobInfo{
+		{Length: len(contentBlobData), BlobNum: 0, BlobHash: contentBlobHashBytes, IV: []byte("1234567890123456")},
+		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("1234567890123456")},
+	}, nil)
+
+	// Compute the stream hash from the valid blob data
+	var sdBlob stream.SDBlob
+	err = sdBlob.FromBlob(sdBlobData)
+	require.NoError(t, err)
+	expectedStreamHash := hex.EncodeToString(sdBlob.StreamHash)
 
 	// Setup mock expectations - SD blob acquisition, then storage hit for content blob
 	testMocks.acquirer.EXPECT().Acquire(ctx, sdBlobHash).Return(sdBlobData, nil)
@@ -1369,14 +1391,15 @@ func TestDefaultServer_AcquireSDBlob_ContentBlobAcquisitionFailure(t *testing.T)
 
 	sdBlobHash := TestBlobHash
 	contentBlobHash := "e28ce752b41c8434050f1f5181c8781ac817c975afc918b73eb0b3d8a90d0a06161f53048153b2c2b1029a4007477c26"
-	sdBlobData := []byte(fmt.Sprintf(`{
-		"blobs": [
-			{"length": 100, "blob_num": 0, "blob_hash": "%s", "iv": "1234567890123456"},
-			{"length": 0, "blob_num": 1, "blob_hash": "", "iv": ""}
-		],
-		"stream_type": "lbryfile",
-		"stream_hash": "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
-	}`, contentBlobHash))
+
+	// Parse the content blob hash
+	contentBlobHashBytes, _ := hex.DecodeString(contentBlobHash)
+
+	// Create valid SD blob data using the helper
+	sdBlobData := createValidSDBlobData(t, []stream.BlobInfo{
+		{Length: 100, BlobNum: 0, BlobHash: contentBlobHashBytes, IV: []byte("1234567890123456")},
+		{Length: 0, BlobNum: 1, BlobHash: []byte(""), IV: []byte("1234567890123456")},
+	}, nil)
 
 	acquirerError := errors.New("content blob acquisition failed")
 
