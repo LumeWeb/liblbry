@@ -158,6 +158,7 @@ func NewEncoderFromSD(src io.Reader, sdBlob *SDBlob) *Encoder {
 	e := NewEncoderWithIVs(src, sdBlob.Key, ivs)
 	e.sd.StreamName = sdBlob.StreamName
 	e.sd.SuggestedFileName = sdBlob.SuggestedFileName
+	e.sd.SetProfile(sdBlob.GetProfile())
 	return e
 }
 

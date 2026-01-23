@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/glopal/orderedjson"
+	"github.com/samber/lo"
 	"go.lumeweb.com/liblbry/blob"
 	lbrycrypto "go.lumeweb.com/liblbry/crypto"
 	liblbryerrors "go.lumeweb.com/liblbry/errors"
@@ -33,22 +35,51 @@ var (
 	ErrInvalidSDBlob = liblbryerrors.Err("invalid SD blob")
 )
 
+// serializationProfile represents the JSON field ordering profile for SD blobs
+type serializationProfile int
+
+const (
+	profileNewSort serializationProfile = iota // New sort: alphabetical field ordering
+	profileOldSort                             // Old sort: legacy Python SDK field ordering
+)
+
+// profileHandler defines encoding/decoding operations for a serialization profile
+type profileHandler struct {
+	name string
+
+	marshalBlobInfo   func(BlobInfo) ([]byte, error)
+	unmarshalBlobInfo func([]byte) (BlobInfo, error)
+
+	marshalSDBlob   func(SDBlob) ([]byte, error)
+	unmarshalSDBlob func([]byte) (*SDBlob, error)
+
+	predicates []profilePredicate
+}
+
+// profileRegistry maps profile IDs to their handlers
+var profileRegistry = map[serializationProfile]*profileHandler{
+	profileNewSort: newSortProfileHandler(),
+	profileOldSort: oldSortProfileHandler(),
+}
+
 // BlobInfo contains information about a content blob
 type BlobInfo struct {
-	Length   int    `json:"length"`
-	BlobNum  int    `json:"blob_num"`
-	BlobHash []byte `json:"-"`
-	IV       []byte `json:"-"`
+	Length   int                  `json:"length"`
+	BlobNum  int                  `json:"blob_num"`
+	BlobHash []byte               `json:"-"`
+	IV       []byte               `json:"-"`
+	profile  serializationProfile // private field to track serialization profile
 }
 
 // SDBlob represents stream descriptor blob metadata
 type SDBlob struct {
-	StreamName        string     `json:"-"`
-	BlobInfos         []BlobInfo `json:"blobs"`
-	StreamType        string     `json:"stream_type"`
-	Key               []byte     `json:"-"`
-	SuggestedFileName string     `json:"-"`
-	StreamHash        []byte     `json:"-"`
+	StreamName        string               `json:"-"`
+	BlobInfos         []BlobInfo           `json:"blobs"`
+	StreamType        string               `json:"stream_type"`
+	Key               []byte               `json:"-"`
+	SuggestedFileName string               `json:"-"`
+	StreamHash        []byte               `json:"-"`
+	profile           serializationProfile // private field to track serialization profile
 }
 
 // --- JSON serialization for BlobInfo ---
@@ -63,17 +94,48 @@ type JSONBlobInfo struct {
 	IV       string `json:"iv"`
 }
 
+// JSONBlobInfoNewSort represents BlobInfo with new sort (alphabetical) field ordering
+// Field order: blob_hash, blob_num, iv, length
+type JSONBlobInfoNewSort struct {
+	BlobHash string `json:"blob_hash,omitempty"`
+	BlobNum  int    `json:"blob_num"`
+	IV       string `json:"iv"`
+	Length   int    `json:"length"`
+}
+
+// JSONBlobInfoOldSort represents BlobInfo with old SDK field ordering
+// Field order: length, blob_num, blob_hash (optional), iv
+type JSONBlobInfoOldSort struct {
+	Length   int    `json:"length"`
+	BlobNum  int    `json:"blob_num"`
+	BlobHash string `json:"blob_hash,omitempty"`
+	IV       string `json:"iv"`
+}
+
+// encodeBlobInfoCommon encodes common BlobInfo fields to hex strings
+func encodeBlobInfoCommon(bi BlobInfo) (string, string) {
+	ivHex := hex.EncodeToString(bi.IV)
+	blobHashHex := ""
+	if len(bi.BlobHash) > 0 {
+		blobHashHex = hex.EncodeToString(bi.BlobHash)
+	}
+	return ivHex, blobHashHex
+}
+
 // MarshalJSON implements custom JSON marshaling for BlobInfo
 func (bi BlobInfo) MarshalJSON() ([]byte, error) {
-	var tmp JSONBlobInfo
-
-	tmp.IV = hex.EncodeToString(bi.IV)
-	if len(bi.BlobHash) > 0 {
-		tmp.BlobHash = hex.EncodeToString(bi.BlobHash)
+	if handler, ok := profileRegistry[bi.profile]; ok && handler.marshalBlobInfo != nil {
+		return handler.marshalBlobInfo(bi)
 	}
 
-	tmp.BlobInfoAlias = BlobInfoAlias(bi)
+	ivHex, blobHashHex := encodeBlobInfoCommon(bi)
 
+	tmp := JSONBlobInfoNewSort{
+		BlobHash: blobHashHex,
+		BlobNum:  bi.BlobNum,
+		IV:       ivHex,
+		Length:   bi.Length,
+	}
 	return json.Marshal(tmp)
 }
 
@@ -131,66 +193,195 @@ type JSONSDBlob struct {
 	StreamHash        string     `json:"stream_hash"`
 }
 
+// JSONSDBlobNewSort represents SDBlob with new sort (alphabetical) field ordering
+// Field order: blobs, key, stream_hash, stream_name, stream_type, suggested_file_name
+type JSONSDBlobNewSort struct {
+	Blobs             []JSONBlobInfoNewSort `json:"blobs"`
+	Key               string                `json:"key"`
+	StreamHash        string                `json:"stream_hash"`
+	StreamName        string                `json:"stream_name"`
+	StreamType        string                `json:"stream_type"`
+	SuggestedFileName string                `json:"suggested_file_name"`
+}
+
+// JSONSDBlobOldSort represents SDBlob with old SDK field ordering
+// Field order: stream_name, blobs, stream_type, key, suggested_file_name, stream_hash
+type JSONSDBlobOldSort struct {
+	StreamName        string                `json:"stream_name"`
+	Blobs             []JSONBlobInfoOldSort `json:"blobs"`
+	StreamType        string                `json:"stream_type"`
+	Key               string                `json:"key"`
+	SuggestedFileName string                `json:"suggested_file_name"`
+	StreamHash        string                `json:"stream_hash"`
+}
+
+// encodeSDBlobCommon encodes common SDBlob fields to hex strings
+func encodeSDBlobCommon(s SDBlob) (string, string, string, string) {
+	streamNameHex := hex.EncodeToString([]byte(s.StreamName))
+	keyHex := hex.EncodeToString(s.Key)
+	suggestedFileNameHex := hex.EncodeToString([]byte(s.SuggestedFileName))
+	streamHashHex := hex.EncodeToString(s.StreamHash)
+	return streamNameHex, keyHex, suggestedFileNameHex, streamHashHex
+}
+
+// encodeBlobInfosAsOldSort converts BlobInfos to JSONBlobInfoOldSort slice
+func encodeBlobInfosAsOldSort(blobs []BlobInfo) []JSONBlobInfoOldSort {
+	return lo.Map(blobs, func(bi BlobInfo, _ int) JSONBlobInfoOldSort {
+		ivHex, blobHashHex := encodeBlobInfoCommon(bi)
+		return JSONBlobInfoOldSort{
+			Length:   bi.Length,
+			BlobNum:  bi.BlobNum,
+			IV:       ivHex,
+			BlobHash: blobHashHex,
+		}
+	})
+}
+
+// encodeBlobInfosAsNewSort converts BlobInfos to JSONBlobInfoNewSort slice
+func encodeBlobInfosAsNewSort(blobs []BlobInfo) []JSONBlobInfoNewSort {
+	return lo.Map(blobs, func(bi BlobInfo, _ int) JSONBlobInfoNewSort {
+		ivHex, blobHashHex := encodeBlobInfoCommon(bi)
+		return JSONBlobInfoNewSort{
+			BlobHash: blobHashHex,
+			BlobNum:  bi.BlobNum,
+			IV:       ivHex,
+			Length:   bi.Length,
+		}
+	})
+}
+
 // MarshalJSON implements custom JSON marshaling for SDBlob
 func (s SDBlob) MarshalJSON() ([]byte, error) {
-	var tmp JSONSDBlob
+	if handler, ok := profileRegistry[s.profile]; ok && handler.marshalSDBlob != nil {
+		return handler.marshalSDBlob(s)
+	}
 
-	tmp.StreamName = hex.EncodeToString([]byte(s.StreamName))
-	tmp.Blobs = s.BlobInfos
-	tmp.StreamType = s.StreamType
-	tmp.Key = hex.EncodeToString(s.Key)
-	tmp.SuggestedFileName = hex.EncodeToString([]byte(s.SuggestedFileName))
-	tmp.StreamHash = hex.EncodeToString(s.StreamHash)
+	streamNameHex, keyHex, suggestedFileNameHex, streamHashHex := encodeSDBlobCommon(s)
 
+	tmp := JSONSDBlobNewSort{
+		Blobs:             encodeBlobInfosAsNewSort(s.BlobInfos),
+		Key:               keyHex,
+		StreamHash:        streamHashHex,
+		StreamName:        streamNameHex,
+		StreamType:        s.StreamType,
+		SuggestedFileName: suggestedFileNameHex,
+	}
 	return json.Marshal(tmp)
+}
+
+// decodeHex decodes a hex string to bytes, returning nil if empty
+func decodeHex(s string) ([]byte, error) {
+	if s == "" {
+		return nil, nil
+	}
+	return hex.DecodeString(s)
+}
+
+// decodeHexString decodes a hex string to string, returning empty string if input is empty
+func decodeHexString(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// decodeSDBlobFields decodes common SDBlob fields from hex
+func decodeSDBlobFields(streamNameHex, keyHex, suggestedFileNameHex, streamHashHex string) (string, []byte, string, []byte, error) {
+	streamName, err := decodeHexString(streamNameHex)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+
+	key, err := decodeHex(keyHex)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+
+	suggestedFileName, err := decodeHexString(suggestedFileNameHex)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+
+	streamHash, err := decodeHex(streamHashHex)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+
+	return streamName, key, suggestedFileName, streamHash, nil
+}
+
+// decodeBlobInfoFromNewSort decodes JSONBlobInfoNewSort to BlobInfo
+func decodeBlobInfoFromNewSort(tmp JSONBlobInfoNewSort, profile serializationProfile) (BlobInfo, error) {
+	bi := BlobInfo{
+		Length:  tmp.Length,
+		BlobNum: tmp.BlobNum,
+		profile: profile,
+	}
+
+	if tmp.BlobHash != "" {
+		blobHash, err := hex.DecodeString(tmp.BlobHash)
+		if err != nil {
+			return BlobInfo{}, err
+		}
+		bi.BlobHash = blobHash
+	}
+
+	if tmp.IV != "" {
+		iv, err := hex.DecodeString(tmp.IV)
+		if err != nil {
+			return BlobInfo{}, err
+		}
+		bi.IV = iv
+	}
+
+	return bi, nil
+}
+
+// decodeBlobInfoFromOldSort decodes JSONBlobInfoOldSort to BlobInfo
+func decodeBlobInfoFromOldSort(tmp JSONBlobInfoOldSort, profile serializationProfile) (BlobInfo, error) {
+	bi := BlobInfo{
+		Length:  tmp.Length,
+		BlobNum: tmp.BlobNum,
+		profile: profile,
+	}
+
+	if tmp.BlobHash != "" {
+		blobHash, err := hex.DecodeString(tmp.BlobHash)
+		if err != nil {
+			return BlobInfo{}, err
+		}
+		bi.BlobHash = blobHash
+	}
+
+	if tmp.IV != "" {
+		iv, err := hex.DecodeString(tmp.IV)
+		if err != nil {
+			return BlobInfo{}, err
+		}
+		bi.IV = iv
+	}
+
+	return bi, nil
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for SDBlob
 func (s *SDBlob) UnmarshalJSON(b []byte) error {
-	var tmp JSONSDBlob
-	err := json.Unmarshal(b, &tmp)
-	if err != nil {
-		return err
-	}
+	s.profile = detectSerializationProfile(b)
 
-	s.StreamName = ""
-	if tmp.StreamName != "" {
-		str, err := hex.DecodeString(tmp.StreamName)
+	if handler, ok := profileRegistry[s.profile]; ok && handler.unmarshalSDBlob != nil {
+		result, err := handler.unmarshalSDBlob(b)
 		if err != nil {
 			return err
 		}
-		s.StreamName = string(str)
+		*s = *result
+		return nil
 	}
 
-	s.BlobInfos = tmp.Blobs
-	s.StreamType = tmp.StreamType
-
-	s.Key = nil
-	if tmp.Key != "" {
-		s.Key, err = hex.DecodeString(tmp.Key)
-		if err != nil {
-			return err
-		}
-	}
-
-	s.SuggestedFileName = ""
-	if tmp.SuggestedFileName != "" {
-		str, err := hex.DecodeString(tmp.SuggestedFileName)
-		if err != nil {
-			return err
-		}
-		s.SuggestedFileName = string(str)
-	}
-
-	s.StreamHash = nil
-	if tmp.StreamHash != "" {
-		s.StreamHash, err = hex.DecodeString(tmp.StreamHash)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return fmt.Errorf("no unmarshal handler for profile: %d", s.profile)
 }
 
 // ToJson returns the SD blob as JSON with indentation
@@ -223,9 +414,45 @@ func (s SDBlob) IsValid() bool {
 	return bytes.Equal(computedHash, s.StreamHash)
 }
 
+// profilePredicate checks if the JSON matches a specific serialization profile
+type profilePredicate func(orderedjson.Map) (serializationProfile, bool)
+
+// detectSerializationProfile analyzes JSON bytes to determine the serialization profile
+// by applying predicates from registered profile handlers in order and returning the first match
+func detectSerializationProfile(b []byte) serializationProfile {
+	var orderedMap orderedjson.Map
+	if err := json.Unmarshal(b, &orderedMap); err != nil {
+		return profileNewSort
+	}
+
+	for _, handler := range profileRegistry {
+		for _, predicate := range handler.predicates {
+			if detectedProfile, detected := predicate(orderedMap); detected {
+				return detectedProfile
+			}
+		}
+	}
+
+	return profileNewSort
+}
+
 // FromBlob unmarshals a data Blob that should contain SDBlob data
 func (s *SDBlob) FromBlob(b []byte) error {
+	s.profile = detectSerializationProfile(b)
 	return json.Unmarshal(b, s)
+}
+
+// SetProfile sets the serialization profile for the SDBlob and all its BlobInfos
+func (s *SDBlob) SetProfile(profile serializationProfile) {
+	s.profile = profile
+	for i := range s.BlobInfos {
+		s.BlobInfos[i].profile = profile
+	}
+}
+
+// GetProfile returns the serialization profile for the SDBlob
+func (s *SDBlob) GetProfile() serializationProfile {
+	return s.profile
 }
 
 // Hash returns a hash of the SD blob data
@@ -288,6 +515,204 @@ func (s *SDBlob) computeStreamHash() []byte {
 		hex.EncodeToString([]byte(s.SuggestedFileName)),
 		s.BlobInfos,
 	)
+}
+
+// newSortProfileHandler creates a handler for new sort (alphabetical) serialization
+func newSortProfileHandler() *profileHandler {
+	return &profileHandler{
+		name: "new_sort",
+		marshalBlobInfo: func(bi BlobInfo) ([]byte, error) {
+			ivHex, blobHashHex := encodeBlobInfoCommon(bi)
+			tmp := JSONBlobInfoNewSort{
+				BlobHash: blobHashHex,
+				BlobNum:  bi.BlobNum,
+				IV:       ivHex,
+				Length:   bi.Length,
+			}
+			return json.Marshal(tmp)
+		},
+		unmarshalBlobInfo: func(b []byte) (BlobInfo, error) {
+			var tmp JSONBlobInfoNewSort
+			if err := json.Unmarshal(b, &tmp); err != nil {
+				return BlobInfo{}, err
+			}
+
+			bi := BlobInfo{
+				Length:  tmp.Length,
+				BlobNum: tmp.BlobNum,
+				profile: profileNewSort,
+			}
+
+			if tmp.BlobHash != "" {
+				blobHash, err := hex.DecodeString(tmp.BlobHash)
+				if err != nil {
+					return BlobInfo{}, err
+				}
+				bi.BlobHash = blobHash
+			}
+
+			if tmp.IV != "" {
+				iv, err := hex.DecodeString(tmp.IV)
+				if err != nil {
+					return BlobInfo{}, err
+				}
+				bi.IV = iv
+			}
+
+			return bi, nil
+		},
+		marshalSDBlob: func(s SDBlob) ([]byte, error) {
+			streamNameHex, keyHex, suggestedFileNameHex, streamHashHex := encodeSDBlobCommon(s)
+			tmp := JSONSDBlobNewSort{
+				Blobs:             encodeBlobInfosAsNewSort(s.BlobInfos),
+				Key:               keyHex,
+				StreamHash:        streamHashHex,
+				StreamName:        streamNameHex,
+				StreamType:        s.StreamType,
+				SuggestedFileName: suggestedFileNameHex,
+			}
+			return json.Marshal(tmp)
+		},
+		unmarshalSDBlob: func(b []byte) (*SDBlob, error) {
+			var tmp JSONSDBlobNewSort
+			if err := json.Unmarshal(b, &tmp); err != nil {
+				return nil, err
+			}
+
+			s := &SDBlob{profile: profileNewSort}
+
+			var err error
+			s.StreamName, s.Key, s.SuggestedFileName, s.StreamHash, err = decodeSDBlobFields(tmp.StreamName, tmp.Key, tmp.SuggestedFileName, tmp.StreamHash)
+			if err != nil {
+				return nil, err
+			}
+
+			s.StreamType = tmp.StreamType
+
+			blobInfos := make([]BlobInfo, len(tmp.Blobs))
+			for i, bi := range tmp.Blobs {
+				result, err := decodeBlobInfoFromNewSort(bi, profileNewSort)
+				if err != nil {
+					return nil, err
+				}
+				blobInfos[i] = result
+			}
+			s.BlobInfos = blobInfos
+
+			return s, nil
+		},
+		predicates: []profilePredicate{
+			func(m orderedjson.Map) (serializationProfile, bool) {
+				if len(m) == 0 {
+					return profileNewSort, false
+				}
+				firstKey := string(m[0].Key)
+				if firstKey == `"blobs"` {
+					return profileNewSort, true
+				}
+				return profileNewSort, false
+			},
+		},
+	}
+}
+
+// oldSortProfileHandler creates a handler for old sort (legacy Python SDK) serialization
+func oldSortProfileHandler() *profileHandler {
+	return &profileHandler{
+		name: "old_sort",
+		marshalBlobInfo: func(bi BlobInfo) ([]byte, error) {
+			ivHex, blobHashHex := encodeBlobInfoCommon(bi)
+			tmp := JSONBlobInfoOldSort{
+				Length:   bi.Length,
+				BlobNum:  bi.BlobNum,
+				IV:       ivHex,
+				BlobHash: blobHashHex,
+			}
+			return json.Marshal(tmp)
+		},
+		unmarshalBlobInfo: func(b []byte) (BlobInfo, error) {
+			var tmp JSONBlobInfoOldSort
+			if err := json.Unmarshal(b, &tmp); err != nil {
+				return BlobInfo{}, err
+			}
+
+			bi := BlobInfo{
+				Length:  tmp.Length,
+				BlobNum: tmp.BlobNum,
+				profile: profileOldSort,
+			}
+
+			if tmp.BlobHash != "" {
+				blobHash, err := hex.DecodeString(tmp.BlobHash)
+				if err != nil {
+					return BlobInfo{}, err
+				}
+				bi.BlobHash = blobHash
+			}
+
+			if tmp.IV != "" {
+				iv, err := hex.DecodeString(tmp.IV)
+				if err != nil {
+					return BlobInfo{}, err
+				}
+				bi.IV = iv
+			}
+
+			return bi, nil
+		},
+		marshalSDBlob: func(s SDBlob) ([]byte, error) {
+			streamNameHex, keyHex, suggestedFileNameHex, streamHashHex := encodeSDBlobCommon(s)
+			tmp := JSONSDBlobOldSort{
+				StreamName:        streamNameHex,
+				StreamType:        s.StreamType,
+				Key:               keyHex,
+				SuggestedFileName: suggestedFileNameHex,
+				StreamHash:        streamHashHex,
+				Blobs:             encodeBlobInfosAsOldSort(s.BlobInfos),
+			}
+			return json.Marshal(tmp)
+		},
+		unmarshalSDBlob: func(b []byte) (*SDBlob, error) {
+			var tmp JSONSDBlobOldSort
+			if err := json.Unmarshal(b, &tmp); err != nil {
+				return nil, err
+			}
+
+			s := &SDBlob{profile: profileOldSort}
+
+			var err error
+			s.StreamName, s.Key, s.SuggestedFileName, s.StreamHash, err = decodeSDBlobFields(tmp.StreamName, tmp.Key, tmp.SuggestedFileName, tmp.StreamHash)
+			if err != nil {
+				return nil, err
+			}
+
+			s.StreamType = tmp.StreamType
+
+			blobInfos := make([]BlobInfo, len(tmp.Blobs))
+			for i, bi := range tmp.Blobs {
+				result, err := decodeBlobInfoFromOldSort(bi, profileOldSort)
+				if err != nil {
+					return nil, err
+				}
+				blobInfos[i] = result
+			}
+			s.BlobInfos = blobInfos
+
+			return s, nil
+		},
+		predicates: []profilePredicate{
+			func(m orderedjson.Map) (serializationProfile, bool) {
+				if len(m) == 0 {
+					return profileNewSort, false
+				}
+				firstKey := string(m[0].Key)
+				if firstKey == `"stream_name"` {
+					return profileOldSort, true
+				}
+				return profileNewSort, false
+			},
+		},
+	}
 }
 
 // ValidateSDBlob validates an SDBlob struct's structure and content
