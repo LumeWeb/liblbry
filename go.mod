@@ -22,9 +22,11 @@ require (
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0 // indirect
+	github.com/aybabtme/flatjson v0.1.3-0.20230505062430-1fbd38670561 // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gammazero/deque v0.2.0 // indirect
+	github.com/glopal/orderedjson v0.0.0-20240326211827-f9de45c5f0bb // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect

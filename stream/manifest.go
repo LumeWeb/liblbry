@@ -94,6 +94,14 @@ func WithEncoderChunkSize(size int) EncoderOption {
 	}
 }
 
+// WithSerializationProfile sets the JSON serialization profile for the encoder
+// Use profileOldSort for compatibility with legacy Python SDK SD blobs
+func WithSerializationProfile(profile serializationProfile) EncoderOption {
+	return func(e *Encoder) {
+		e.serializationProfile = profile
+	}
+}
+
 // CreateManifestFromSource creates a manifest from a source reader using the encoder
 // This is a convenience function for the common use case of creating a manifest from data
 func CreateManifestFromSource(source io.Reader, size int64, opts ...EncoderOption) (*SDBlob, []byte, error) {

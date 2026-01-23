@@ -99,6 +99,8 @@ type Encoder struct {
 	// an optionals hint about the total size of the source data
 	// encoder will use this to preallocate space for blobs
 	srcSizeHint int
+	// serialization profile for JSON field ordering
+	serializationProfile serializationProfile
 
 	// buffer for reading bytes from reader
 	buf []byte
@@ -158,6 +160,7 @@ func NewEncoderFromSD(src io.Reader, sdBlob *SDBlob) *Encoder {
 	e := NewEncoderWithIVs(src, sdBlob.Key, ivs)
 	e.sd.StreamName = sdBlob.StreamName
 	e.sd.SuggestedFileName = sdBlob.SuggestedFileName
+	e.serializationProfile = sdBlob.profile
 	return e
 }
 
@@ -397,6 +400,7 @@ func (e *Encoder) Encode(config *StreamConfig) (*StreamResult, error) {
 // SDBlob returns the sd blob so far
 func (e *Encoder) SDBlob() *SDBlob {
 	e.sd.UpdateStreamHash()
+	e.sd.SetProfile(e.serializationProfile)
 	return e.sd
 }
 
@@ -415,6 +419,12 @@ func (e *Encoder) SourceHash() []byte {
 // If the hint is wrong, it still works fine but there will be a small performance penalty.
 func (e *Encoder) SourceSizeHint(size int) *Encoder {
 	e.srcSizeHint = size
+	return e
+}
+
+// SetSerializationProfile sets the JSON serialization profile for the encoder
+func (e *Encoder) SetSerializationProfile(profile serializationProfile) *Encoder {
+	e.serializationProfile = profile
 	return e
 }
 
