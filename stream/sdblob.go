@@ -450,6 +450,11 @@ func (s *SDBlob) SetProfile(profile serializationProfile) {
 	}
 }
 
+// GetProfile returns the serialization profile for the SDBlob
+func (s *SDBlob) GetProfile() serializationProfile {
+	return s.profile
+}
+
 // Hash returns a hash of the SD blob data
 func (s SDBlob) Hash() []byte {
 	blobData, _ := s.ToBlob()
@@ -583,10 +588,16 @@ func newSortProfileHandler() *profileHandler {
 			}
 
 			s.StreamType = tmp.StreamType
-			s.BlobInfos = lo.Map(tmp.Blobs, func(bi JSONBlobInfoNewSort, _ int) BlobInfo {
-				result, _ := decodeBlobInfoFromNewSort(bi, profileNewSort)
-				return result
-			})
+
+			blobInfos := make([]BlobInfo, len(tmp.Blobs))
+			for i, bi := range tmp.Blobs {
+				result, err := decodeBlobInfoFromNewSort(bi, profileNewSort)
+				if err != nil {
+					return nil, err
+				}
+				blobInfos[i] = result
+			}
+			s.BlobInfos = blobInfos
 
 			return s, nil
 		},
@@ -676,10 +687,16 @@ func oldSortProfileHandler() *profileHandler {
 			}
 
 			s.StreamType = tmp.StreamType
-			s.BlobInfos = lo.Map(tmp.Blobs, func(bi JSONBlobInfoOldSort, _ int) BlobInfo {
-				result, _ := decodeBlobInfoFromOldSort(bi, profileOldSort)
-				return result
-			})
+
+			blobInfos := make([]BlobInfo, len(tmp.Blobs))
+			for i, bi := range tmp.Blobs {
+				result, err := decodeBlobInfoFromOldSort(bi, profileOldSort)
+				if err != nil {
+					return nil, err
+				}
+				blobInfos[i] = result
+			}
+			s.BlobInfos = blobInfos
 
 			return s, nil
 		},

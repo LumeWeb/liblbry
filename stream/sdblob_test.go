@@ -18,7 +18,7 @@ import (
 
 // TestBlobInfoMarshalJSON tests BlobInfo MarshalJSON with hex encoding
 func TestBlobInfoMarshalJSON(t *testing.T) {
-	blobHash, _ := hex.DecodeString("e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8")
+	blobHash, _ := hex.DecodeString(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1])
 	iv, _ := hex.DecodeString("30303030303030303030303030303031")
 
 	bi := BlobInfo{
@@ -32,7 +32,7 @@ func TestBlobInfoMarshalJSON(t *testing.T) {
 	data, err := json.Marshal(bi)
 	require.NoError(t, err)
 
-	expected := `{"length":2097152,"blob_num":0,"blob_hash":"e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8","iv":"30303030303030303030303030303031"}`
+	expected := `{"length":2097152,"blob_num":0,"blob_hash":"` + lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1] + `","iv":"30303030303030303030303030303031"}`
 	if string(data) != expected {
 		t.Errorf("MarshalJSON failed. Expected: %s, Got: %s", expected, string(data))
 	}
@@ -40,13 +40,13 @@ func TestBlobInfoMarshalJSON(t *testing.T) {
 
 // TestBlobInfoUnmarshalJSON tests BlobInfo UnmarshalJSON with hex decoding
 func TestBlobInfoUnmarshalJSON(t *testing.T) {
-	jsonData := `{"length":2097152,"blob_num":0,"blob_hash":"e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8","iv":"30303030303030303030303030303031"}`
+	jsonData := `{"length":2097152,"blob_num":0,"blob_hash":"` + lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1] + `","iv":"30303030303030303030303030303031"}`
 
 	var bi BlobInfo
 	err := json.Unmarshal([]byte(jsonData), &bi)
 	require.NoError(t, err)
 
-	expectedBlobHash, _ := hex.DecodeString("e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8")
+	expectedBlobHash, _ := hex.DecodeString(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1])
 	expectedIV, _ := hex.DecodeString("30303030303030303030303030303031")
 
 	if bi.Length != 2097152 {
@@ -588,7 +588,7 @@ func TestValidateSDBlob_TerminatingBlobScenarios(t *testing.T) {
 
 // TestBlobInfoMarshalJSONOldSort tests BlobInfo MarshalJSON with old sort field ordering
 func TestBlobInfoMarshalJSONOldSort(t *testing.T) {
-	blobHash, _ := hex.DecodeString("e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8")
+	blobHash, _ := hex.DecodeString(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1])
 	iv, _ := hex.DecodeString("30303030303030303030303030303031")
 
 	bi := BlobInfo{
@@ -603,7 +603,7 @@ func TestBlobInfoMarshalJSONOldSort(t *testing.T) {
 	require.NoError(t, err)
 
 	// Old sort order: length, blob_num, blob_hash, iv
-	expected := `{"length":2097152,"blob_num":0,"blob_hash":"e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8","iv":"30303030303030303030303030303031"}`
+	expected := `{"length":2097152,"blob_num":0,"blob_hash":"` + lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1] + `","iv":"30303030303030303030303030303031"}`
 	if string(data) != expected {
 		t.Errorf("MarshalJSON with old sort failed. Expected: %s, Got: %s", expected, string(data))
 	}
@@ -683,7 +683,7 @@ func TestSDBlobSetProfile(t *testing.T) {
 	suggestedFileName := "test_file"
 	streamHash, _ := hex.DecodeString("4fcd4064713bf639362248d3ac0c0ee527a93a08ce4991954d6e11b0317e79b6beedb6833e18e7ae8b0f14ddf258e386")
 
-	blobHash, _ := hex.DecodeString("e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8")
+	blobHash, _ := hex.DecodeString(lbryTesting.LBRYTestHashes[lbryTesting.LBRYHashKey1])
 	iv, _ := hex.DecodeString("30303030303030303030303030303031")
 
 	sd := SDBlob{
@@ -740,7 +740,7 @@ func TestEncoderWithOldSortProfile(t *testing.T) {
 	testData := []byte("Hello, world! This is a test file for encoding.")
 
 	encoder := NewEncoder(bytes.NewReader(testData))
-	encoder.SetSerializationProfile(profileOldSort)
+	encoder.SDBlob().SetProfile(profileOldSort)
 
 	// Encode the stream
 	for {

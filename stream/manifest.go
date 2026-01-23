@@ -98,7 +98,7 @@ func WithEncoderChunkSize(size int) EncoderOption {
 // Use profileOldSort for compatibility with legacy Python SDK SD blobs
 func WithSerializationProfile(profile serializationProfile) EncoderOption {
 	return func(e *Encoder) {
-		e.serializationProfile = profile
+		e.sd.SetProfile(profile)
 	}
 }
 
