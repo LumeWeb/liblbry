@@ -95,7 +95,7 @@ func WithEncoderChunkSize(size int) EncoderOption {
 }
 
 // WithSerializationProfile sets the JSON serialization profile for the encoder
-// Use profileOldSort for compatibility with legacy Python SDK SD blobs
+// Use ProfileOldSort for compatibility with legacy Python SDK SD blobs
 func WithSerializationProfile(profile serializationProfile) EncoderOption {
 	return func(e *Encoder) {
 		e.sd.SetProfile(profile)

@@ -27,7 +27,7 @@ func TestBlobInfoMarshalJSON(t *testing.T) {
 		BlobHash: blobHash,
 		IV:       iv,
 	}
-	bi.profile = profileOldSort
+	bi.profile = ProfileOldSort
 
 	data, err := json.Marshal(bi)
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestSDBlobMarshalJSON(t *testing.T) {
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,
 	}
-	sd.SetProfile(profileOldSort)
+	sd.SetProfile(ProfileOldSort)
 
 	data, err := json.Marshal(sd)
 	require.NoError(t, err)
@@ -245,7 +245,7 @@ func TestSDBlobEdgeCases(t *testing.T) {
 		SuggestedFileName: "",
 		StreamHash:        nil,
 	}
-	sd.SetProfile(profileOldSort)
+	sd.SetProfile(ProfileOldSort)
 
 	data, err := json.Marshal(sd)
 	require.NoError(t, err)
@@ -374,7 +374,7 @@ func TestSDBlobToJson(t *testing.T) {
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,
 	}
-	sd.SetProfile(profileOldSort)
+	sd.SetProfile(ProfileOldSort)
 
 	// Test ToJson()
 	jsonStr, err := sd.ToJson()
@@ -596,7 +596,7 @@ func TestBlobInfoMarshalJSONOldSort(t *testing.T) {
 		BlobNum:  0,
 		BlobHash: blobHash,
 		IV:       iv,
-		profile:  profileOldSort,
+		profile:  ProfileOldSort,
 	}
 
 	data, err := json.Marshal(bi)
@@ -617,7 +617,7 @@ func TestBlobInfoMarshalJSONOldSortNullBlob(t *testing.T) {
 		Length:  0,
 		BlobNum: 25,
 		IV:      iv,
-		profile: profileOldSort,
+		profile: ProfileOldSort,
 	}
 
 	data, err := json.Marshal(bi)
@@ -644,7 +644,7 @@ func TestSDBlobMarshalJSONOldSort(t *testing.T) {
 		Key:               key,
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,
-		profile:           profileOldSort,
+		profile:           ProfileOldSort,
 	}
 
 	data, err := json.Marshal(sd)
@@ -665,7 +665,7 @@ func TestSDBlobProfileDetection(t *testing.T) {
 	var sd1 SDBlob
 	err := json.Unmarshal([]byte(newSortJSON), &sd1)
 	require.NoError(t, err)
-	assert.Equal(t, profileNewSort, sd1.profile, "Should detect new sort profile")
+	assert.Equal(t, ProfileNewSort, sd1.profile, "Should detect new sort profile")
 
 	// Old sort JSON - valid hex strings
 	oldSortJSON := `{"stream_name":"746573745f66696c65","blobs":[{"length":100,"blob_num":0,"blob_hash":"e6063cf9656e3ff24a197c5abdc2e5832d166de3b045d789b3f61526f1e82ff64e863a96dced804078dccc65bda6f7b8","iv":"30303030303030303030303030303031"}],"stream_type":"lbryfile","key":"30313233343536373031323334353637","suggested_file_name":"746573745f66696c65","stream_hash":"4fcd4064713bf639362248d3ac0c0ee527a93a08ce4991954d6e11b0317e79b6beedb6833e18e7ae8b0f14ddf258e386"}`
@@ -673,7 +673,7 @@ func TestSDBlobProfileDetection(t *testing.T) {
 	var sd2 SDBlob
 	err = json.Unmarshal([]byte(oldSortJSON), &sd2)
 	require.NoError(t, err)
-	assert.Equal(t, profileOldSort, sd2.profile, "Should detect old sort profile")
+	assert.Equal(t, ProfileOldSort, sd2.profile, "Should detect old sort profile")
 }
 
 // TestSDBlobSetProfile tests setting profile explicitly
@@ -693,7 +693,7 @@ func TestSDBlobSetProfile(t *testing.T) {
 		Key:               key,
 		SuggestedFileName: suggestedFileName,
 		StreamHash:        streamHash,
-		profile:           profileNewSort,
+		profile:           ProfileNewSort,
 	}
 
 	// Marshal with new sort
@@ -702,7 +702,7 @@ func TestSDBlobSetProfile(t *testing.T) {
 	assert.Contains(t, string(dataNew), `"blobs"`, "New sort should have blobs first")
 
 	// Set to old sort
-	sd.SetProfile(profileOldSort)
+	sd.SetProfile(ProfileOldSort)
 
 	// Marshal with old sort
 	dataOld, err := json.Marshal(sd)
@@ -710,7 +710,7 @@ func TestSDBlobSetProfile(t *testing.T) {
 	assert.Contains(t, string(dataOld), `"stream_name"`, "Old sort should have stream_name first")
 
 	// Verify all BlobInfos also have old sort profile
-	assert.Equal(t, profileOldSort, sd.BlobInfos[0].profile, "BlobInfo should have old sort profile")
+	assert.Equal(t, ProfileOldSort, sd.BlobInfos[0].profile, "BlobInfo should have old sort profile")
 }
 
 // TestFromBlobWithProfileDetection tests that FromBlob correctly detects and preserves profile
@@ -721,8 +721,8 @@ func TestFromBlobWithProfileDetection(t *testing.T) {
 	var sd SDBlob
 	err := sd.FromBlob([]byte(oldSortBlob))
 	require.NoError(t, err)
-	assert.Equal(t, profileOldSort, sd.profile, "FromBlob should detect old sort profile")
-	assert.Equal(t, profileOldSort, sd.BlobInfos[0].profile, "BlobInfos should have old sort profile")
+	assert.Equal(t, ProfileOldSort, sd.profile, "FromBlob should detect old sort profile")
+	assert.Equal(t, ProfileOldSort, sd.BlobInfos[0].profile, "BlobInfos should have old sort profile")
 
 	// Marshal again and verify it maintains old sort
 	data, err := json.Marshal(sd)
@@ -740,7 +740,7 @@ func TestEncoderWithOldSortProfile(t *testing.T) {
 	testData := []byte("Hello, world! This is a test file for encoding.")
 
 	encoder := NewEncoder(bytes.NewReader(testData))
-	encoder.SDBlob().SetProfile(profileOldSort)
+	encoder.SDBlob().SetProfile(ProfileOldSort)
 
 	// Encode the stream
 	for {
@@ -754,7 +754,7 @@ func TestEncoderWithOldSortProfile(t *testing.T) {
 	sd := encoder.SDBlob()
 
 	// Verify profile is set
-	assert.Equal(t, profileOldSort, sd.profile, "Encoder should set old sort profile")
+	assert.Equal(t, ProfileOldSort, sd.profile, "Encoder should set old sort profile")
 
 	// Marshal and verify old sort ordering
 	data, err := json.Marshal(sd)
