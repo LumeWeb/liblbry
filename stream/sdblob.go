@@ -39,8 +39,8 @@ var (
 type serializationProfile int
 
 const (
-	profileNewSort serializationProfile = iota // New sort: alphabetical field ordering
-	profileOldSort                             // Old sort: legacy Python SDK field ordering
+	ProfileNewSort serializationProfile = iota // New sort: alphabetical field ordering
+	ProfileOldSort                             // Old sort: legacy Python SDK field ordering
 )
 
 // profileHandler defines encoding/decoding operations for a serialization profile
@@ -58,8 +58,8 @@ type profileHandler struct {
 
 // profileRegistry maps profile IDs to their handlers
 var profileRegistry = map[serializationProfile]*profileHandler{
-	profileNewSort: newSortProfileHandler(),
-	profileOldSort: oldSortProfileHandler(),
+	ProfileNewSort: newSortProfileHandler(),
+	ProfileOldSort: oldSortProfileHandler(),
 }
 
 // BlobInfo contains information about a content blob
@@ -422,7 +422,7 @@ type profilePredicate func(orderedjson.Map) (serializationProfile, bool)
 func detectSerializationProfile(b []byte) serializationProfile {
 	var orderedMap orderedjson.Map
 	if err := json.Unmarshal(b, &orderedMap); err != nil {
-		return profileNewSort
+		return ProfileNewSort
 	}
 
 	for _, handler := range profileRegistry {
@@ -433,7 +433,7 @@ func detectSerializationProfile(b []byte) serializationProfile {
 		}
 	}
 
-	return profileNewSort
+	return ProfileNewSort
 }
 
 // FromBlob unmarshals a data Blob that should contain SDBlob data
@@ -540,7 +540,7 @@ func newSortProfileHandler() *profileHandler {
 			bi := BlobInfo{
 				Length:  tmp.Length,
 				BlobNum: tmp.BlobNum,
-				profile: profileNewSort,
+				profile: ProfileNewSort,
 			}
 
 			if tmp.BlobHash != "" {
@@ -579,7 +579,7 @@ func newSortProfileHandler() *profileHandler {
 				return nil, err
 			}
 
-			s := &SDBlob{profile: profileNewSort}
+			s := &SDBlob{profile: ProfileNewSort}
 
 			var err error
 			s.StreamName, s.Key, s.SuggestedFileName, s.StreamHash, err = decodeSDBlobFields(tmp.StreamName, tmp.Key, tmp.SuggestedFileName, tmp.StreamHash)
@@ -591,7 +591,7 @@ func newSortProfileHandler() *profileHandler {
 
 			blobInfos := make([]BlobInfo, len(tmp.Blobs))
 			for i, bi := range tmp.Blobs {
-				result, err := decodeBlobInfoFromNewSort(bi, profileNewSort)
+				result, err := decodeBlobInfoFromNewSort(bi, ProfileNewSort)
 				if err != nil {
 					return nil, err
 				}
@@ -604,13 +604,13 @@ func newSortProfileHandler() *profileHandler {
 		predicates: []profilePredicate{
 			func(m orderedjson.Map) (serializationProfile, bool) {
 				if len(m) == 0 {
-					return profileNewSort, false
+					return ProfileNewSort, false
 				}
 				firstKey := string(m[0].Key)
 				if firstKey == `"blobs"` {
-					return profileNewSort, true
+					return ProfileNewSort, true
 				}
-				return profileNewSort, false
+				return ProfileNewSort, false
 			},
 		},
 	}
@@ -639,7 +639,7 @@ func oldSortProfileHandler() *profileHandler {
 			bi := BlobInfo{
 				Length:  tmp.Length,
 				BlobNum: tmp.BlobNum,
-				profile: profileOldSort,
+				profile: ProfileOldSort,
 			}
 
 			if tmp.BlobHash != "" {
@@ -678,7 +678,7 @@ func oldSortProfileHandler() *profileHandler {
 				return nil, err
 			}
 
-			s := &SDBlob{profile: profileOldSort}
+			s := &SDBlob{profile: ProfileOldSort}
 
 			var err error
 			s.StreamName, s.Key, s.SuggestedFileName, s.StreamHash, err = decodeSDBlobFields(tmp.StreamName, tmp.Key, tmp.SuggestedFileName, tmp.StreamHash)
@@ -690,7 +690,7 @@ func oldSortProfileHandler() *profileHandler {
 
 			blobInfos := make([]BlobInfo, len(tmp.Blobs))
 			for i, bi := range tmp.Blobs {
-				result, err := decodeBlobInfoFromOldSort(bi, profileOldSort)
+				result, err := decodeBlobInfoFromOldSort(bi, ProfileOldSort)
 				if err != nil {
 					return nil, err
 				}
@@ -703,13 +703,13 @@ func oldSortProfileHandler() *profileHandler {
 		predicates: []profilePredicate{
 			func(m orderedjson.Map) (serializationProfile, bool) {
 				if len(m) == 0 {
-					return profileNewSort, false
+					return ProfileNewSort, false
 				}
 				firstKey := string(m[0].Key)
 				if firstKey == `"stream_name"` {
-					return profileOldSort, true
+					return ProfileOldSort, true
 				}
-				return profileNewSort, false
+				return ProfileNewSort, false
 			},
 		},
 	}
