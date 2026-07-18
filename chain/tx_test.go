@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"bytes"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -223,5 +224,109 @@ func TestTxID_Deterministic(t *testing.T) {
 	id2 := TxID(tx2)
 	if id1 != id2 {
 		t.Errorf("TxID not deterministic: %s != %s", id1, id2)
+	}
+}
+
+// TestBuild_PrebuiltScript verifies that Output.Script bypasses all script
+// builders and is used directly as the pkScript.
+func TestBuild_PrebuiltScript(t *testing.T) {
+	params := LBRYParams()
+
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	})
+	_ = (*btcec.PublicKey)(&privKey.PublicKey)
+
+	prebuiltScript, _ := BuildP2PKHScript(testAddress, params)
+
+	input := Input{
+		TxID:   strings.Repeat("0", 64),
+		Vout:   0,
+		Amount: 1_000_000,
+		Script: prebuiltScript,
+	}
+
+	// Output with pre-built script — IsClaim and Address are ignored.
+	output := Output{
+		Address: "bW5thiswouldfailifused", // intentionally invalid
+		Amount:  900000,
+		Script:  prebuiltScript,
+	}
+
+	builder := NewBuilder(params)
+	keyFn := func(_ int, _ Input) (*btcec.PrivateKey, error) { return privKey, nil }
+
+	tx, err := builder.Build([]Input{input}, []Output{output}, keyFn)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	if len(tx.TxOut) != 1 {
+		t.Fatalf("expected 1 output, got %d", len(tx.TxOut))
+	}
+	if !bytes.Equal(tx.TxOut[0].PkScript, prebuiltScript) {
+		t.Errorf("pkScript mismatch:\nwant %x\ngot  %x", prebuiltScript, tx.TxOut[0].PkScript)
+	}
+}
+
+// TestBuild_PrebuiltScriptPriority verifies Script takes priority over
+// IsClaim even when both are set.
+func TestBuild_PrebuiltScriptPriority(t *testing.T) {
+	params := LBRYParams()
+
+	claimScript, _ := BuildClaimNameScript("test", []byte("protobuf-value"), testAddress, params)
+
+	input := Input{
+		TxID:   strings.Repeat("a", 64),
+		Vout:   0,
+		Amount: 1_000_000,
+		Script: claimScript,
+	}
+
+	// Output has both Script and IsClaim set — Script should win.
+	output := Output{
+		Script:     claimScript,
+		IsClaim:    true,
+		ClaimType:  ClaimTypeName,
+		ClaimName:  "should-be-ignored",
+		ClaimValue: []byte{0x02},
+		Address:    "bW5also-ignored",
+		Amount:     500_000,
+	}
+
+	// Verify ExtractClaimValue can read back the value from a built script.
+	extracted, err := ExtractClaimValue(claimScript)
+	if err != nil {
+		t.Fatalf("ExtractClaimValue: %v", err)
+	}
+	if !bytes.Equal(extracted, []byte("protobuf-value")) {
+		t.Errorf("ExtractClaimValue mismatch: want %q, got %q", "protobuf-value", extracted)
+	}
+
+	// No keyFn needed because input is a claim script, not P2PKH.
+	// However Builder.Build still calls keyFn for each input, so provide a stub.
+	keyFn := func(_ int, _ Input) (*btcec.PrivateKey, error) {
+		return btcec.NewPrivateKey(btcec.S256())
+	}
+	builder := NewBuilder(params)
+	tx, err := builder.Build([]Input{input}, []Output{output}, keyFn)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	if len(tx.TxOut) != 1 {
+		t.Fatalf("expected 1 output, got %d", len(tx.TxOut))
+	}
+
+	if !bytes.Equal(tx.TxOut[0].PkScript, claimScript) {
+		wrongScript, _ := BuildClaimNameScript("should-be-ignored", []byte{0x02}, "bW5also-ignored", params)
+		if bytes.Equal(tx.TxOut[0].PkScript, wrongScript) {
+			t.Error("Script did not take priority over IsClaim/ClaimName/ClaimValue")
+		} else {
+			t.Errorf("unexpected pkScript:\nwant %x\ngot  %x", claimScript, tx.TxOut[0].PkScript)
+		}
 	}
 }
