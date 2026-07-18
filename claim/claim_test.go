@@ -13,7 +13,7 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-var sdHashHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+var sdHashHex = "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
 var claimIDHex = "186f0042986695921100febae3f571ab9f369614"
 
 func TestNewStream_CompilesValue(t *testing.T) {
@@ -560,7 +560,7 @@ func TestSignStream_CrossImplementationVector(t *testing.T) {
 	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), scalar)
 
 	// Build identical stream claim as Python reference.
-	sdHash, _ := hex.DecodeString("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	sdHash, _ := hex.DecodeString("38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b")
 	claim := &pb.Claim{
 		Title:       "Vector",
 		Description: "",
@@ -583,8 +583,8 @@ func TestSignStream_CrossImplementationVector(t *testing.T) {
 	digest := append(txidHash[:], claimID...)
 	digest = append(digest, payload...)
 
-	// Expected digest from Python reference.
-	wantDigest := "88fd2fc61b9e2e7f9a40c0d04ec8d391554b17d77475aea6eabaff97255bee03"
+	// Expected digest from Python reference (updated for 48-byte SHA-384 sdHash).
+	wantDigest := "99bea92b4198d555de41ae82479e0d56ab5df94191602af95a0856f3f5d4eea4"
 	gotDigest := sha256.Sum256(digest)
 	if hex.EncodeToString(gotDigest[:]) != wantDigest {
 		t.Fatalf("digest mismatch:\nwant %s\ngot  %x", wantDigest, gotDigest[:])
@@ -599,8 +599,8 @@ func TestSignStream_CrossImplementationVector(t *testing.T) {
 		t.Fatal("signature does not verify")
 	}
 
-	// Expected compact signature from Python reference.
-	wantCompact := "7a0a426011c6bdaa086d2902acafcac54d705414825123e8f07df90df5b2a6f267c0e645ee92b6f7bc822fe768687c208b6aa86d1e2341a66d6d516f33371123"
+	// Expected compact signature from Python reference (updated for 48-byte SHA-384 sdHash).
+	wantCompact := "70501473020f461a26b985f2f415b4a6bd948e29c1dd6a57109fd06e7520f6df2b2df3d98e7d46e86d04b4c98ea0bca781e4ff9f3b25ced6ebbf4aed7863d0b0"
 	compact := CompactSignature(sig)
 	if hex.EncodeToString(compact) != wantCompact {
 		t.Fatalf("compact sig mismatch:\nwant %s\ngot  %x", wantCompact, compact)

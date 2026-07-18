@@ -83,8 +83,8 @@ func NewStream(title, description, sdHash, mediaType string, channelClaimID []by
 	if err != nil {
 		return nil, fmt.Errorf("decode sdhash: %w", err)
 	}
-	if len(sdHashBytes) != 32 {
-		return nil, fmt.Errorf("sdhash must be 32 bytes, got %d", len(sdHashBytes))
+	if len(sdHashBytes) != 48 {
+		return nil, fmt.Errorf("sdhash must be 48 bytes (SHA-384), got %d", len(sdHashBytes))
 	}
 
 	helper := &Helper{
