@@ -31,4 +31,8 @@ go.work.sum
 .idea/
 # .vscode/
 .aider*
+
+# Internal planning docs
+.hermes/
+
 vendor
