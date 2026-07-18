@@ -206,3 +206,127 @@ func TestLBRYParams(t *testing.T) {
 		t.Errorf("HDCoinType = %d, want %d", p.HDCoinType, SLIP44CoinType)
 	}
 }
+
+// TestExtractClaimValue verifies round-trip extraction from claim scripts.
+func TestExtractClaimValue(t *testing.T) {
+	params := LBRYParams()
+
+	// Normal claim value
+	script, _ := BuildClaimNameScript("test", []byte("protobuf-value"), testAddress, params)
+	val, err := ExtractClaimValue(script)
+	if err != nil {
+		t.Fatalf("ExtractClaimValue: %v", err)
+	}
+	if string(val) != "protobuf-value" {
+		t.Errorf("want %q, got %q", "protobuf-value", string(val))
+	}
+
+	// Update claim
+	claimID := ClaimID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14}
+	script2, _ := BuildUpdateClaimScript("update", claimID, []byte("update-value"), testAddress, params)
+	val2, err := ExtractClaimValue(script2)
+	if err != nil {
+		t.Fatalf("ExtractClaimValue update: %v", err)
+	}
+	if string(val2) != "update-value" {
+		t.Errorf("want %q, got %q", "update-value", string(val2))
+	}
+}
+
+// TestExtractClaimValue_MutationSafety verifies that mutating the returned
+// slice does not corrupt the original script buffer.
+func TestExtractClaimValue_MutationSafety(t *testing.T) {
+	params := LBRYParams()
+	script, _ := BuildClaimNameScript("test", []byte("mutate-me"), testAddress, params)
+	original := make([]byte, len(script))
+	copy(original, script)
+
+	val, err := ExtractClaimValue(script)
+	if err != nil {
+		t.Fatalf("ExtractClaimValue: %v", err)
+	}
+
+	// Mutate the returned value
+	for i := range val {
+		val[i] = ^val[i]
+	}
+
+	// Script should be unchanged
+	if string(script) != string(original) {
+		t.Error("mutating ExtractClaimValue result corrupted the original script")
+	}
+}
+
+// TestExtractClaimValue_SmallInt verifies that single-byte values in the
+// 0x01-0x10 range are correctly extracted despite txscript.AddData encoding
+// them as OP_1..OP_16 opcodes.
+func TestExtractClaimValue_SmallInt(t *testing.T) {
+	params := LBRYParams()
+	for v := byte(0x01); v <= 0x10; v++ {
+		script, _ := BuildClaimNameScript("test", []byte{v}, testAddress, params)
+		val, err := ExtractClaimValue(script)
+		if err != nil {
+			t.Fatalf("ExtractClaimValue(0x%02x): %v", v, err)
+		}
+		if len(val) != 1 || val[0] != v {
+			t.Errorf("0x%02x: want [%x], got %x", v, v, val)
+		}
+	}
+}
+
+// TestExtractClaimValue_LargePayload verifies OP_PUSHDATA2 handling for
+// payloads exceeding 255 bytes.
+func TestExtractClaimValue_LargePayload(t *testing.T) {
+	params := LBRYParams()
+	value := make([]byte, 256)
+	for i := range value {
+		value[i] = byte(i % 256)
+	}
+
+	script, _ := BuildClaimNameScript("test", value, testAddress, params)
+	val, err := ExtractClaimValue(script)
+	if err != nil {
+		t.Fatalf("ExtractClaimValue: %v", err)
+	}
+	if string(val) != string(value) {
+		t.Errorf("256-byte payload mismatch: len(val)=%d, len(value)=%d", len(val), len(value))
+	}
+}
+
+// TestExtractClaimValue_MalformedPushData4 verifies that an OP_PUSHDATA4 with
+// a length exceeding the remaining script bytes returns an error instead of
+// panicking.
+func TestExtractClaimValue_MalformedPushData4(t *testing.T) {
+	// Craft a script: OP_CLAIMNAME followed by OP_PUSHDATA4 with a length
+	// larger than the remaining bytes.
+	script := []byte{
+		txscript.OP_CLAIMNAME,
+		txscript.OP_PUSHDATA4,
+		0x00, 0x00, 0x00, 0x80, // length = 0x80000000 (2,147,483,648)
+	}
+	_, err := ExtractClaimValue(script)
+	if err == nil {
+		t.Error("expected error for malformed OP_PUSHDATA4, got nil")
+	}
+}
+
+// TestExtractClaimValue_NegativeInt32 verifies that a length which wraps to
+// negative on 32-bit int builds is rejected.
+func TestExtractClaimValue_NegativeInt32(t *testing.T) {
+	// Same as above: 0x80000000 converts to negative int on 32-bit
+	script := []byte{
+		txscript.OP_CLAIMNAME,
+		txscript.OP_PUSHDATA4,
+		0x00, 0x00, 0x00, 0x80,
+	}
+	_, err := ExtractClaimValue(script)
+	if err == nil {
+		t.Error("expected error for negative-wrapped length, got nil")
+	}
+	// Error message should mention the overflow
+	if !strings.Contains(err.Error(), "exceeds script") && !strings.Contains(err.Error(), "length") {
+		t.Errorf("expected length-related error, got: %v", err)
+	}
+}
