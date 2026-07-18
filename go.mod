@@ -35,14 +35,12 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gammazero/deque v0.2.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/lbryio/lbry.go/v2 v2.7.1 // indirect
-	github.com/lbryio/types v0.0.0-20220224142228-73610f6654a6 // indirect
 	github.com/lyoshenka/bencode v0.0.0-20180323155644-b7abd7672df5 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
@@ -59,7 +57,6 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/nullbio/null.v6 v6.0.0-20161116030900-40264a2e6b79 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
