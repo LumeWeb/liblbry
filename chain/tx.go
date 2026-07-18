@@ -24,6 +24,12 @@ type Output struct {
 	Address string
 	Amount  int64 // satoshis
 
+	// Script is a pre-built scriptPubKey. When set, it takes priority over
+	// IsClaim and Address-based P2PKH. Use this when the caller has already
+	// constructed the script (e.g. via txscript/claimscript.go or the
+	// BuildClaimNameScript / BuildUpdateClaimScript helpers in this package).
+	Script []byte
+
 	// For claim outputs:
 	IsClaim    bool
 	ClaimName  string
@@ -77,16 +83,17 @@ func (b *Builder) Build(inputs []Input, outputs []Output, keyFn KeyFunc) (*wire.
 		var pkScript []byte
 		var err error
 
-		switch {
-		case out.IsClaim && out.ClaimType == ClaimTypeName:
+		if len(out.Script) > 0 {
+			pkScript = out.Script
+		} else if out.IsClaim && out.ClaimType == ClaimTypeName {
 			pkScript, err = BuildClaimNameScript(out.ClaimName, out.ClaimValue, out.Address, b.params)
-		case out.IsClaim && out.ClaimType == ClaimTypeUpdate:
+		} else if out.IsClaim && out.ClaimType == ClaimTypeUpdate {
 			pkScript, err = BuildUpdateClaimScript(out.ClaimName, out.ClaimID, out.ClaimValue, out.Address, b.params)
-		case out.IsClaim && out.ClaimType == ClaimTypeSupport:
+		} else if out.IsClaim && out.ClaimType == ClaimTypeSupport {
 			pkScript, err = BuildSupportClaimScript(out.ClaimName, out.ClaimID, out.ClaimValue, out.Address, b.params)
-		case out.IsClaim:
+		} else if out.IsClaim {
 			return nil, fmt.Errorf("build output %d: IsClaim is true but ClaimType is unspecified or unknown", i)
-		default:
+		} else {
 			pkScript, err = BuildP2PKHScript(out.Address, b.params)
 		}
 		if err != nil {
