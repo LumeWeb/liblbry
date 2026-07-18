@@ -5,10 +5,15 @@ go 1.24.0
 toolchain go1.24.3
 
 require (
+	github.com/avast/retry-go/v4 v4.7.0
 	github.com/gammazero/workerpool v1.1.3
+	github.com/glopal/orderedjson v0.0.0-20240326211827-f9de45c5f0bb
 	github.com/go-errors/errors v1.5.1
 	github.com/ipfs/go-cid v0.5.0
 	github.com/knadh/koanf/v2 v2.3.0
+	github.com/lbryio/lbcd v0.22.119
+	github.com/lbryio/lbcutil v1.0.202
+	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/samber/lo v1.52.0
@@ -17,28 +22,31 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.lumeweb.com/lbry-dht v0.0.0-20251122030212-8156f51f8639
 	go.uber.org/zap v1.27.0
+	golang.org/x/crypto v0.44.0
 	golang.org/x/text v0.31.0
 )
 
+replace github.com/lbryio/lbcd => github.com/LBRYFoundation/lbcd v0.0.0-20250829174422-3f075c62b991
+
 require (
-	github.com/avast/retry-go/v4 v4.7.0 // indirect
 	github.com/aybabtme/flatjson v0.1.3-0.20230505062430-1fbd38670561 // indirect
+	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gammazero/deque v0.2.0 // indirect
-	github.com/glopal/orderedjson v0.0.0-20240326211827-f9de45c5f0bb // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/rpc v1.2.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/lbryio/lbry.go/v2 v2.7.1 // indirect
+	github.com/lbryio/types v0.0.0-20220224142228-73610f6654a6 // indirect
 	github.com/lyoshenka/bencode v0.0.0-20180323155644-b7abd7672df5 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.0.3 // indirect
 	github.com/multiformats/go-base36 v0.1.0 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
@@ -49,9 +57,9 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/crypto v0.44.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/nullbio/null.v6 v6.0.0-20161116030900-40264a2e6b79 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
