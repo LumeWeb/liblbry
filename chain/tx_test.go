@@ -17,12 +17,13 @@ import (
 func TestBuild_SimpleTransaction(t *testing.T) {
 	// Derive a private key for signing
 	// We can't import the wallet package (would create circular dependency),
-	// so we generate a key directly via btcec.
-	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), make([]byte, 32))
-	// Set to a known non-zero value
-	for i := range privKey.ToECDSA().D.Bytes() {
-		privKey.ToECDSA().D.SetBit(privKey.ToECDSA().D, i, 1)
-	}
+	// so we generate a key directly via btcec using a known-valid scalar.
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	})
 
 	// Create a dummy input (the txid doesn't need to exist on-chain for the
 	// signing test, but the signing itself will fail if the tx isn't valid)
