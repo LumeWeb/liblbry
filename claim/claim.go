@@ -208,8 +208,12 @@ func (h *Helper) CompileValue() ([]byte, error) {
 
 // serialize marshals the protobuf claim.
 func (h *Helper) serialize() ([]byte, error) {
-	if h.Claim == nil || h.Claim.String() == "" {
+	if h.Claim == nil {
 		return nil, fmt.Errorf("claim not initialized")
+	}
+	if h.Claim.GetStream() == nil && h.Claim.GetChannel() == nil &&
+		h.Claim.GetRepost() == nil && h.Claim.GetCollection() == nil {
+		return nil, fmt.Errorf("claim type not set")
 	}
 	return h.Claim.MarshalVT()
 }
