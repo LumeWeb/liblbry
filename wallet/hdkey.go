@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"sync"
 
 	"github.com/lbryio/lbcd/btcec"
 	base58 "github.com/mr-tron/base58"
@@ -27,6 +28,7 @@ var masterKey = []byte("Bitcoin seed")
 // LBRY uses only non-hardened derivation (m/chain/index), but hardened
 // derivation is supported for completeness.
 type ExtendedKey struct {
+	mu        sync.RWMutex
 	privKey   *btcec.PrivateKey
 	pubKey    *btcec.PublicKey
 	chainCode []byte
@@ -34,6 +36,20 @@ type ExtendedKey struct {
 	depth     uint8
 	childNum  uint32
 	isPrivate bool
+}
+
+// withRLock runs fn under the extended key's read lock.
+func (k *ExtendedKey) withRLock(fn func() error) error {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return fn()
+}
+
+// withLock runs fn under the extended key's write lock.
+func (k *ExtendedKey) withLock(fn func()) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	fn()
 }
 
 // fingerprint returns the first 4 bytes of RIPEMD160(SHA256(pubkey)),
@@ -80,7 +96,17 @@ func NewMaster(seed []byte) (*ExtendedKey, error) {
 
 // Derive derives a child key at the given index.
 // For hardened derivation, use index + HardenedKeyStart.
-func (k *ExtendedKey) Derive(i uint32) (*ExtendedKey, error) {
+func (k *ExtendedKey) Derive(i uint32) (child *ExtendedKey, err error) {
+	k.withRLock(func() error {
+		child, err = k.deriveLocked(i)
+		return err
+	})
+	return
+}
+
+// deriveLocked is the lock-free inner implementation of Derive.
+// Caller must hold k.mu.RLock() (or k.mu.Lock()).
+func (k *ExtendedKey) deriveLocked(i uint32) (*ExtendedKey, error) {
 	if k.depth == 255 {
 		return nil, fmt.Errorf("derivation depth exceeds maximum (255)")
 	}
@@ -90,6 +116,17 @@ func (k *ExtendedKey) Derive(i uint32) (*ExtendedKey, error) {
 	// Cannot derive hardened children from a public key
 	if !k.isPrivate && isHardened {
 		return nil, fmt.Errorf("cannot derive hardened child from public key")
+	}
+
+	// Check for zeroed key before accessing fields.
+	if isHardened && k.privKey == nil {
+		return nil, fmt.Errorf("extended key has been zeroed")
+	}
+	if k.pubKey == nil {
+		return nil, fmt.Errorf("extended key has been zeroed")
+	}
+	if k.chainCode == nil {
+		return nil, fmt.Errorf("extended key has been zeroed")
 	}
 
 	// Build the data for HMAC-SHA512
@@ -120,6 +157,9 @@ func (k *ExtendedKey) Derive(i uint32) (*ExtendedKey, error) {
 	}
 
 	if k.isPrivate {
+		if k.privKey == nil {
+			return nil, fmt.Errorf("extended key has been zeroed")
+		}
 		// childKey = (parse256(Il) + parentKey) mod N
 		keyNum := new(big.Int).SetBytes(k.privKey.Serialize())
 		ilNum.Add(ilNum, keyNum)
@@ -171,69 +211,118 @@ func (k *ExtendedKey) Derive(i uint32) (*ExtendedKey, error) {
 }
 
 // ECPrivKey returns the private key.
-func (k *ExtendedKey) ECPrivKey() (*btcec.PrivateKey, error) {
-	if !k.isPrivate {
-		return nil, fmt.Errorf("extended key is public-only")
-	}
-	return k.privKey, nil
+func (k *ExtendedKey) ECPrivKey() (pk *btcec.PrivateKey, err error) {
+	k.withRLock(func() error {
+		if !k.isPrivate {
+			return fmt.Errorf("extended key is public-only")
+		}
+		if k.privKey == nil {
+			return fmt.Errorf("extended key has been zeroed")
+		}
+		pk = k.privKey
+		return nil
+	})
+	return
 }
 
 // ECPubKey returns the public key.
-func (k *ExtendedKey) ECPubKey() (*btcec.PublicKey, error) {
-	return k.pubKey, nil
+func (k *ExtendedKey) ECPubKey() (pk *btcec.PublicKey, err error) {
+	k.withRLock(func() error { pk = k.pubKey; return nil })
+	return
 }
 
 // IsPrivate returns whether this extended key has a private key.
-func (k *ExtendedKey) IsPrivate() bool { return k.isPrivate }
+func (k *ExtendedKey) IsPrivate() (b bool) {
+	k.withRLock(func() error { b = k.isPrivate; return nil })
+	return
+}
 
 // Depth returns the depth in the HD tree (0 = master).
-func (k *ExtendedKey) Depth() uint8 { return k.depth }
+func (k *ExtendedKey) Depth() (d uint8) {
+	k.withRLock(func() error { d = k.depth; return nil })
+	return
+}
 
 // ChildNum returns the child number at this depth.
-func (k *ExtendedKey) ChildNum() uint32 { return k.childNum }
+func (k *ExtendedKey) ChildNum() (n uint32) {
+	k.withRLock(func() error { n = k.childNum; return nil })
+	return
+}
 
 // String returns the Base58Check-encoded extended key (xprv/xpub format).
-func (k *ExtendedKey) String() string {
-	var buf bytes.Buffer
+// Returns "" if the key has been zeroed (chain code or private key is nil).
+func (k *ExtendedKey) String() (s string) {
+	k.withRLock(func() error {
+		var buf bytes.Buffer
 
-	// Version (4 bytes)
-	if k.isPrivate {
-		buf.Write([]byte{0x04, 0x88, 0xad, 0xe4}) // xprv
-	} else {
-		buf.Write([]byte{0x04, 0x88, 0xb2, 0x1e}) // xpub
-	}
+		// Version (4 bytes)
+		if k.isPrivate {
+			buf.Write([]byte{0x04, 0x88, 0xad, 0xe4}) // xprv
+		} else {
+			buf.Write([]byte{0x04, 0x88, 0xb2, 0x1e}) // xpub
+		}
 
-	// Depth (1 byte)
-	buf.WriteByte(k.depth)
+		// Depth (1 byte)
+		buf.WriteByte(k.depth)
 
-	// Parent fingerprint (4 bytes)
-	buf.Write(k.parentFP[:])
+		// Parent fingerprint (4 bytes)
+		buf.Write(k.parentFP[:])
 
-	// Child number (4 bytes)
-	var childNumBytes [4]byte
-	binary.BigEndian.PutUint32(childNumBytes[:], k.childNum)
-	buf.Write(childNumBytes[:])
+		// Child number (4 bytes)
+		var childNumBytes [4]byte
+		binary.BigEndian.PutUint32(childNumBytes[:], k.childNum)
+		buf.Write(childNumBytes[:])
 
-	// Chain code (32 bytes)
-	buf.Write(k.chainCode)
+		// Chain code (32 bytes)
+		if k.chainCode == nil {
+			return nil // return ""
+		}
+		buf.Write(k.chainCode)
 
-	// Key data (33 bytes)
-	if k.isPrivate {
-		buf.WriteByte(0x00)
-		buf.Write(k.privKey.Serialize())
-	} else {
-		buf.Write(k.pubKey.SerializeCompressed())
-	}
+		// Key data (33 bytes)
+		if k.isPrivate {
+			buf.WriteByte(0x00)
+			if k.privKey == nil {
+				return nil // return ""
+			}
+			buf.Write(k.privKey.Serialize())
+		} else {
+			buf.Write(k.pubKey.SerializeCompressed())
+		}
 
-	return base58CheckEncode(buf.Bytes())
+		s = base58CheckEncode(buf.Bytes())
+		return nil
+	})
+	return
 }
 
 // Hex returns the private key as a hex string.
-func (k *ExtendedKey) Hex() string {
-	if !k.isPrivate {
-		return ""
-	}
-	return hex.EncodeToString(k.privKey.Serialize())
+func (k *ExtendedKey) Hex() (s string) {
+	k.withRLock(func() error {
+		if !k.isPrivate || k.privKey == nil {
+			return nil // return ""
+		}
+		s = hex.EncodeToString(k.privKey.Serialize())
+		return nil
+	})
+	return
+}
+
+// Zero securely wipes the private key scalar and chain code from memory.
+// After calling Zero, the extended key is unusable for private operations.
+func (k *ExtendedKey) Zero() {
+	k.withLock(func() {
+		if k.privKey != nil {
+			wipeBigIntD(k.privKey)
+			k.privKey = nil
+		}
+		if k.chainCode != nil {
+			for i := range k.chainCode {
+				k.chainCode[i] = 0
+			}
+			k.chainCode = nil
+		}
+	})
 }
 
 // base58CheckEncode appends a 4-byte double-SHA256 checksum and Base58-encodes.
