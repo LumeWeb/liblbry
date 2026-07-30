@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package pb;
+
+message Support {
+  string emoji = 1;
+  string comment = 2;
+  /*
+  oneof type {
+    Edit edit = 1;
+  }
+  */
+}
+
+/*
+message Edit {
+    string key = 1;
+    string value = 2;
+}
+*/

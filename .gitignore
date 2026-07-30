@@ -32,6 +32,13 @@ go.work.sum
 # .vscode/
 .aider*
 
+# WASM binaries
+*.wasm
+*.wasm.gz
+
+# Generated protobuf (keep .proto sources, ignore generated)
+# pb/ is committed intentionally for reproducibility
+
 # Internal planning docs
 .hermes/
 
