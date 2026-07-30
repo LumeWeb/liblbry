@@ -9,8 +9,7 @@ import (
 
 	"github.com/lbryio/lbcd/btcec"
 	"github.com/lbryio/lbcd/chaincfg/chainhash"
-	pb "github.com/lbryio/types/v2/go"
-	"github.com/golang/protobuf/proto"
+	pb "go.lumeweb.com/liblbry/pb/v2"
 )
 
 var sdHashHex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -41,7 +40,7 @@ func TestNewStream_CompilesValue(t *testing.T) {
 
 	// Verify protobuf round-trip
 	var claim pb.Claim
-	if err := proto.Unmarshal(value[1:], &claim); err != nil {
+	if err := claim.UnmarshalVT(value[1:]); err != nil {
 		t.Fatalf("unmarshal claim: %v", err)
 	}
 	if claim.Title != "My Video" {
@@ -123,7 +122,7 @@ func TestNewChannel_CompilesValue(t *testing.T) {
 	}
 
 	var claim pb.Claim
-	if err := proto.Unmarshal(value[1:], &claim); err != nil {
+	if err := claim.UnmarshalVT(value[1:]); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if claim.Title != "My Channel" {
@@ -170,7 +169,7 @@ func TestNewRepost_CompilesValue(t *testing.T) {
 	}
 
 	var claim pb.Claim
-	if err := proto.Unmarshal(value[1:], &claim); err != nil {
+	if err := claim.UnmarshalVT(value[1:]); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if claim.GetRepost() == nil {
@@ -194,7 +193,7 @@ func TestNewSupport_Serializes(t *testing.T) {
 		t.Fatal("SupportValue for non-empty emoji returned empty bytes")
 	}
 	var roundtrip pb.Support
-	if err := proto.Unmarshal(b, &roundtrip); err != nil {
+	if err := roundtrip.UnmarshalVT(b); err != nil {
 		t.Fatalf("unmarshal support: %v", err)
 	}
 	if roundtrip.Emoji != "🔥" {
@@ -495,7 +494,7 @@ func TestNewCollection_CompilesValue(t *testing.T) {
 		t.Fatalf("CompileValue: %v", err)
 	}
 	var claim pb.Claim
-	if err := proto.Unmarshal(value[1:], &claim); err != nil {
+	if err := claim.UnmarshalVT(value[1:]); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if claim.GetCollection() == nil {
@@ -573,7 +572,7 @@ func TestSignStream_CrossImplementationVector(t *testing.T) {
 			},
 		},
 	}
-	payload, _ := proto.Marshal(claim)
+	payload, _ := claim.MarshalVT()
 
 	// Inputs (display-order txid, 20-byte claim ID).
 	txidHash, _ := chainhash.NewHashFromStr("0000000000000000000000000000000000000000000000000000000000000001")
@@ -607,7 +606,7 @@ func TestSignStream_CrossImplementationVector(t *testing.T) {
 	}
 }
 
-func mustMarshal(m proto.Message) []byte {
-	b, _ := proto.Marshal(m)
+func mustMarshal(m *pb.Claim) []byte {
+	b, _ := m.MarshalVT()
 	return b
 }

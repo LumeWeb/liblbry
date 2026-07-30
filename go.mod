@@ -5,16 +5,15 @@ go 1.24.0
 toolchain go1.24.3
 
 require (
+	github.com/aperturerobotics/protobuf-go-lite v0.16.0
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/gammazero/workerpool v1.1.3
 	github.com/glopal/orderedjson v0.0.0-20240326211827-f9de45c5f0bb
 	github.com/go-errors/errors v1.5.1
-	github.com/golang/protobuf v1.5.4
 	github.com/ipfs/go-cid v0.5.0
 	github.com/knadh/koanf/v2 v2.3.0
 	github.com/lbryio/lbcd v0.22.119
 	github.com/lbryio/lbcutil v1.0.202
-	github.com/lbryio/types v0.0.0-20220224142228-73610f6654a6
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multihash v0.2.3
@@ -29,6 +28,7 @@ require (
 )
 
 require (
+	github.com/aperturerobotics/json-iterator-lite v1.1.0 // indirect
 	github.com/aybabtme/flatjson v0.1.3-0.20230505062430-1fbd38670561 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/btcsuite/btcutil v1.0.2 // indirect
@@ -57,7 +57,6 @@ require (
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/nullbio/null.v6 v6.0.0-20161116030900-40264a2e6b79 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect

@@ -1,8 +1,8 @@
 // Package claim builds LBRY protobuf claims (channel, stream, repost,
 // support) and compiles them into the value bytes pushed in claim scripts.
 //
-// The protobuf types come from github.com/lbryio/types/v2/go (pure Go),
-// which is the same source tracker-demo uses. No heavy consensus deps.
+// The protobuf types come from go.lumeweb.com/liblbry/pb/v2 (generated
+// with protoc-gen-go-lite — reflection-free, TinyGo compatible).
 //
 // Serialization and signing logic is adapted from lbry.go/schema/stake
 // (MIT License, LBRY Inc), modified to use lbcd/btcec instead of the
@@ -19,8 +19,7 @@ import (
 
 	"github.com/lbryio/lbcd/btcec"
 	"github.com/lbryio/lbcd/chaincfg/chainhash"
-	pb "github.com/lbryio/types/v2/go"
-	"github.com/golang/protobuf/proto"
+	pb "go.lumeweb.com/liblbry/pb/v2"
 )
 
 // Version encodes the claim value version byte (0 = unsigned, 1 = signed).
@@ -212,7 +211,7 @@ func (h *Helper) serialize() ([]byte, error) {
 	if h.Claim == nil || h.Claim.String() == "" {
 		return nil, fmt.Errorf("claim not initialized")
 	}
-	return proto.Marshal(h.Claim)
+	return h.Claim.MarshalVT()
 }
 
 // SignStream signs a stream claim with the channel's private key.
@@ -311,7 +310,7 @@ func ParseClaimValue(data []byte) (*Helper, error) {
 	switch version {
 	case NoSig:
 		claim := &pb.Claim{}
-		if err := proto.Unmarshal(data[1:], claim); err != nil {
+		if err := claim.UnmarshalVT(data[1:]); err != nil {
 			return nil, fmt.Errorf("unmarshal unsigned claim: %w", err)
 		}
 		return &Helper{Claim: claim, Version: NoSig}, nil
@@ -322,7 +321,7 @@ func ParseClaimValue(data []byte) (*Helper, error) {
 		claimID := append([]byte(nil), data[1:21]...)
 		signature := append([]byte(nil), data[21:85]...)
 		claim := &pb.Claim{}
-		if err := proto.Unmarshal(data[85:], claim); err != nil {
+		if err := claim.UnmarshalVT(data[85:]); err != nil {
 			return nil, fmt.Errorf("unmarshal signed claim: %w", err)
 		}
 		return &Helper{
@@ -338,5 +337,5 @@ func ParseClaimValue(data []byte) (*Helper, error) {
 
 // SupportValue serializes a support claim value.
 func SupportValue(s *pb.Support) ([]byte, error) {
-	return proto.Marshal(s)
+	return s.MarshalVT()
 }
