@@ -3,6 +3,7 @@ package wallet
 import (
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	"github.com/lbryio/lbcd/btcec"
 )
@@ -14,12 +15,28 @@ const TestMnemonic = "will bus cluster trumpet jump venue truly habit decrease s
 // Wallet represents an HD wallet derived from an Electrum mnemonic.
 // All operations are pure data/key derivation — no I/O.
 type Wallet struct {
+	mu        sync.RWMutex
 	mnemonic  string
 	seed      []byte
 	masterKey *ExtendedKey
 	privKey   *btcec.PrivateKey
 	pubKey    *btcec.PublicKey
 	address   *Address
+}
+
+// withRLock runs fn under the wallet's read lock. This ensures every
+// accessor acquires the lock consistently without per-method boilerplate.
+func (w *Wallet) withRLock(fn func() error) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return fn()
+}
+
+// withLock runs fn under the wallet's write lock.
+func (w *Wallet) withLock(fn func()) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	fn()
 }
 
 // NewFromMnemonic creates a Wallet from an Electrum/LBRY mnemonic phrase.
@@ -89,7 +106,20 @@ func (w *Wallet) deriveAccount0() error {
 // DeriveKey derives a child key at the given chain and index.
 // LBRY path: m/chain/index (non-hardened).
 // chain: 0=receiving, 1=change, 2=channel.
-func (w *Wallet) DeriveKey(chain, index uint32) (*ExtendedKey, error) {
+func (w *Wallet) DeriveKey(chain, index uint32) (ext *ExtendedKey, err error) {
+	w.withRLock(func() error {
+		ext, err = w.deriveKeyLocked(chain, index)
+		return err
+	})
+	return
+}
+
+// deriveKeyLocked is the lock-free inner implementation of DeriveKey.
+// Caller must hold w.mu.RLock() (or w.mu.Lock()).
+func (w *Wallet) deriveKeyLocked(chain, index uint32) (*ExtendedKey, error) {
+	if w.masterKey == nil {
+		return nil, fmt.Errorf("wallet has been zeroed")
+	}
 	chainKey, err := w.masterKey.Derive(chain)
 	if err != nil {
 		return nil, fmt.Errorf("derive chain: %w", err)
@@ -98,22 +128,38 @@ func (w *Wallet) DeriveKey(chain, index uint32) (*ExtendedKey, error) {
 }
 
 // Address returns the P2PKH address for this wallet (m/0/0).
-func (w *Wallet) Address() *Address { return w.address }
+func (w *Wallet) Address() (addr *Address) {
+	w.withRLock(func() error { addr = w.address; return nil })
+	return
+}
 
 // AddressString returns the encoded P2PKH address string.
-func (w *Wallet) AddressString() string { return w.address.EncodeAddress() }
+func (w *Wallet) AddressString() (s string) {
+	w.withRLock(func() error {
+		if w.address == nil {
+			return nil
+		}
+		s = w.address.EncodeAddress()
+		return nil
+	})
+	return
+}
 
 // AddressAt returns the P2PKH address at m/chain/index.
-func (w *Wallet) AddressAt(chain, index uint32) (*Address, error) {
-	child, err := w.DeriveKey(chain, index)
-	if err != nil {
-		return nil, err
-	}
-	priv, err := child.ECPrivKey()
-	if err != nil {
-		return nil, err
-	}
-	return AddressFromPrivKey(priv), nil
+func (w *Wallet) AddressAt(chain, index uint32) (addr *Address, err error) {
+	w.withRLock(func() error {
+		child, e := w.deriveKeyLocked(chain, index)
+		if e != nil {
+			return e
+		}
+		priv, e := child.ECPrivKey()
+		if e != nil {
+			return e
+		}
+		addr = AddressFromPrivKey(priv)
+		return nil
+	})
+	return
 }
 
 // AddressStringAt returns the encoded P2PKH address at m/chain/index.
@@ -135,35 +181,127 @@ func (w *Wallet) PubKeyScriptAt(chain, index uint32) ([]byte, error) {
 }
 
 // PrivateKeyAt returns the private key at m/chain/index.
-func (w *Wallet) PrivateKeyAt(chain, index uint32) (*btcec.PrivateKey, error) {
-	child, err := w.DeriveKey(chain, index)
-	if err != nil {
-		return nil, err
-	}
-	return child.ECPrivKey()
+func (w *Wallet) PrivateKeyAt(chain, index uint32) (pk *btcec.PrivateKey, err error) {
+	w.withRLock(func() error {
+		child, e := w.deriveKeyLocked(chain, index)
+		if e != nil {
+			return e
+		}
+		pk, err = child.ECPrivKey()
+		return err
+	})
+	return
 }
 
 // PrivateKey returns the private key at m/0/0.
-func (w *Wallet) PrivateKey() *btcec.PrivateKey { return w.privKey }
+func (w *Wallet) PrivateKey() (pk *btcec.PrivateKey) {
+	w.withRLock(func() error { pk = w.privKey; return nil })
+	return
+}
 
 // PrivateKeyHex returns the private key at m/0/0 as a hex string.
-func (w *Wallet) PrivateKeyHex() string {
-	return hex.EncodeToString(w.privKey.Serialize())
+func (w *Wallet) PrivateKeyHex() (s string) {
+	w.withRLock(func() error {
+		if w.privKey == nil {
+			return nil
+		}
+		s = hex.EncodeToString(w.privKey.Serialize())
+		return nil
+	})
+	return
 }
 
 // PublicKey returns the compressed public key at m/0/0.
-func (w *Wallet) PublicKey() *btcec.PublicKey { return w.pubKey }
+func (w *Wallet) PublicKey() (pk *btcec.PublicKey) {
+	w.withRLock(func() error { pk = w.pubKey; return nil })
+	return
+}
 
 // PublicKeyHex returns the compressed public key as a hex string.
-func (w *Wallet) PublicKeyHex() string {
-	return hex.EncodeToString(w.pubKey.SerializeCompressed())
+func (w *Wallet) PublicKeyHex() (s string) {
+	w.withRLock(func() error {
+		if w.pubKey == nil {
+			return nil
+		}
+		s = hex.EncodeToString(w.pubKey.SerializeCompressed())
+		return nil
+	})
+	return
 }
 
 // Mnemonic returns the original mnemonic phrase.
-func (w *Wallet) Mnemonic() string { return w.mnemonic }
+// After Zero(), this returns "" — the mnemonic reference is cleared.
+// Go strings are immutable, so the underlying bytes may persist until
+// GC; callers must not retain the mnemonic separately if they need
+// guarantees that it cannot be recovered after Zero().
+func (w *Wallet) Mnemonic() (s string) {
+	w.withRLock(func() error { s = w.mnemonic; return nil })
+	return
+}
 
 // Seed returns the raw seed bytes.
-func (w *Wallet) Seed() []byte { return w.seed }
+func (w *Wallet) Seed() (s []byte) {
+	w.withRLock(func() error { s = w.seed; return nil })
+	return
+}
 
 // MasterKey returns the BIP32 master extended key.
-func (w *Wallet) MasterKey() *ExtendedKey { return w.masterKey }
+func (w *Wallet) MasterKey() (mk *ExtendedKey) {
+	w.withRLock(func() error { mk = w.masterKey; return nil })
+	return
+}
+
+// wipeBigIntD zeros a big.Int scalar in-place: first the visible
+// words via Bits(), then a full 32-byte overwrite via SetBytes.
+// This handles the case where SetBytes allocates a new backing array.
+func wipeBigIntD(d *btcec.PrivateKey) {
+	if d == nil {
+		return
+	}
+	// Zero the existing big.Int words first — SetBytes may allocate a
+	// new backing array, leaving the old scalar words recoverable until GC.
+	words := d.D.Bits()
+	for i := range words {
+		words[i] = 0
+	}
+	zero := make([]byte, 32)
+	d.D.SetBytes(zero)
+}
+
+// Zero securely wipes all sensitive key material from the wallet:
+// the seed bytes, the private key scalar, and the master key bytes.
+// After calling Zero, the wallet is unusable — all key-derived operations
+// will return zero values, nil, or errors.
+//
+// Note: the mnemonic is a Go string (immutable, GC-managed) and cannot
+// be deterministically zeroed by this method. The reference is cleared
+// so Mnemonic() returns "", but the underlying bytes may persist until GC.
+func (w *Wallet) Zero() {
+	w.withLock(func() {
+		// Clear the mnemonic reference.
+		w.mnemonic = ""
+
+		// Zero seed bytes.
+		if w.seed != nil {
+			for i := range w.seed {
+				w.seed[i] = 0
+			}
+			w.seed = nil
+		}
+
+		// Zero account private key.
+		if w.privKey != nil {
+			wipeBigIntD(w.privKey)
+			w.privKey = nil
+		}
+
+		// Zero master extended key (recursive wipe of chain code + scalar).
+		if w.masterKey != nil {
+			w.masterKey.Zero()
+			w.masterKey = nil
+		}
+
+		w.pubKey = nil
+		w.address = nil
+	})
+}
